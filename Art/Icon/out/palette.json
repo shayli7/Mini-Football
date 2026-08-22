@@ -1,0 +1,28 @@
+{
+  "P": {
+    "bgDeep": "#0A0E14",
+    "bgPanel": "#141A24",
+    "bgRaised": "#1E2735",
+    "line": "#2A3547",
+    "ink": "#EAF0F7",
+    "inkMuted": "#8A97A8",
+    "red": "#FF3355",
+    "blue": "#22A7FF",
+    "gold": "#FFB63D",
+    "go": "#3DFF88",
+    "onGold": "#241800"
+  },
+  "D": {
+    "goldDeep": "#C87F1E",
+    "goldLight": "#FFD98A",
+    "redDeep": "#B31D38",
+    "blueDeep": "#0F6FB5",
+    "chrome": "#F2F6FB",
+    "chromeMid": "#B7C3D2",
+    "chromeLow": "#66748A",
+    "grip": "#12161E",
+    "pitch": "#123F27",
+    "pitchLit": "#17512F",
+    "skin": "#F0D3AC"
+  }
+}

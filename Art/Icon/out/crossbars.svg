@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 1000 1000">
+<defs><clipPath id="crossbars-full-m"><rect width="1000" height="1000" rx="224"/></clipPath>
+    <radialGradient id="crossbars-full-ground" cx=".5" cy=".42" r=".78">
+      <stop offset="0" stop-color="#1E2735"/>
+      <stop offset=".55" stop-color="#141A24"/>
+      <stop offset="1" stop-color="#0A0E14"/>
+    </radialGradient>
+    <radialGradient id="crossbars-full-rb" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#FF3355" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#FF3355" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="crossbars-full-bb" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#22A7FF" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#22A7FF" stop-opacity="0"/>
+    </radialGradient>
+    
+  <radialGradient id="crossbars-full-ball" cx=".36" cy=".3" r=".85">
+    <stop offset="0" stop-color="#FFFFFF"/>
+    <stop offset=".55" stop-color="#EAF0F7"/>
+    <stop offset="1" stop-color="#9AA8BB"/>
+  </radialGradient>
+    <linearGradient id="crossbars-full-r" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FF6B84"/><stop offset=".5" stop-color="#FF3355"/>
+      <stop offset="1" stop-color="#B31D38"/>
+    </linearGradient>
+    <linearGradient id="crossbars-full-b" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6FCBFF"/><stop offset=".5" stop-color="#22A7FF"/>
+      <stop offset="1" stop-color="#0F6FB5"/>
+    </linearGradient>
+    <radialGradient id="crossbars-full-halo" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#FFB63D" stop-opacity=".5"/>
+      <stop offset=".55" stop-color="#FFB63D" stop-opacity=".12"/>
+      <stop offset="1" stop-color="#FFB63D" stop-opacity="0"/>
+    </radialGradient></defs>
+<g clip-path="url(#crossbars-full-m)">
+
+    <rect width="1000" height="1000" fill="url(#crossbars-full-ground)"/>
+    <circle cx="130" cy="620" r="440" fill="url(#crossbars-full-rb)"/>
+    <circle cx="870" cy="620" r="440" fill="url(#crossbars-full-bb)"/>
+<g transform="translate(110.00 110.00) scale(0.78)">
+      <circle cx="500" cy="500" r="470" fill="url(#crossbars-full-halo)"/>
+      <circle cx="500" cy="500" r="404" fill="none" stroke="#FFB63D" stroke-width="20"
+              stroke-opacity=".85" stroke-dasharray="1000 130 480 130" stroke-linecap="round"
+              transform="rotate(-31 500 500)"/>
+      
+      <g transform="rotate(31 500 500)">
+        <rect x="70" y="463" width="860" height="74" rx="37" fill="url(#crossbars-full-b)"/>
+        <rect x="70" y="463" width="118" height="74" rx="37" fill="#12161E"/>
+        <rect x="812" y="463" width="118" height="74" rx="37" fill="#12161E"/>
+        <rect x="200" y="479" width="596" height="13" rx="6" fill="#fff" opacity=".3"/>
+      </g>
+      
+      <g transform="rotate(-31 500 500)">
+        <rect x="70" y="463" width="860" height="74" rx="37" fill="url(#crossbars-full-r)"/>
+        <rect x="70" y="463" width="118" height="74" rx="37" fill="#12161E"/>
+        <rect x="812" y="463" width="118" height="74" rx="37" fill="#12161E"/>
+        <rect x="200" y="479" width="596" height="13" rx="6" fill="#fff" opacity=".3"/>
+      </g>
+      
+  <circle cx="500" cy="500" r="152" fill="url(#crossbars-full-ball)"/>
+  <circle cx="500" cy="500" r="152" fill="none" stroke="#EAF0F7" stroke-opacity=".35"
+          stroke-width="9.12"/>
+  <ellipse cx="454.4" cy="445.28" rx="57.76" ry="42.56"
+           fill="#fff" opacity=".55" transform="rotate(-28 454.4 445.28)"/></g>
+</g></svg>

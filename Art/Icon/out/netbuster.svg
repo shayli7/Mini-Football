@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 1000 1000">
+<defs><clipPath id="netbuster-full-m"><rect width="1000" height="1000" rx="224"/></clipPath>
+    <radialGradient id="netbuster-full-ground" cx=".5" cy=".42" r=".78">
+      <stop offset="0" stop-color="#1E2735"/>
+      <stop offset=".55" stop-color="#141A24"/>
+      <stop offset="1" stop-color="#0A0E14"/>
+    </radialGradient>
+    <radialGradient id="netbuster-full-rb" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#FF3355" stop-opacity="0.44"/>
+      <stop offset="1" stop-color="#FF3355" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="netbuster-full-bb" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#22A7FF" stop-opacity="0.44"/>
+      <stop offset="1" stop-color="#22A7FF" stop-opacity="0"/>
+    </radialGradient>
+    
+  <radialGradient id="netbuster-full-ball" cx=".36" cy=".3" r=".85">
+    <stop offset="0" stop-color="#FFFFFF"/>
+    <stop offset=".55" stop-color="#EAF0F7"/>
+    <stop offset="1" stop-color="#9AA8BB"/>
+  </radialGradient>
+    <linearGradient id="netbuster-full-post" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#C87F1E"/><stop offset=".4" stop-color="#FFD98A"/>
+      <stop offset="1" stop-color="#FFB63D"/>
+    </linearGradient>
+    <radialGradient id="netbuster-full-burst" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#fff" stop-opacity=".75"/>
+      <stop offset=".35" stop-color="#FFB63D" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#FFB63D" stop-opacity="0"/>
+    </radialGradient></defs>
+<g clip-path="url(#netbuster-full-m)">
+
+    <rect width="1000" height="1000" fill="url(#netbuster-full-ground)"/>
+    <circle cx="90" cy="620" r="440" fill="url(#netbuster-full-rb)"/>
+    <circle cx="910" cy="620" r="440" fill="url(#netbuster-full-bb)"/>
+<g transform="translate(110.00 110.00) scale(0.78)">
+      <rect x="196" y="268" width="608" height="558" rx="18" fill="#0A0E14" opacity=".72"/>
+      <g fill="none" stroke="#8A97A8" stroke-opacity=".55" stroke-width="7"><path d="M196.0 268 Q165.8 512.0 196.0 826"/><path d="M246.7 268 Q197.7 512.0 246.7 826"/><path d="M297.3 268 Q225.2 512.0 297.3 826"/><path d="M348.0 268 Q248.1 512.0 348.0 826"/><path d="M398.7 268 Q266.6 512.0 398.7 826"/><path d="M449.3 268 Q280.5 512.0 449.3 826"/><path d="M500.0 268 Q500.0 512.0 500.0 826"/><path d="M550.7 268 Q719.5 512.0 550.7 826"/><path d="M601.3 268 Q733.4 512.0 601.3 826"/><path d="M652.0 268 Q751.9 512.0 652.0 826"/><path d="M702.7 268 Q774.8 512.0 702.7 826"/><path d="M753.3 268 Q802.3 512.0 753.3 826"/><path d="M804.0 268 Q834.2 512.0 804.0 826"/><path d="M196 268.0 Q500.0 215.1 804 268.0"/><path d="M196 323.8 Q500.0 244.2 804 323.8"/><path d="M196 379.6 Q500.0 267.8 804 379.6"/><path d="M196 435.4 Q500.0 285.9 804 435.4"/><path d="M196 491.2 Q500.0 298.7 804 491.2"/><path d="M196 547.0 Q500.0 728.1 804 547.0"/><path d="M196 602.8 Q500.0 742.2 804 602.8"/><path d="M196 658.6 Q500.0 761.7 804 658.6"/><path d="M196 714.4 Q500.0 786.7 804 714.4"/><path d="M196 770.2 Q500.0 817.2 804 770.2"/><path d="M196 826.0 Q500.0 853.1 804 826.0"/></g>
+      <circle cx="500" cy="512" r="430" fill="url(#netbuster-full-burst)"/>
+      <g stroke="url(#netbuster-full-post)" stroke-width="38" stroke-linecap="round" fill="none">
+        <path d="M196 262 H804"/><path d="M196 268 V830"/><path d="M804 268 V830"/>
+      </g>
+      
+  <circle cx="500" cy="512" r="158" fill="url(#netbuster-full-ball)"/>
+  <circle cx="500" cy="512" r="158" fill="none" stroke="#FFB63D" stroke-opacity=".35"
+          stroke-width="9.48"/>
+  <ellipse cx="452.6" cy="455.12" rx="60.04" ry="44.24"
+           fill="#fff" opacity=".55" transform="rotate(-28 452.6 455.12)"/></g>
+</g></svg>

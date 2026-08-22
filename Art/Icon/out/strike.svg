@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 1000 1000">
+<defs><clipPath id="strike-full-m"><rect width="1000" height="1000" rx="224"/></clipPath>
+    <radialGradient id="strike-full-ground" cx=".5" cy=".42" r=".78">
+      <stop offset="0" stop-color="#1E2735"/>
+      <stop offset=".55" stop-color="#141A24"/>
+      <stop offset="1" stop-color="#0A0E14"/>
+    </radialGradient>
+    <radialGradient id="strike-full-rb" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#FF3355" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#FF3355" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="strike-full-bb" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#22A7FF" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#22A7FF" stop-opacity="0"/>
+    </radialGradient>
+    
+  <radialGradient id="strike-full-ball" cx=".36" cy=".3" r=".85">
+    <stop offset="0" stop-color="#FFFFFF"/>
+    <stop offset=".55" stop-color="#EAF0F7"/>
+    <stop offset="1" stop-color="#9AA8BB"/>
+  </radialGradient>
+    <linearGradient id="strike-full-trail" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFB63D" stop-opacity="0"/>
+      <stop offset=".45" stop-color="#FFB63D" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#FFD98A" stop-opacity=".95"/>
+    </linearGradient>
+    <linearGradient id="strike-full-boot" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#B31D38"/><stop offset="1" stop-color="#FF6B84"/>
+    </linearGradient>
+    <radialGradient id="strike-full-flash" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#FFD98A" stop-opacity=".85"/>
+      <stop offset=".4" stop-color="#FFB63D" stop-opacity=".3"/>
+      <stop offset="1" stop-color="#FFB63D" stop-opacity="0"/>
+    </radialGradient></defs>
+<g clip-path="url(#strike-full-m)">
+
+    <rect width="1000" height="1000" fill="url(#strike-full-ground)"/>
+    <circle cx="240" cy="620" r="440" fill="url(#strike-full-rb)"/>
+    <circle cx="900" cy="620" r="440" fill="url(#strike-full-bb)"/>
+<g transform="translate(110.00 110.00) scale(0.78)">
+    <circle cx="646" cy="372" r="420" fill="url(#strike-full-flash)"/>
+    <path d="M556 254 Q300 470 176 826 Q436 668 736 466 Z" fill="url(#strike-full-trail)"/>
+    <path d="M470 300 Q286 452 196 700" fill="none" stroke="#FFB63D" stroke-opacity=".5"
+          stroke-width="16" stroke-linecap="round"/>
+    <path d="M690 520 Q520 660 300 800" fill="none" stroke="#FFB63D" stroke-opacity=".38"
+          stroke-width="12" stroke-linecap="round"/>
+    <polyline points="228,828 352,760 452,706" fill="none" stroke="url(#strike-full-boot)" stroke-width="86" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="646" cy="372" r="152" fill="#FFB63D" opacity=".22"/>
+    
+  <circle cx="646" cy="372" r="138" fill="url(#strike-full-ball)"/>
+  <circle cx="646" cy="372" r="138" fill="none" stroke="#EAF0F7" stroke-opacity=".35"
+          stroke-width="8.28"/>
+  <ellipse cx="604.6" cy="322.32" rx="52.44" ry="38.64"
+           fill="#fff" opacity=".55" transform="rotate(-28 604.6 322.32)"/>
+    <g stroke="#FFD98A" stroke-width="15" stroke-linecap="round" opacity=".9">
+      <path d="M520 250 L470 196"/><path d="M604 200 L586 132"/><path d="M700 190 L724 126"/>
+      <path d="M792 258 L850 216"/>
+    </g></g>
+</g></svg>

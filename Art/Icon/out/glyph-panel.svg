@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 1000 1000">
+<defs><clipPath id="glyph-panel-full-m"><rect width="1000" height="1000" rx="224"/></clipPath></defs>
+<g clip-path="url(#glyph-panel-full-m)">
+<rect width="1000" height="1000" fill="#141A24"/>
+<g transform="translate(110.00 110.00) scale(0.78)">
+  <g transform="translate(-20 0)">
+    <!-- The rod is the whole argument. Drawn in the figure's own colour it costs
+         no second hue, but a thin bar breaking the shoulders on both sides is the
+         one detail that separates a foosball man from a pedestrian sign. -->
+    <rect x="178" y="330" width="644" height="44" rx="22" fill="#FFB63D"/>
+    <circle cx="500" cy="240" r="94" fill="#FFB63D"/>
+    <polygon points="378,360 622,360 592,596 408,596" fill="#FFB63D" stroke="#FFB63D" stroke-width="52" stroke-linejoin="round"/>
+    <polyline points="442,588 434,842" fill="none" stroke="#FFB63D" stroke-width="80" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="566,588 706,784" fill="none" stroke="#FFB63D" stroke-width="80" stroke-linecap="round" stroke-linejoin="round"/>
+  </g></g>
+</g></svg>

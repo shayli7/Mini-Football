@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 1000 1000">
+<defs><clipPath id="kickoff-full-m"><rect width="1000" height="1000" rx="224"/></clipPath>
+    <radialGradient id="kickoff-full-ground" cx=".5" cy=".42" r=".78">
+      <stop offset="0" stop-color="#1E2735"/>
+      <stop offset=".55" stop-color="#141A24"/>
+      <stop offset="1" stop-color="#0A0E14"/>
+    </radialGradient>
+    <radialGradient id="kickoff-full-rb" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#FF3355" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#FF3355" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="kickoff-full-bb" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#22A7FF" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#22A7FF" stop-opacity="0"/>
+    </radialGradient>
+    
+  <linearGradient id="kickoff-full-chrome" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#F2F6FB"/>
+    <stop offset=".45" stop-color="#B7C3D2"/>
+    <stop offset="1" stop-color="#66748A"/>
+  </linearGradient>
+  <radialGradient id="kickoff-full-ball" cx=".36" cy=".3" r=".85">
+    <stop offset="0" stop-color="#FFFFFF"/>
+    <stop offset=".55" stop-color="#EAF0F7"/>
+    <stop offset="1" stop-color="#9AA8BB"/>
+  </radialGradient>
+    <linearGradient id="kickoff-full-turf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#17512F"/>
+      <stop offset="1" stop-color="#123F27"/>
+    </linearGradient>
+    <radialGradient id="kickoff-full-vig" cx=".5" cy=".45" r=".72">
+      <stop offset=".45" stop-color="#000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000" stop-opacity=".5"/>
+    </radialGradient></defs>
+<g clip-path="url(#kickoff-full-m)">
+
+    <rect width="1000" height="1000" fill="url(#kickoff-full-ground)"/>
+    <circle cx="130" cy="620" r="440" fill="url(#kickoff-full-rb)"/>
+    <circle cx="870" cy="620" r="440" fill="url(#kickoff-full-bb)"/>
+<g transform="translate(110.00 110.00) scale(0.78)">
+      <rect x="196" y="136" width="608" height="728" rx="52" fill="url(#kickoff-full-turf)"/>
+      <rect x="196" y="136" width="608" height="728" rx="52" fill="url(#kickoff-full-vig)"/>
+      <path d="M236 176 H764 V824 H236 Z" fill="none" stroke="#EAF0F7" stroke-opacity=".8" stroke-width="11"/>
+      <path d="M236 500 H764" fill="none" stroke="#EAF0F7" stroke-opacity=".8" stroke-width="11"/>
+      <path d="M500 384 a116 116 0 1 0 0.1 0" fill="none" stroke="#EAF0F7" stroke-opacity=".8" stroke-width="11"/>
+      <path d="M368 176 H632 V286 H368 Z" fill="none" stroke="#EAF0F7" stroke-opacity=".8" stroke-width="11"/>
+      <path d="M368 824 H632 V714 H368 Z" fill="none" stroke="#EAF0F7" stroke-opacity=".8" stroke-width="11"/>
+      <rect x="196" y="136" width="608" height="728" rx="52" fill="none"
+            stroke="#2A3547" stroke-width="16"/>
+      <rect x="424" y="122" width="152" height="26" rx="10" fill="#FFB63D"/>
+      <rect x="424" y="852" width="152" height="26" rx="10" fill="#FFB63D"/>
+      
+    <rect x="132" y="317" width="736" height="30" rx="15" fill="url(#kickoff-full-chrome)"/>
+    
+    <rect x="147" y="322.7" width="706" height="5.3999999999999995"
+          rx="2.6999999999999997" fill="#F2F6FB" opacity=".7"/>
+      
+      <ellipse cx="404" cy="348" rx="46" ry="34" fill="#000" opacity=".38"/>
+      <rect x="352" y="276" width="80" height="112" rx="30" fill="#B31D38"/>
+      <rect x="352" y="276" width="80" height="86" rx="30" fill="#FF3355"/>
+      <circle cx="392" cy="318" r="27" fill="#F0D3AC"/>
+      <ellipse cx="620" cy="348" rx="46" ry="34" fill="#000" opacity=".38"/>
+      <rect x="568" y="276" width="80" height="112" rx="30" fill="#B31D38"/>
+      <rect x="568" y="276" width="80" height="86" rx="30" fill="#FF3355"/>
+      <circle cx="608" cy="318" r="27" fill="#F0D3AC"/>
+      
+    <rect x="132" y="653" width="736" height="30" rx="15" fill="url(#kickoff-full-chrome)"/>
+    
+    <rect x="147" y="658.7" width="706" height="5.3999999999999995"
+          rx="2.6999999999999997" fill="#F2F6FB" opacity=".7"/>
+      
+      <ellipse cx="404" cy="684" rx="46" ry="34" fill="#000" opacity=".38"/>
+      <rect x="352" y="612" width="80" height="112" rx="30" fill="#0F6FB5"/>
+      <rect x="352" y="612" width="80" height="86" rx="30" fill="#22A7FF"/>
+      <circle cx="392" cy="654" r="27" fill="#F0D3AC"/>
+      <ellipse cx="620" cy="684" rx="46" ry="34" fill="#000" opacity=".38"/>
+      <rect x="568" y="612" width="80" height="112" rx="30" fill="#0F6FB5"/>
+      <rect x="568" y="612" width="80" height="86" rx="30" fill="#22A7FF"/>
+      <circle cx="608" cy="654" r="27" fill="#F0D3AC"/>
+      
+  <circle cx="500" cy="500" r="54" fill="url(#kickoff-full-ball)"/>
+  <circle cx="500" cy="500" r="54" fill="none" stroke="#EAF0F7" stroke-opacity=".35"
+          stroke-width="3.2399999999999998"/>
+  <ellipse cx="483.8" cy="480.56" rx="20.52" ry="15.120000000000001"
+           fill="#fff" opacity=".55" transform="rotate(-28 483.8 480.56)"/></g>
+</g></svg>

@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 1000 1000">
+<defs><clipPath id="keeper-full-m"><rect width="1000" height="1000" rx="224"/></clipPath>
+    <radialGradient id="keeper-full-ground" cx=".5" cy=".42" r=".78">
+      <stop offset="0" stop-color="#1E2735"/>
+      <stop offset=".55" stop-color="#141A24"/>
+      <stop offset="1" stop-color="#0A0E14"/>
+    </radialGradient>
+    <radialGradient id="keeper-full-rb" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#FF3355" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#FF3355" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="keeper-full-bb" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#22A7FF" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#22A7FF" stop-opacity="0"/>
+    </radialGradient>
+    
+  <linearGradient id="keeper-full-chrome" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#F2F6FB"/>
+    <stop offset=".45" stop-color="#B7C3D2"/>
+    <stop offset="1" stop-color="#66748A"/>
+  </linearGradient>
+  <radialGradient id="keeper-full-ball" cx=".36" cy=".3" r=".85">
+    <stop offset="0" stop-color="#FFFFFF"/>
+    <stop offset=".55" stop-color="#EAF0F7"/>
+    <stop offset="1" stop-color="#9AA8BB"/>
+  </radialGradient>
+    <linearGradient id="keeper-full-fig" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFD98A"/>
+      <stop offset=".45" stop-color="#FFB63D"/>
+      <stop offset="1" stop-color="#C87F1E"/>
+    </linearGradient>
+    <radialGradient id="keeper-full-halo" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#FFB63D" stop-opacity=".38"/>
+      <stop offset="1" stop-color="#FFB63D" stop-opacity="0"/>
+    </radialGradient></defs>
+<g clip-path="url(#keeper-full-m)">
+
+    <rect width="1000" height="1000" fill="url(#keeper-full-ground)"/>
+    <circle cx="130" cy="620" r="440" fill="url(#keeper-full-rb)"/>
+    <circle cx="870" cy="620" r="440" fill="url(#keeper-full-bb)"/>
+<g transform="translate(110.00 110.00) scale(0.78)">
+    <circle cx="500" cy="470" r="430" fill="url(#keeper-full-halo)"/>
+    <ellipse cx="510" cy="855" rx="250" ry="42" fill="#0A0E14" opacity=".55"/>
+    
+    <rect x="100" y="269" width="800" height="46" rx="23" fill="url(#keeper-full-chrome)"/>
+    
+    <rect x="100" y="269" width="156.4" height="46" rx="23" fill="#12161E"/>
+    <rect x="743.6" y="269" width="156.4" height="46" rx="23" fill="#12161E"/>
+    <rect x="123" y="277.74" width="754" height="8.28"
+          rx="4.14" fill="#F2F6FB" opacity=".7"/>
+    <polyline points="545,560 625,700 706,748" fill="none" stroke="url(#keeper-full-fig)" stroke-width="74" stroke-linecap="round" stroke-linejoin="round"/>
+    <polyline points="458,560 452,786" fill="none" stroke="url(#keeper-full-fig)" stroke-width="78" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="404" y="754" width="104" height="52" rx="22" fill="#C87F1E"/>
+    <polygon points="404,300 596,300 630,470 578,566 422,566 370,470" fill="url(#keeper-full-fig)" stroke="url(#keeper-full-fig)" stroke-width="34" stroke-linejoin="round"/>
+    <circle cx="500" cy="196" r="88" fill="url(#keeper-full-fig)"/>
+    <circle cx="474" cy="172" r="30" fill="#FFD98A" opacity=".55"/>
+    
+  <circle cx="772" cy="774" r="74" fill="url(#keeper-full-ball)"/>
+  <circle cx="772" cy="774" r="74" fill="none" stroke="#EAF0F7" stroke-opacity=".35"
+          stroke-width="4.4399999999999995"/>
+  <ellipse cx="749.8" cy="747.36" rx="28.12" ry="20.720000000000002"
+           fill="#fff" opacity=".55" transform="rotate(-28 749.8 747.36)"/></g>
+</g></svg>
