@@ -107,6 +107,87 @@ namespace TableFootball
         [Range(0f, 1f)]
         [SerializeField] private float wallBounceRetention = 0.85f;
 
+        [Header("Contact — skill (how a swing is shaped)")]
+        [Tooltip("How much an OFF-CENTRE contact steers the ball. A hit one ball-radius to the side " +
+                 "of the foot deflects the launch this fraction toward that side. 0 = every hit fires " +
+                 "straight down ForwardKickDirection regardless of where the foot met the ball.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float contactPointInfluence = 0.35f;
+        [Tooltip("How much the launch direction bends toward the actual contact normal (where on the " +
+                 "ball the foot landed) rather than the rod's fixed forward kick direction. Small — " +
+                 "this is what makes the angle of the figure matter without letting it dominate.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float contactAngleInfluence = 0.25f;
+        [Tooltip("How much of the ball's EXISTING momentum is realigned into the swing direction, " +
+                 "rather than the swing being added blindly on top. Keeps a ball's own pace flowing " +
+                 "through a touch (control) instead of every contact overwriting its motion.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float momentumRedirect = 0.5f;
+        [Tooltip("Baseline random spread on any swing, in degrees. Small — repeated identical swings " +
+                 "should not land pixel-identical, but skill must still dominate.")]
+        [SerializeField] private float baseSpread = 1.5f;
+        [Tooltip("Extra spread added at FULL power, in degrees, on top of baseSpread. This is the " +
+                 "risk on a power shot: the harder you hit, the less precise it is. Passes ignore this.")]
+        [SerializeField] private float powerSpread = 6f;
+        [Tooltip("Random variation on a full-power shot's speed, as a fraction (0.08 = ±8%). Scales " +
+                 "with power, so soft touches stay exact.")]
+        [Range(0f, 0.5f)]
+        [SerializeField] private float powerJitter = 0.08f;
+
+        [Header("Control window (slow for control — never to a dead stop)")]
+        [Tooltip("Seconds a good, gentle contact settles the ball at the foot so it can be lined up " +
+                 "and played. Kept short on purpose — control is a beat, not a hold. 0 disables it.")]
+        [SerializeField] private float controlWindowSeconds = 0.18f;
+        [Tooltip("How fast, in m/s per second, the ball eases toward the control drift speed while " +
+                 "under control. Higher = it reaches the drift speed sooner.")]
+        [SerializeField] private float controlDamping = 6f;
+        [Tooltip("The slow drift a controlled ball keeps, in m/s. The control window eases the ball " +
+                 "toward THIS speed, never toward zero, so a figure can slow the ball for control but " +
+                 "can never dead-stop it — it always keeps rolling off the foot. Set to 0 only if you " +
+                 "genuinely want a figure to be able to pin the ball still.")]
+        [SerializeField] private float controlMinSpeed = 0.35f;
+        [Tooltip("How close to the rod's bar the ball must stay, in metres, to remain under control. " +
+                 "Leave the neighbourhood and the window ends.")]
+        [SerializeField] private float controlRadius = 0.12f;
+        [Tooltip("Only balls already this slow, in m/s, are settled/trapped. It is also the line " +
+                 "between trapping and deflecting: a ball moving faster than this keeps its pace and " +
+                 "glances off a figure (see Figure Retention) instead of being caught. Keep it low, " +
+                 "or a ball rolling across the table dies on the first figure it brushes.")]
+        [SerializeField] private float controlMaxSpeed = 0.7f;
+
+        [Header("Pass vs shot (bands of the same swing)")]
+        [Tooltip("A swing below this spin, in degrees/second (but above Strike Min Spin), is a PASS: " +
+                 "controlled, speed-capped, tightly aimed. Above it the swing is a SHOT. Sits between " +
+                 "Strike Min Spin and Strike Full Spin.")]
+        [SerializeField] private float passMaxSpin = 750f;
+        [Tooltip("The most speed, in m/s, a pass may put on the ball. A pass is meant to REACH another " +
+                 "figure under control, not to be a soft shot, so it is capped well below a real shot.")]
+        [SerializeField] private float passSpeedCap = 3.5f;
+        [Tooltip("Spread on a pass, in degrees. Tight, so a well-timed pass is easy to receive — but " +
+                 "not zero, so a mistimed one (bad contact point/angle) can still go astray.")]
+        [SerializeField] private float passSpread = 1f;
+        [Tooltip("Extra control-window seconds granted when a figure meets a MOVING ball (a reception) " +
+                 "rather than a dead one, so catching a pass is achievable without being automatic.")]
+        [SerializeField] private float passReceiveBonus = 0.08f;
+
+        [Header("Figure contact (keep momentum — don't dead-stop, don't rebound live)")]
+        [Tooltip("Fraction of its speed a MOVING ball keeps when it glances or hits a still " +
+                 "(non-swinging) figure, reflected off the contact. High on purpose: a figure should " +
+                 "only slow the ball a bit and deflect it, never swallow it. A glancing brush barely " +
+                 "changes direction and keeps this much speed; a square hit reflects back at it, like " +
+                 "a soft wall. A blocked shot keeps this fraction too, so it rebounds into a loose " +
+                 "second ball. 1 = no pace lost; 0 restores the old dead-absorb (the grippy material " +
+                 "stops the ball). Only balls slower than Control Max Speed are trapped instead.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float figureRetention = 0.75f;
+        [Tooltip("Random spread on a figure deflection, in degrees, so repeated contacts don't send " +
+                 "every ball down the same groove.")]
+        [SerializeField] private float figureDeflectSpread = 3f;
+        [Tooltip("How long a team stays 'in control' after its last touch, in seconds, before a ball " +
+                 "running free is considered LOOSE again. Keeps a shot or pass in flight from reading " +
+                 "as still-owned, so the AI contests it. 0 keeps control until the next touch.")]
+        [SerializeField] private float possessionMemorySeconds = 0.6f;
+
         [Header("Audio")]
         [Tooltip("Impacts slower than this make no sound, in m/s. Without a floor the ball chatters " +
                  "constantly as it settles against a figure or rail.")]
@@ -142,7 +223,37 @@ namespace TableFootball
         private RodController lastStriker;
         private float lastStrikeTime;
 
+        /// <summary>World radius of the ball, so contact offsets can be expressed in ball-radii.</summary>
+        private float ballRadius = 0.02f;
+
+        // The short control window: which rod is settling the ball, and until when.
+        private RodController controlRod;
+        private float controlUntil;
+
+        // Possession, tracked authoritatively from real contact rather than inferred from distance.
+        private Team? lastTouchTeam;
+        private Team? controllingTeam;
+        private float lastTouchTime;
+
         public Rigidbody Body => body;
+
+        /// <summary>
+        /// The team in control of the ball, or null when the ball is loose. "In control" means the
+        /// last contact was a deliberate, controlled touch by that team; a block, a ricochet or a
+        /// heavy deflection turns the ball loose. Read by the AI so it can pounce on a loose ball or
+        /// break the moment possession flips, instead of only inferring it from nearest-figure gaps.
+        /// </summary>
+        public Team? ControllingTeam => controllingTeam;
+
+        /// <summary>The team whose figure last touched the ball at all, controlled or not, or null
+        /// before the first touch of a life.</summary>
+        public Team? LastTouchTeam => lastTouchTeam;
+
+        /// <summary>True when no team is currently in control — a loose ball up for grabs.</summary>
+        public bool IsLoose => controllingTeam == null;
+
+        /// <summary>Raised whenever the controlling team changes (including to/from loose).</summary>
+        public event System.Action PossessionChanged;
 
         /// <summary>
         /// Raised on every audible impact, with its strength 0..1 and whether a rod was struck rather
@@ -185,6 +296,10 @@ namespace TableFootball
         private void Start()
         {
             body.isKinematic = false;
+
+            // World radius, so a contact offset can be measured in ball-radii regardless of scale.
+            Vector3 s = transform.lossyScale;
+            ballRadius = ball.radius * Mathf.Max(Mathf.Abs(s.x), Mathf.Abs(s.y), Mathf.Abs(s.z));
 
             // Measured here rather than in Awake because BarAxis only exists once each rod has
             // cached its rest pose in its own Awake, and Awake order between components is not
@@ -257,6 +372,8 @@ namespace TableFootball
             }
 
             TickRescue(Time.fixedDeltaTime);
+            TickControl();
+            TickPossession();
 
             // Last thing in the step: this is the velocity the ball carries into whatever it hits
             // during the next one.
@@ -390,7 +507,7 @@ namespace TableFootball
 
             if (rod != null)
             {
-                ApplyStrikeBoost(rod);
+                ApplyContact(rod, collision, firstContact: true);
                 CapSlidePush(rod);
             }
             else
@@ -442,87 +559,315 @@ namespace TableFootball
                 return;
             }
 
-            ApplyStrikeBoost(rod);
+            ApplyContact(rod, collision, firstContact: false);
             CapSlidePush(rod);
         }
 
         /// <summary>
-        /// Adds the power of a swing to the ball, scaled by how fast the rod is really turning.
+        /// The one place a figure's contact with the ball is turned into an outcome. It replaces the
+        /// old spin-only strike with a contact that reads geometry and momentum, so the SAME rod at
+        /// the SAME spin no longer produces the same result every time.
         ///
-        /// This exists because the two things the game wants are in direct conflict under plain
-        /// physics. Power would normally come from making the figures bouncy — but a bouncy figure
-        /// fires the ball away on every accidental brush, so close control disappears. Keeping the
-        /// figures dead restores control and leaves shots feeble.
+        /// Three things still hold, because they are the basis of control (see the class header and
+        /// AGENTS.md): the figure's material stays dead and grippy; power comes only from a rod that
+        /// is genuinely SWINGING (MeasuredSpinSpeed, never CurrentSpinVelocity, which is pinned at
+        /// zero through a finger drag); and below strikeMinSpin nothing is added, so a slow touch is
+        /// a genuine touch. What is new is what happens ABOVE and BELOW that line:
         ///
-        /// Splitting them fixes both at once: the figure's material stays dead and grippy, so a
-        /// still figure traps and drags the ball exactly as before, and the power arrives here
-        /// instead — only when the rod is actually being swung. Below strikeMinSpin nothing is
-        /// added at all, which is what makes a slow, deliberate touch a genuine touch.
-        ///
-        /// Reads MeasuredSpinSpeed, not CurrentSpinVelocity: the latter is pinned at zero for the
-        /// whole of a finger drag, so a boost keyed on it would fire for the AI and never once for
-        /// the player.
+        ///  - Below strikeMinSpin: a slow ball is TRAPPED (a short control window opens); a fast one
+        ///    is BLOCKED and deflected live, so a shot into a defender rebounds into play.
+        ///  - Above it: a gentle swing is a PASS (capped, tight, controlled); a hard one is a SHOT
+        ///    (full power, but spread grows with power so power costs accuracy). Both are steered by
+        ///    where and at what angle the foot met the ball, plus a little controlled variation.
         /// </summary>
-        private void ApplyStrikeBoost(RodController rod)
+        private void ApplyContact(RodController rod, Collision collision, bool firstContact)
         {
-            if (strikeBoost <= 0f)
+            // A rod standing back upright or lifting out of the way is not playing the ball, however
+            // fast it happens to be turning — the behaviours that clear a rod from a shot's path
+            // would otherwise read as a kick.
+            if (rod.StrikeSuppressed)
             {
+                if (rod == lastStriker) lastStriker = null;
                 return;
             }
 
-            // A rod standing back upright or lifting out of the way is not swinging AT the
-            // ball, however fast it happens to be turning. Treated as a swing, the two
-            // behaviours that exist to stop the ball being blocked would kick it instead.
-            if (rod.StrikeSuppressed)
+            Vector3 contactPoint = body.position;
+            Vector3 contactNormal = Vector3.zero;
+            if (collision.contactCount > 0)
             {
-                if (rod == lastStriker)
-                {
-                    lastStriker = null;
-                }
-
-                return;
+                ContactPoint c = collision.GetContact(0);
+                contactPoint = c.point;
+                contactNormal = c.normal;
             }
 
             float spin = rod.MeasuredSpinSpeed;
+            float absSpin = Mathf.Abs(spin);
+            float incomingSpeed = Horizontal(lastVelocity).magnitude;
 
-            if (Mathf.Abs(spin) < strikeMinSpin)
+            // --- Trap / block: the rod is not swinging at the ball. ---
+            if (absSpin < strikeMinSpin)
             {
-                // Resting or merely drifting: a trap, not a kick. This is also where a rod earns
-                // the right to strike again — see below.
-                if (rod == lastStriker)
+                // Resting or drifting: a rod earns the right to strike again once its swing decays.
+                if (rod == lastStriker) lastStriker = null;
+
+                // A ball still carrying pace is not a touch to be trapped — a still figure should only
+                // slow it a bit and deflect it, not dead-stop it (the grippy material would otherwise
+                // swallow it). Reflecting the pre-impact velocity keeps most of the ball's momentum,
+                // so a glance rolls on and a blocked shot rebounds into a loose second ball. Enter
+                // only: a ball resting in contact must not be re-deflected every step.
+                if (firstContact && figureRetention > 0f && incomingSpeed > controlMaxSpeed)
                 {
-                    lastStriker = null;
+                    ApplyFigureDeflection(contactNormal);
+                    RegisterTouch(rod, controlled: false);
+                    return;
                 }
 
+                // Genuinely slow: a deliberate trap. Settle it briefly so it can be played on purpose.
+                OpenControlWindow(rod, incomingSpeed);
+                RegisterTouch(rod, controlled: true);
                 return;
             }
 
-            // One swing must add its power once. Contact with a trapped ball persists across the
-            // whole swing, so a rod stays spent until its spin has dropped back below the strike
-            // threshold; the cooldown is a floor for the case where another rod strikes in between
-            // and takes the slot.
+            // One swing adds its power once. Contact with a trapped ball persists across the whole
+            // swing, so a rod stays spent until its spin drops back below the threshold; the cooldown
+            // is a floor for when another rod strikes in between and takes the slot.
             if (rod == lastStriker || Time.time - lastStrikeTime < strikeCooldown)
             {
                 return;
             }
 
-            float power = Mathf.InverseLerp(strikeMinSpin, strikeFullSpin, Mathf.Abs(spin));
+            // A swing releases any control window the same rod was holding.
+            if (rod == controlRod) controlRod = null;
 
-            // ForwardKickDirection is the way a foot travels under POSITIVE spin, with the rod's
-            // own invertSpin already folded in, so it is correct for either team and either way
-            // round the figures were modelled. Flip it for a backwards swing.
-            Vector3 direction = rod.ForwardKickDirection * Mathf.Sign(spin);
-            direction.y = 0f;
+            bool isPass = absSpin < passMaxSpin;
+            float power = Mathf.InverseLerp(strikeMinSpin, strikeFullSpin, absSpin);
 
-            if (direction.sqrMagnitude < 1e-6f)
+            Vector3 dir = ComposeLaunchDirection(rod, spin, contactPoint, contactNormal);
+            if (dir.sqrMagnitude < 1e-6f) return;
+
+            // Variation: tight for a pass, growing with power for a shot (that is the risk).
+            float spread = isPass ? passSpread : baseSpread + powerSpread * power;
+            dir = ApplySpread(dir, spread);
+
+            if (isPass)
             {
-                return;
+                ApplyPassImpulse(dir, power);
             }
-
-            body.AddForce(direction.normalized * (strikeBoost * power), ForceMode.VelocityChange);
+            else
+            {
+                ApplyShotImpulse(dir, power);
+            }
 
             lastStriker = rod;
             lastStrikeTime = Time.time;
+            RegisterTouch(rod, controlled: true);
+        }
+
+        /// <summary>
+        /// Builds the launch direction from three things instead of one fixed vector: the rod's
+        /// forward kick direction (as before), where along the bar the foot met the ball (a glancing
+        /// contact steers the ball to that side), and the contact normal (the angle the foot
+        /// presented). The influences are small dials so a clean, central hit still fires true.
+        /// </summary>
+        private Vector3 ComposeLaunchDirection(RodController rod, float spin, Vector3 contactPoint,
+                                               Vector3 contactNormal)
+        {
+            // ForwardKickDirection is the way a foot travels under POSITIVE spin, invertSpin already
+            // folded in, so it is correct for either team. Flip it for a backwards swing.
+            Vector3 fwd = Horizontal(rod.ForwardKickDirection * Mathf.Sign(spin));
+            if (fwd.sqrMagnitude < 1e-6f) return Vector3.zero;
+            fwd.Normalize();
+
+            Vector3 dir = fwd;
+
+            // Off-centre contact along the bar: nudge the launch toward the side the ball sat on.
+            Vector3 axis = Horizontal(rod.BarAxis);
+            if (axis.sqrMagnitude > 1e-6f && ballRadius > 1e-5f)
+            {
+                axis.Normalize();
+                float lateral = Vector3.Dot(Horizontal(body.position - contactPoint), axis);
+                float t = Mathf.Clamp(lateral / ballRadius, -1f, 1f);
+                dir += axis * (t * contactPointInfluence);
+            }
+
+            // Bend toward the contact normal (which points out of the foot toward the ball), but only
+            // when it broadly agrees with the swing — never let a wrap-around normal fire it backwards.
+            Vector3 n = Horizontal(contactNormal);
+            if (n.sqrMagnitude > 1e-4f)
+            {
+                n.Normalize();
+                if (Vector3.Dot(n, fwd) > 0f)
+                {
+                    dir = Vector3.Lerp(dir.normalized, n, contactAngleInfluence);
+                }
+            }
+
+            dir = Horizontal(dir);
+            return dir.sqrMagnitude > 1e-6f ? dir.normalized : fwd;
+        }
+
+        /// <summary>A PASS: a controlled, speed-capped redirection meant to reach another figure.
+        /// It sets the ball onto the intended line at a modest speed (carrying some of its own pace)
+        /// rather than adding raw power, so it is slow enough to be received.</summary>
+        private void ApplyPassImpulse(Vector3 dir, float power)
+        {
+            Vector3 h = Horizontal(body.linearVelocity);
+            float carried = h.magnitude * momentumRedirect;
+            float target = Mathf.Min(passSpeedCap, carried + strikeBoost * power);
+
+            Vector3 delta = dir * target - h;
+            body.AddForce(delta, ForceMode.VelocityChange);
+        }
+
+        /// <summary>A SHOT: realign part of the ball's existing momentum onto the shot line, then add
+        /// the explicit strike power on top (the same strikeBoost*power the old code applied, plus a
+        /// little jitter that grows with power). Never resets the ball's velocity outright.</summary>
+        private void ApplyShotImpulse(Vector3 dir, float power)
+        {
+            Vector3 h = Horizontal(body.linearVelocity);
+
+            // Turn a fraction of whatever the ball already carried onto the new line.
+            Vector3 realigned = Vector3.Lerp(h, dir * h.magnitude, momentumRedirect);
+            body.AddForce(realigned - h, ForceMode.VelocityChange);
+
+            // The explicit power of the swing, with speed jitter that scales with how hard it was hit.
+            float boost = strikeBoost * power * (1f + Random.Range(-1f, 1f) * powerJitter * power);
+            body.AddForce(dir * boost, ForceMode.VelocityChange);
+        }
+
+        /// <summary>
+        /// Deflects a moving ball off a still figure while keeping most of its pace, instead of the
+        /// dead material swallowing it. By the time this runs the material has already killed the
+        /// pace, so — like the wall assist — it works from the pre-impact velocity, reflects it off
+        /// the contact and scales by figureRetention. A glancing brush barely turns and keeps its
+        /// speed; a square hit comes back like a soft wall; a blocked shot rebounds as a loose ball.
+        /// </summary>
+        private void ApplyFigureDeflection(Vector3 contactNormal)
+        {
+            Vector3 n = Horizontal(contactNormal);
+            Vector3 incoming = Horizontal(lastVelocity);
+            float speed = incoming.magnitude;
+            if (n.sqrMagnitude < 1e-4f || speed < 1e-4f) return;
+            n.Normalize();
+
+            Vector3 reflected = Vector3.Reflect(incoming, n);
+            reflected = Horizontal(reflected);
+            if (reflected.sqrMagnitude < 1e-6f) return;
+
+            reflected = ApplySpread(reflected.normalized, figureDeflectSpread) * (speed * figureRetention);
+            body.linearVelocity = new Vector3(reflected.x, body.linearVelocity.y, reflected.z);
+        }
+
+        /// <summary>Opens (or refreshes) the short control window that settles a good touch at the
+        /// foot. A reception of a moving ball gets a little longer than trapping a dead one.</summary>
+        private void OpenControlWindow(RodController rod, float incomingSpeed)
+        {
+            if (controlWindowSeconds <= 0f) return;
+            if (incomingSpeed > controlMaxSpeed) return; // too fast to be a settle
+
+            float window = controlWindowSeconds;
+            if (incomingSpeed > controlMaxSpeed * 0.4f) window += passReceiveBonus; // a reception
+            controlRod = rod;
+            controlUntil = Time.time + window;
+        }
+
+        /// <summary>
+        /// While a control window is open, eases the ball toward a slow DRIFT — never toward zero —
+        /// so a good touch is brought under control without ever being dead-stopped: the ball keeps
+        /// rolling off the foot at controlMinSpeed. The window ends the instant the rod swings, the
+        /// ball speeds up (a shot), the ball leaves the rod's neighbourhood, or the timer expires.
+        /// </summary>
+        private void TickControl()
+        {
+            if (controlRod == null) return;
+
+            if (Time.time > controlUntil
+                || controlRod.StrikeSuppressed
+                || Mathf.Abs(controlRod.MeasuredSpinSpeed) >= strikeMinSpin)
+            {
+                controlRod = null;
+                return;
+            }
+
+            Vector3 h = Horizontal(body.linearVelocity);
+            if (h.magnitude > controlMaxSpeed)
+            {
+                controlRod = null; // it got away or was struck away — not under control any more
+                return;
+            }
+
+            // Still near this rod's bar?
+            Vector3 axis = controlRod.BarAxis;
+            if (axis.sqrMagnitude > 1e-6f)
+            {
+                Vector3 rel = body.position - controlRod.BarPivot;
+                Vector3 perp = rel - Vector3.Project(rel, axis.normalized);
+                if (perp.magnitude > controlRadius)
+                {
+                    controlRod = null;
+                    return;
+                }
+            }
+
+            // Ease the SPEED toward the drift floor along the ball's current heading. Crucially this
+            // targets controlMinSpeed, not zero, and works from both sides: it slows a lively touch
+            // for control, and it keeps a stalling ball rolling — so a figure never pins it dead.
+            float speed = h.magnitude;
+            Vector3 dir;
+            if (speed > 1e-4f)
+            {
+                dir = h / speed;
+            }
+            else
+            {
+                // No heading left (grip has stalled it): send it off the foot, away from the bar.
+                Vector3 rel = body.position - controlRod.BarPivot;
+                Vector3 perp = Horizontal(rel - Vector3.Project(rel, axis.normalized));
+                dir = perp.sqrMagnitude > 1e-6f
+                    ? perp.normalized
+                    : Horizontal(controlRod.ForwardKickDirection).normalized;
+            }
+
+            float target = Mathf.MoveTowards(speed, controlMinSpeed, controlDamping * Time.fixedDeltaTime);
+            body.AddForce(dir * target - h, ForceMode.VelocityChange);
+        }
+
+        /// <summary>Lets possession lapse to loose once a team's last touch is old enough — a ball
+        /// running free after a shot or pass is up for grabs, not still owned.</summary>
+        private void TickPossession()
+        {
+            if (controllingTeam == null || possessionMemorySeconds <= 0f) return;
+            if (Time.time - lastTouchTime <= possessionMemorySeconds) return;
+
+            controllingTeam = null;
+            PossessionChanged?.Invoke();
+        }
+
+        /// <summary>Records who touched the ball and updates possession. A controlled touch hands
+        /// control to that team; an uncontrolled one (a block, a heavy deflection) turns it loose.</summary>
+        private void RegisterTouch(RodController rod, bool controlled)
+        {
+            lastTouchTeam = rod.Team;
+            lastTouchTime = Time.time;
+
+            Team? next = controlled ? (Team?)rod.Team : null;
+            if (next != controllingTeam)
+            {
+                controllingTeam = next;
+                PossessionChanged?.Invoke();
+            }
+        }
+
+        /// <summary>Flattens a vector onto the table plane (the game is played in 2D on the pitch).</summary>
+        private static Vector3 Horizontal(Vector3 v) => new Vector3(v.x, 0f, v.z);
+
+        /// <summary>Rotates a horizontal direction by a small random angle about the vertical, for the
+        /// subtle variation that keeps repeated contacts from being pixel-identical.</summary>
+        private static Vector3 ApplySpread(Vector3 dir, float spreadDegrees)
+        {
+            if (spreadDegrees <= 0f) return dir;
+            float angle = Random.Range(-spreadDegrees, spreadDegrees);
+            return Quaternion.AngleAxis(angle, Vector3.up) * dir;
         }
 
         /// <summary>
@@ -641,6 +986,16 @@ namespace TableFootball
 
             stillTime = 0f;
             nudges = 0;
+
+            // A reset ball is a loose ball again.
+            controlRod = null;
+            lastStriker = null;
+            if (controllingTeam != null)
+            {
+                controllingTeam = null;
+                PossessionChanged?.Invoke();
+            }
+            lastTouchTeam = null;
         }
 
         /// <summary>Re-captures the current position as the reset point.</summary>

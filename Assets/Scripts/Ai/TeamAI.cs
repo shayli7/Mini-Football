@@ -83,6 +83,12 @@ namespace TableFootball
         [Tooltip("How near a figure must be to the ball, in metres, for that side to count as " +
                  "having it. Drives the once-per-attack read roll on the defending rods.")]
         [SerializeField] private float possessionDistance = 0.075f;
+        [Tooltip("Use the ball's OWN record of who last controlled it, instead of guessing from " +
+                 "nearest-figure distance alone. The ball knows a controlled touch from a block, so " +
+                 "the AI switches to attack the instant a rebound or bad touch turns the ball loose, " +
+                 "rather than waiting for a figure to drift closest. Falls back to the distance guess " +
+                 "when the ball is loose, or if no BallController possession is available.")]
+        [SerializeField] private bool useAuthoritativePossession = true;
 
         [Header("Rod handoff")]
         [Tooltip("Play only the rod the ball belongs to, and leave every other rod standing where " +
@@ -653,6 +659,16 @@ namespace TableFootball
             }
 
             bool nowTheirs = theirs < possessionDistance * 2f && theirs < ours;
+
+            // The ball's own record beats the distance guess when it actually knows who is in
+            // control: a controlled touch by the opponent is possession however far our figures
+            // drifted, and a touch by us is not theirs however near they sit. Only a genuinely loose
+            // ball falls through to the nearest-figure reading above.
+            if (useAuthoritativePossession && ball != null && !ball.IsLoose)
+            {
+                nowTheirs = ball.ControllingTeam != team;
+            }
+
             bool turnedOnUs = nowTheirs && world.BallAdvanceVelocity < -0.3f && !ballWasComingAtUs;
 
             if ((nowTheirs && !world.OpponentHasBall) || turnedOnUs)
