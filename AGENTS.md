@@ -187,6 +187,22 @@ rather than negotiated, because a message can be lost or arrive late and `IsHost
 would cost three times the bandwidth and whose interpolation would fight `RodController`'s own
 `ApplyPose` for the same transform every frame.
 
+**A remote peer's reported spin speed is untrusted input and is clamped to the rod's physical
+ceiling.** `NetworkedRod` sends a third float — `MeasuredSpinSpeed` — and the host feeds the guest's
+copy of it straight into the ball's strike impulse for both power and direction. It is the only
+network input that is not otherwise bounded: slide arrives through `SetSlide01Immediate` (Clamp01'd)
+and the angle through `SetSpinAngle` (wrapped), but spin speed goes through `RodController.SetMeasuredSpin`,
+which now clamps to `[-maxSpinSpeed, maxSpinSpeed]`. A locally driven rod can never exceed that ceiling,
+so a larger value is not a hard shot — it is a modified guest claiming a swing no rod can make. Clamp
+there, on the method, not at the call site: it is the one place the rule can be relied on for every
+caller, present and future (the same reason `PlayerAccount` validates names on the method rather than
+only in the input field). **This bounds the magnitude; it does not prove a genuine swing occurred.**
+A peer that reports a constant spin just above `strikeMinSpin` can still trigger full-power strikes at
+will, because the host deliberately does NOT reconstruct spin from the wrapped angle it receives —
+doing so got the SIGN wrong on the hardest shots and sent them backwards (see `SetMeasuredSpin`). Fully
+authoritative shot validation would need a server that re-simulates the swing, which this relay-hosted,
+host-authoritative design does not have; that residual is an accepted limit, not a bug to patch here.
+
 ## Working style in this repo
 
 **Write runtime scripts and give manual Inspector instructions — do not add `[ContextMenu]` or Editor
