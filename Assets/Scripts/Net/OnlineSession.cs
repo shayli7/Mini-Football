@@ -41,6 +41,35 @@ namespace TableFootball.Net
         /// <summary>The code the other player types in to join. Empty outside a session.</summary>
         public static string JoinCode => Current != null ? Current.Code : string.Empty;
 
+        /// <summary>
+        /// The other player's id, or empty when nobody else is at the table.
+        ///
+        /// Read while the session is still alive — by the time a match ends the host may already
+        /// have gone, taking the roster with it. <see cref="UI.GameFlow"/> captures it at kick-off
+        /// for exactly the reason it captures the local team there.
+        /// </summary>
+        public static string OpponentId
+        {
+            get
+            {
+                if (Current == null)
+                {
+                    return string.Empty;
+                }
+
+                string me = GameServices.PlayerId;
+                foreach (IReadOnlyPlayer player in Current.Players)
+                {
+                    if (player != null && !string.IsNullOrEmpty(player.Id) && player.Id != me)
+                    {
+                        return player.Id;
+                    }
+                }
+
+                return string.Empty;
+            }
+        }
+
         /// <summary>Raised when a session is entered, by hosting or joining.</summary>
         public static event Action<ISession> OnJoined;
 
