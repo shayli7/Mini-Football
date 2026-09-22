@@ -58,7 +58,7 @@ namespace TableFootball.Net
                 }
 
                 string me = GameServices.PlayerId;
-                foreach (IReadOnlyPlayer player in Current.Players)
+                foreach (var player in Current.Players)
                 {
                     if (player != null && !string.IsNullOrEmpty(player.Id) && player.Id != me)
                     {

@@ -158,7 +158,7 @@ namespace TableFootball.UI
             Bar(g, ArcadeTheme.Ink.WithAlpha(0.22f), new Vector2(0f, -1f), 30f, 2f, 0f);
 
             // A crest: a flat-topped panel with a rounded foot under it.
-            Rect(g, ArcadeTheme.Blue, new Vector2(0f, 5f), 26f, 16f, ArcadeTheme.RadSm);
+            Box(g, ArcadeTheme.Blue, new Vector2(0f, 5f), 26f, 16f, ArcadeTheme.RadSm);
             Dot(g, ArcadeTheme.Blue, new Vector2(0f, -3f), 26f);
         }
 
@@ -181,7 +181,7 @@ namespace TableFootball.UI
             Bar(g, ArcadeTheme.Red, new Vector2(-8f, 16.5f), 9f, 3.6f, 90f);
             Dot(g, ArcadeTheme.Gold, new Vector2(-8f, 22.6f), 6.4f);
 
-            Rect(g, ArcadeTheme.Red, new Vector2(-8f, -0.5f), 30f, 27f, ArcadeTheme.RadSm);
+            Box(g, ArcadeTheme.Red, new Vector2(-8f, -0.5f), 30f, 27f, ArcadeTheme.RadSm);
             Dot(g, ArcadeTheme.BgDeep, new Vector2(-14f, 1f), 8.6f);
             Dot(g, ArcadeTheme.BgDeep, new Vector2(-2f, 1f), 8.6f);
             Bar(g, ArcadeTheme.BgDeep.WithAlpha(0.55f), new Vector2(-8f, -8.5f), 10f, 3f, 0f);
@@ -218,8 +218,8 @@ namespace TableFootball.UI
         /// <summary>Two sunk bars and a line climbing out past them.</summary>
         private static void OffTheRopes(Transform g)
         {
-            Rect(g, ArcadeTheme.Red.WithAlpha(0.55f), new Vector2(-18.5f, -13f), 9f, 14f, ArcadeTheme.RadSm);
-            Rect(g, ArcadeTheme.Red.WithAlpha(0.35f), new Vector2(-6.5f, -10f), 9f, 20f, ArcadeTheme.RadSm);
+            Box(g, ArcadeTheme.Red.WithAlpha(0.55f), new Vector2(-18.5f, -13f), 9f, 14f, ArcadeTheme.RadSm);
+            Box(g, ArcadeTheme.Red.WithAlpha(0.35f), new Vector2(-6.5f, -10f), 9f, 20f, ArcadeTheme.RadSm);
 
             Bar(g, ArcadeTheme.Go, new Vector2(-3f, -3f), 39.7f, 5f, 41f);
             Bar(g, ArcadeTheme.Go, new Vector2(10f, 16f), 14.1f, 5f, 8f);
@@ -311,7 +311,7 @@ namespace TableFootball.UI
             Place(UIFactory.Rt(go), pos, new Vector2(length, thickness), angle);
         }
 
-        private static void Rect(Transform parent, Color color, Vector2 pos,
+        private static void Box(Transform parent, Color color, Vector2 pos,
                                  float width, float height, int radius)
         {
             var go = UIFactory.Child(parent, "Rect");
