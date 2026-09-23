@@ -57,7 +57,8 @@ namespace TableFootball.UI
             UIFactory.Stretch(UIFactory.Rt(root));
             group = root.AddComponent<CanvasGroup>();
 
-            UIFactory.Backdrop(root.transform);
+            // Shared translucent dim, matching every other secondary screen. See UIFactory.ScrimDim.
+            UIFactory.ScrimDim(root.transform);
 
             var panel = UIFactory.Panel(root.transform, "FriendPanel");
             var prt = UIFactory.Rt(panel);

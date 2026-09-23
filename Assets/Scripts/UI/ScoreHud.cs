@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using TableFootball.Net;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -21,6 +22,9 @@ namespace TableFootball.UI
         private int lastRed, lastBlue;
 
         private CanvasGroup flashCg;
+        private CanvasGroup goalPopupCg;
+        private TextMeshProUGUI goalPopupText;
+        private Coroutine goalPopupRoutine;
         private Image flashImg;
         private GameObject banner;
         private MenuButton playAgainButton;
@@ -33,6 +37,30 @@ namespace TableFootball.UI
         private Coroutine redPop, bluePop, flashRoutine, clockPop, bannerRoutine;
         private int lastTick = -1;
         private UIBurst burst;
+
+        // The post-match progression block on the banner (XP earned, level pill, XP bar). Populated by
+        // GameFlow via ShowMatchProgress; left hidden for local PvP, where there is no single player.
+        private GameObject progressBlock;
+        private TextMeshProUGUI progressEarnedText, progressLabel, progressLevelText;
+        private UIFillBar progressFill;
+        private RectTransform bannerPanelRt;
+        private Coroutine progressRoutine;
+
+        // The ranked-points flourish: a trophy popping in beside "+N". Populated by GameFlow via
+        // ShowRankedProgress — only for a WON ranked match, never for casual or local play, where
+        // there is nothing ranked to have gained.
+        private GameObject rankedBlock;
+        private TextMeshProUGUI rankedPointsText;
+        private Coroutine rankedRoutine;
+
+        // The banner grows to fit whichever of the progression/ranked blocks are shown, and sits at
+        // the base height for a local-PvP result that has neither.
+        private const float BannerBaseHeight = 430f;
+        private const float BannerTallHeight = 520f;
+        // Tall enough for BOTH the ranked row and the XP block beneath it — a ranked win always shows
+        // its XP progress too (progression is credited for every vs-AI/online match, not only casual
+        // ones), so the two blocks stack on the same banner rather than one replacing the other.
+        private const float BannerRankedHeight = BannerTallHeight + 56f;
 
         /// <summary>Set by the bootstrap so the HUD's pause button can open the pause menu.</summary>
         public Action OnOpenMenu;
@@ -87,10 +115,23 @@ namespace TableFootball.UI
             if (clockRoot != null) clockRoot.SetActive(visible && !sudden);
             if (suddenDeathRoot != null) suddenDeathRoot.SetActive(visible && sudden);
 
-            if (!visible && banner != null)
+            if (!visible)
             {
-                banner.SetActive(false);
+                if (banner != null) banner.SetActive(false);
+                HideGoalPopup();
             }
+        }
+
+        /// <summary>Stops any running GOAL! popup and clears it. Used when the HUD leaves or a match restarts.</summary>
+        private void HideGoalPopup()
+        {
+            if (goalPopupRoutine != null)
+            {
+                StopCoroutine(goalPopupRoutine);
+                goalPopupRoutine = null;
+            }
+
+            if (goalPopupCg != null) goalPopupCg.alpha = 0f;
         }
 
         public void Build(Transform canvasRoot, MatchManager matchManager)
@@ -98,6 +139,7 @@ namespace TableFootball.UI
             match = matchManager;
 
             BuildFlash(canvasRoot);
+            BuildGoalPopup(canvasRoot);
             BuildHud(canvasRoot);
             BuildClock(canvasRoot);
             BuildBanner(canvasRoot);
@@ -306,6 +348,95 @@ namespace TableFootball.UI
             go.transform.SetAsFirstSibling(); // behind the HUD
         }
 
+        /// <summary>
+        /// The big "GOAL!" that lands on top of the goal flash.
+        ///
+        /// Its own object with its own CanvasGroup so it can pop and fade on its own timeline,
+        /// independent of the flash behind it. Non-interactive, above the flash, centred on the
+        /// screen — clear of the top-centre score, over the empty middle of the table.
+        /// </summary>
+        private void BuildGoalPopup(Transform root)
+        {
+            var go = UIFactory.Child(root, "GoalPopup");
+            UIFactory.Stretch(UIFactory.Rt(go));
+            goalPopupCg = go.AddComponent<CanvasGroup>();
+            goalPopupCg.alpha = 0f;
+            goalPopupCg.blocksRaycasts = false;
+            goalPopupCg.interactable = false;
+
+            goalPopupText = UIFactory.Text(go.transform, "GOAL!", 140f, ArcadeTheme.Gold,
+                                           display: true, bold: true, upper: true, tracking: 6f);
+            var rt = UIFactory.Rt(goalPopupText.gameObject);
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(900f, 220f);
+            rt.anchoredPosition = Vector2.zero;
+
+            go.transform.SetAsLastSibling(); // above the flash and the HUD
+        }
+
+        /// <summary>
+        /// Pops "GOAL!" in the scorer's colour, holds, then fades it out.
+        ///
+        /// Unscaled, like the flash: a goal is scored at full speed but the celebration that follows
+        /// stops play, and the popup must animate to completion either side of that. The scale
+        /// overshoots on the way in (EaseOutBack) so it reads as a stamp, then drifts fractionally
+        /// larger as it fades so it feels like it is receding rather than simply switching off.
+        /// </summary>
+        private IEnumerator GoalPopup(Team scorer)
+        {
+            if (goalPopupCg == null || goalPopupText == null) yield break;
+
+            goalPopupText.color = scorer == Team.Red ? ArcadeTheme.Red : ArcadeTheme.Blue;
+            Transform t = goalPopupText.transform;
+
+            const float inDur = 0.22f;
+            const float hold = 0.85f;
+            const float outDur = 0.3f;
+
+            if (ArcadeTheme.ReducedMotion)
+            {
+                // No motion, but still announce and clear it, so reduced-motion players get the word
+                // "GOAL!" rather than nothing.
+                t.localScale = Vector3.one;
+                goalPopupCg.alpha = 1f;
+                yield return new WaitForSecondsRealtime(hold);
+                goalPopupCg.alpha = 0f;
+                goalPopupRoutine = null;
+                yield break;
+            }
+
+            float e = 0f;
+            while (e < inDur)
+            {
+                e += Time.unscaledDeltaTime;
+                float k = Mathf.Clamp01(e / inDur);
+                t.localScale = Vector3.one * Mathf.LerpUnclamped(1.4f, 1f, ArcadeTheme.EaseOutBack(k));
+                goalPopupCg.alpha = ArcadeTheme.EaseOut(k);
+                yield return null;
+            }
+
+            t.localScale = Vector3.one;
+            goalPopupCg.alpha = 1f;
+
+            yield return new WaitForSecondsRealtime(hold);
+
+            e = 0f;
+            while (e < outDur)
+            {
+                e += Time.unscaledDeltaTime;
+                float k = Mathf.Clamp01(e / outDur);
+                t.localScale = Vector3.one * Mathf.LerpUnclamped(1f, 1.12f, k);
+                goalPopupCg.alpha = 1f - ArcadeTheme.EaseIn(k);
+                yield return null;
+            }
+
+            goalPopupCg.alpha = 0f;
+            t.localScale = Vector3.one;
+            goalPopupRoutine = null;
+        }
+
         private void BuildBanner(Transform root)
         {
             banner = UIFactory.Child(root, "WinBanner");
@@ -318,7 +449,8 @@ namespace TableFootball.UI
             var prt = UIFactory.Rt(panel);
             prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
             prt.pivot = new Vector2(0.5f, 0.5f);
-            prt.sizeDelta = new Vector2(460f, 430f);
+            prt.sizeDelta = new Vector2(460f, BannerBaseHeight);
+            bannerPanelRt = prt;
 
             var fill = panel.transform.Find("Fill");
             var v = fill.gameObject.AddComponent<VerticalLayoutGroup>();
@@ -341,6 +473,13 @@ namespace TableFootball.UI
                                           ArcadeTheme.InkMuted, display: false, bold: true,
                                           upper: true, tracking: 8f);
             bannerReason.gameObject.AddComponent<LayoutElement>().preferredHeight = 20f;
+
+            // Above the XP block: for a ranked win, the trophy is the headline reward and the XP a
+            // secondary one, so it reads result -> ranked -> progression -> buttons.
+            BuildRankedBlock(fill);
+
+            // Between the result and the buttons, so the XP earned reads as a consequence of it.
+            BuildProgressBlock(fill);
 
             playAgainButton = UIFactory.Button(fill, "Play Again", MenuButton.Variant.Primary,
                                                PlayAgain);
@@ -438,9 +577,13 @@ namespace TableFootball.UI
 
         private void OnGoalScored(Team scorer)
         {
-            if (flashImg == null) return;
-            flashImg.color = (scorer == Team.Red ? ArcadeTheme.Red : ArcadeTheme.Blue).WithAlpha(1f);
-            flashRoutine = Restart(flashRoutine, UITween.Flash(flashCg, 0.35f, ArcadeTheme.TFlash));
+            if (flashImg != null)
+            {
+                flashImg.color = (scorer == Team.Red ? ArcadeTheme.Red : ArcadeTheme.Blue).WithAlpha(1f);
+                flashRoutine = Restart(flashRoutine, UITween.Flash(flashCg, 0.35f, ArcadeTheme.TFlash));
+            }
+
+            goalPopupRoutine = Restart(goalPopupRoutine, GoalPopup(scorer));
         }
 
         /// <summary>
@@ -484,9 +627,226 @@ namespace TableFootball.UI
             }
         }
 
+        /// <summary>
+        /// A trophy and "+N", hidden until <see cref="ShowRankedProgress"/> fills it in. The same
+        /// TrophyGlyph the main menu's ranked pill draws, so a ranked-points gain is recognisably the
+        /// same reward on both screens.
+        /// </summary>
+        private void BuildRankedBlock(Transform parent)
+        {
+            rankedBlock = UIFactory.Child(parent, "RankedProgress");
+            rankedBlock.AddComponent<LayoutElement>().preferredHeight = 36f;
+
+            var h = rankedBlock.AddComponent<HorizontalLayoutGroup>();
+            h.childAlignment = TextAnchor.MiddleCenter;
+            h.spacing = ArcadeTheme.Sm;
+            h.childForceExpandWidth = false; h.childControlWidth = true; h.childControlHeight = true;
+
+            var cupHolder = UIFactory.Child(rankedBlock.transform, "Cup");
+            var cle = cupHolder.AddComponent<LayoutElement>();
+            cle.preferredWidth = 30f; cle.minWidth = 30f; cle.preferredHeight = 30f;
+            // BgPanel, matching the banner's own fill colour — the trophy sits directly on it, and the
+            // handle holes are punched through in whatever colour it is resting on.
+            UIFactory.TrophyGlyph(cupHolder.transform, ArcadeTheme.Gold, ArcadeTheme.BgPanel, 1f);
+
+            rankedPointsText = UIFactory.Text(rankedBlock.transform, "+0", ArcadeTheme.FsBody,
+                                              ArcadeTheme.Gold, display: true, bold: true, upper: true,
+                                              tracking: 2f);
+            rankedPointsText.gameObject.AddComponent<LayoutElement>().preferredWidth = 90f;
+
+            rankedBlock.SetActive(false);
+        }
+
+        /// <summary>
+        /// The XP-earned line, level pill and XP bar, hidden until <see cref="ShowMatchProgress"/> fills
+        /// it in. Reuses the same widgets the profile chip does, so a level reads the same everywhere.
+        /// </summary>
+        private void BuildProgressBlock(Transform parent)
+        {
+            progressBlock = UIFactory.Child(parent, "MatchProgress");
+            progressBlock.AddComponent<LayoutElement>().preferredHeight = 66f;
+
+            var col = progressBlock.AddComponent<VerticalLayoutGroup>();
+            col.childAlignment = TextAnchor.MiddleCenter;
+            col.spacing = ArcadeTheme.Xs;
+            col.childForceExpandWidth = true; col.childControlWidth = true; col.childControlHeight = true;
+
+            // "+120 XP" on the left, the level pill on the right.
+            var row = UIFactory.Child(progressBlock.transform, "Row");
+            row.AddComponent<LayoutElement>().preferredHeight = 28f;
+            var h = row.AddComponent<HorizontalLayoutGroup>();
+            h.childAlignment = TextAnchor.MiddleCenter;
+            h.spacing = ArcadeTheme.Sm;
+            h.childForceExpandWidth = false; h.childControlWidth = true; h.childControlHeight = true;
+
+            progressEarnedText = UIFactory.Text(row.transform, "+0 XP", ArcadeTheme.FsBody, ArcadeTheme.Gold,
+                                                display: true, bold: true, upper: true, tracking: 2f,
+                                                align: TextAlignmentOptions.Left);
+            progressEarnedText.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
+
+            var pill = UIFactory.Child(row.transform, "LevelPill");
+            var ple = pill.AddComponent<LayoutElement>();
+            ple.preferredWidth = 84f; ple.minWidth = 84f; ple.preferredHeight = 26f;
+            UIFactory.RoundedImage(pill, ArcadeTheme.RadSm, ArcadeTheme.Gold.WithAlpha(0.16f), false);
+            progressLevelText = UIFactory.Text(pill.transform, "LV —", ArcadeTheme.FsCaption * 0.92f,
+                                               ArcadeTheme.Gold, display: true, bold: true, upper: true,
+                                               tracking: 3f);
+            UIFactory.Stretch(UIFactory.Rt(progressLevelText.gameObject), 0);
+
+            // 26, matching ProfileChip's own bar exactly: XpBar sizes its fill radius AND its label
+            // text off this height, so the two numbers travel together. At the old 16 the label
+            // shrank to ~10px (height * 0.62) — a different, smaller design from the chip's bar
+            // rather than the same bar shown twice.
+            var xp = UIFactory.XpBar(progressBlock.transform, 0f, "0 / 0 XP", 26f);
+            progressFill = xp.GetComponentInChildren<UIFillBar>();
+            progressLabel = xp.GetComponentInChildren<TextMeshProUGUI>();
+
+            progressBlock.SetActive(false);
+        }
+
+        /// <summary>
+        /// Shows the post-match progression on the banner: XP earned, the level, and the XP bar sweeping
+        /// from the old fill to the new — with a level-up flourish when the match crossed a threshold.
+        /// Called by GameFlow after it credits the result; never for local PvP, so that banner stays
+        /// clean. Assumes the banner is already up (GameFlow calls this right after the result fires).
+        /// </summary>
+        /// <summary>
+        /// The ranked-points flourish: a trophy popping in beside "+N". Called by GameFlow only for a
+        /// WON ranked match — a casual or local result never calls this, so the trophy never appears
+        /// for a match that was not ranked, and never for a loss. Independent of
+        /// <see cref="ShowMatchProgress"/>'s XP sequence: GameFlow calls both, back to back, for a
+        /// ranked win, and neither waits on the other to start.
+        /// </summary>
+        public void ShowRankedProgress(int pointsGained)
+        {
+            if (rankedBlock == null || banner == null || !banner.activeSelf) return;
+
+            if (bannerPanelRt != null)
+            {
+                float target = Mathf.Max(bannerPanelRt.sizeDelta.y, BannerRankedHeight);
+                bannerPanelRt.sizeDelta = new Vector2(bannerPanelRt.sizeDelta.x, target);
+            }
+
+            rankedPointsText.text = $"+{pointsGained}";
+            rankedBlock.transform.localScale = Vector3.one;
+            rankedBlock.SetActive(true);
+
+            if (rankedRoutine != null) StopCoroutine(rankedRoutine);
+            rankedRoutine = StartCoroutine(RankedSequence());
+        }
+
+        /// <summary>Lets the score and result land first, then pops the trophy in with the same burst
+        /// flourish a level-up gets — a ranked win is exactly that kind of moment.</summary>
+        private IEnumerator RankedSequence()
+        {
+            yield return new WaitForSecondsRealtime(ArcadeTheme.TNormal);
+
+            if (rankedBlock != null)
+            {
+                yield return UITween.PopIn(rankedBlock.transform, ArcadeTheme.TSlow);
+            }
+
+            if (burst != null) burst.Play(ArcadeTheme.Gold);
+            GameSfx.PlayUiClick();
+
+            rankedRoutine = null;
+        }
+
+        public void ShowMatchProgress(PlayerProgress.MatchOutcome d)
+        {
+            if (progressBlock == null || banner == null || !banner.activeSelf) return;
+
+            if (bannerPanelRt != null)
+            {
+                // Max, not a flat assignment: a ranked win calls ShowRankedProgress first, which may
+                // already have grown the banner to BannerRankedHeight to fit the trophy row too. This
+                // must not shrink that back down — it only ever needs to guarantee AT LEAST enough
+                // room for the XP block.
+                float target = Mathf.Max(bannerPanelRt.sizeDelta.y, BannerTallHeight);
+                bannerPanelRt.sizeDelta = new Vector2(bannerPanelRt.sizeDelta.x, target);
+            }
+
+            progressEarnedText.transform.localScale = Vector3.one;
+            progressEarnedText.color = ArcadeTheme.Gold;
+            progressEarnedText.text = $"+{d.XpEarned} XP";
+            progressLevelText.transform.localScale = Vector3.one;
+            progressLevelText.text = $"LV {d.PrevLevel}";
+            progressLabel.text = PlayerProgress.XpLabel;
+
+            // Settle at the old fill BEFORE the block goes active. UIFillBar auto-plays itself the
+            // moment its GameObject is enabled (OnEnable), using whatever from/target it was last set
+            // to — and on every match after the first, that is the PREVIOUS match's numbers, still
+            // sitting in those fields from its own animation. Activating the block first let that
+            // stale replay flash for a frame before this call overwrote it; setting the real values
+            // first means OnEnable's own auto-play already has this match's correct starting point.
+            if (progressFill != null) progressFill.SetFraction(d.PrevFraction, d.PrevFraction);
+            progressBlock.SetActive(true);
+
+            if (progressRoutine != null) StopCoroutine(progressRoutine);
+            progressRoutine = StartCoroutine(ProgressSequence(d));
+        }
+
+        private IEnumerator ProgressSequence(PlayerProgress.MatchOutcome d)
+        {
+            // Let the panel land and the score count first, so the XP arrives as its own beat.
+            yield return new WaitForSecondsRealtime(ArcadeTheme.TNormal);
+
+            if (!d.LeveledUp)
+            {
+                if (progressFill != null) progressFill.SetFraction(d.NewFraction, d.PrevFraction);
+                if (progressEarnedText != null)
+                {
+                    yield return UITween.Pop(progressEarnedText.transform, 1.14f, ArcadeTheme.TNormal);
+                }
+                progressRoutine = null;
+                yield break;
+            }
+
+            // Level up: fill to the top, celebrate, then carry the remainder into the new level.
+            if (progressFill != null) progressFill.SetFraction(1f, d.PrevFraction);
+            if (progressEarnedText != null)
+            {
+                yield return UITween.Pop(progressEarnedText.transform, 1.14f, ArcadeTheme.TNormal);
+            }
+
+            // Wait for the bar to reach the top (its pre-roll plus the sweep).
+            if (!ArcadeTheme.ReducedMotion)
+            {
+                yield return new WaitForSecondsRealtime(0.12f + ArcadeTheme.TFlash);
+            }
+
+            if (progressEarnedText != null)
+            {
+                progressEarnedText.text = "LEVEL UP!";
+                yield return UITween.Pop(progressEarnedText.transform, 1.25f, ArcadeTheme.TSlow);
+            }
+            if (progressLevelText != null)
+            {
+                progressLevelText.text = $"LV {d.NewLevel}";
+                yield return UITween.Pop(progressLevelText.transform, 1.2f, ArcadeTheme.TNormal);
+            }
+            if (burst != null) burst.Play(ArcadeTheme.Gold);
+            GameSfx.PlayUiClick();
+
+            if (progressFill != null) progressFill.SetFraction(d.NewFraction, 0f);
+            progressRoutine = null;
+        }
+
         private void OnMatchWon(Team winner)
         {
             if (banner == null || ResultsHidden) return;
+
+            // Every banner starts without the progression or ranked blocks and at the base height.
+            // GameFlow calls ShowMatchProgress straight after this for vs-AI and online, and
+            // ShowRankedProgress too for a won ranked match; local PvP and every loss leave both hidden.
+            if (progressRoutine != null) { StopCoroutine(progressRoutine); progressRoutine = null; }
+            if (progressBlock != null) progressBlock.SetActive(false);
+            if (rankedRoutine != null) { StopCoroutine(rankedRoutine); rankedRoutine = null; }
+            if (rankedBlock != null) rankedBlock.SetActive(false);
+            if (bannerPanelRt != null)
+            {
+                bannerPanelRt.sizeDelta = new Vector2(bannerPanelRt.sizeDelta.x, BannerBaseHeight);
+            }
 
             Color teamColor = winner == Team.Red ? ArcadeTheme.Red : ArcadeTheme.Blue;
 
@@ -603,6 +963,7 @@ namespace TableFootball.UI
         private void OnMatchRestarted()
         {
             if (banner != null) banner.SetActive(false);
+            HideGoalPopup();
 
             // Put the clock back, or a fresh match starts with the sudden-death banner still up.
             if (suddenDeathRoot != null) suddenDeathRoot.SetActive(false);

@@ -20,9 +20,17 @@ namespace TableFootball.UI
     public class GameFlow : MonoBehaviour
     {
         private StartScreen start;
+        private OnboardingScreen onboarding;
         private LoadingScreen loading;
+
+        /// <summary>The 3D table behind the front end. Optional — null if not added to the scene.</summary>
+        private MenuStageCamera stage;
+
         private MainMenu menu;
         private OnlineMenu online;
+        private LeagueMenu league;
+        private StoreMenu store;
+        private LevelPathMenu levelPath;
         private FriendsMenu friends;
         private ProfileMenu profile;
         private FriendProfileMenu friendProfile;
@@ -40,6 +48,14 @@ namespace TableFootball.UI
         /// <summary>Which team the local player has online, captured at kick-off — see <see cref="AwardForfeit"/>.</summary>
         private Team onlineLocalTeam = Team.Red;
 
+        /// <summary>The local player's team for the current match, or null when there is no single local
+        /// player (local PvP, two people on one device). Mirrors <c>hud.LocalTeam</c>; the gate for
+        /// crediting progression.</summary>
+        private Team? localTeam;
+
+        /// <summary>Guards progression against counting one match twice. Reset at every kick-off.</summary>
+        private bool progressCounted;
+
         /// <summary>Set while this player is the one leaving, so their own exit is not read as the opponent's.</summary>
         private bool leavingDeliberately;
 
@@ -49,6 +65,10 @@ namespace TableFootball.UI
         /// <summary>Which door the account screen was entered by, so Back can retrace it.</summary>
         private bool profileFromFriends;
 
+        /// <summary>Which door the league screen was entered by, so Back can retrace it — the main
+        /// menu's trophy button, or the online menu's own Ranked button.</summary>
+        private bool leagueFromMainMenu;
+
         /// <summary>
         /// True when the current — or most recently finished — match is an online one.
         ///
@@ -56,6 +76,7 @@ namespace TableFootball.UI
         /// so that what happens on the result screen still knows it is looking at an online game.
         /// </summary>
         private bool onlineMatch;
+        private bool rankedMatch;
 
         /// <summary>Guards the record against counting one match twice. Reset at every kick-off.</summary>
         private bool resultCounted;
@@ -77,8 +98,15 @@ namespace TableFootball.UI
         /// <summary>The pre-match countdown, running between PrepareMatch and the kick-off.</summary>
         private Coroutine startRoutine;
 
-        public void Build(StartScreen startScreen, LoadingScreen loadingScreen,
-                          MainMenu mainMenu, OnlineMenu onlineMenu,
+        /// <summary>Live play time not yet written to <see cref="PlayerProgress"/>. Accumulated whole
+        /// while a match runs and flushed in whole seconds at the transitions, so it is never a
+        /// per-frame PlayerPrefs write.</summary>
+        private float playClock;
+
+        public void Build(StartScreen startScreen, OnboardingScreen onboardingScreen,
+                          LoadingScreen loadingScreen,
+                          MainMenu mainMenu, OnlineMenu onlineMenu, LeagueMenu leagueMenu,
+                          StoreMenu storeMenu, LevelPathMenu levelPathMenu,
                           FriendsMenu friendsMenu, ProfileMenu profileMenu,
                           FriendProfileMenu friendProfileMenu,
                           GameMenu pauseMenu, ScoreHud scoreHud, CountdownScreen countdownScreen,
@@ -86,9 +114,16 @@ namespace TableFootball.UI
                           float bootSeconds, float transitionSeconds)
         {
             start = startScreen;
+            onboarding = onboardingScreen;
             loading = loadingScreen;
+            // Optional and found rather than passed: the menu works without it, just with a flat
+            // backdrop instead of the live table.
+            stage = FindAnyObjectByType<MenuStageCamera>();
             menu = mainMenu;
             online = onlineMenu;
+            league = leagueMenu;
+            store = storeMenu;
+            levelPath = levelPathMenu;
             friends = friendsMenu;
             profile = profileMenu;
             friendProfile = friendProfileMenu;
@@ -108,8 +143,16 @@ namespace TableFootball.UI
                 menu.OnOpenSettings += OpenSettings;
                 menu.OnOpenFriends += OpenFriends;
                 menu.OnOpenProfile += OpenProfileFromMenu;
+                menu.OnOpenRanked += OpenRankedFromMenu;
+                menu.OnOpenStore += OpenStore;
+                menu.OnOpenLevelPath += OpenLevelPath;
                 menu.OnAcceptInvite = AcceptInvite;
             }
+
+            // Both are front-end viewers reached only from the main menu, so both go straight back to
+            // it — there is no second door to retrace, unlike the league screen.
+            if (store != null) store.OnBack = OpenMenu;
+            if (levelPath != null) levelPath.OnBack = OpenMenu;
 
             if (online != null)
             {
@@ -117,7 +160,16 @@ namespace TableFootball.UI
                 // lobby has recorded the guest, not that the guest can see the table — the match
                 // starts when the host says so, over the connection itself.
                 online.OnMatchReady = () => online.ShowConnecting();
+                online.OnOpenRanked = OpenRanked;
                 online.OnBack = OpenMenu;
+            }
+
+            if (league != null)
+            {
+                // Retraces whichever door it was opened by — the main menu's trophy button, or the
+                // online menu's own Ranked button — set in OpenRankedFromMenu / OpenRanked below.
+                league.OnBack = () => { if (leagueFromMainMenu) OpenMenu(); else OpenOnline(); };
+                league.OnPlayRanked = PlayRanked;
             }
 
             if (friends != null)
@@ -168,7 +220,11 @@ namespace TableFootball.UI
             // record. This class already knows both facts.
             if (match != null)
             {
-                match.MatchWon += RecordOnlineResult;
+                match.MatchWon += OnMatchWon;
+                // Real goals for the account's stat wall. Credited here rather than in MatchManager,
+                // which is deliberately ignorant of who is playing — only this class knows which team
+                // the local player holds, and that local PvP has no single owner to credit.
+                match.GoalScored += OnGoalScored;
             }
 
             // Play starts and ends on the transport's word, not the lobby's. The director raises both
@@ -188,6 +244,15 @@ namespace TableFootball.UI
 
             FriendsHub.OnInviteDeclined += HandleInviteDeclined;
 
+            // Ranked's two rewards, both driven off the standing rather than off an event the ladder
+            // does not raise: the weekly coin payout, and the league badges. Owned here, with the rest
+            // of the cross-system consequences of a match, because neither belongs to a screen — a
+            // player who never opens Ranked must still be paid for the week they finished, and the
+            // ladder rolls over inside the backend where nothing can watch it happen. See
+            // RankedRewards.Sync and LeagueBadges.Sync, both of which are safe to run repeatedly.
+            Ladder.OnChanged += SyncRankedRewards;
+            SyncRankedRewards();
+
             Boot();
         }
 
@@ -200,12 +265,21 @@ namespace TableFootball.UI
                 menu.OnOpenSettings -= OpenSettings;
                 menu.OnOpenFriends -= OpenFriends;
                 menu.OnOpenProfile -= OpenProfileFromMenu;
+                menu.OnOpenRanked -= OpenRankedFromMenu;
+                menu.OnOpenStore -= OpenStore;
+                menu.OnOpenLevelPath -= OpenLevelPath;
             }
+
+            Ladder.OnChanged -= SyncRankedRewards;
 
             if (match != null)
             {
-                match.MatchWon -= RecordOnlineResult;
+                match.MatchWon -= OnMatchWon;
+                match.GoalScored -= OnGoalScored;
             }
+
+            // Whatever match time was still in the clock when the app tore this down.
+            FlushPlayTime();
 
             OnlineMatchDirector.OnMatchShouldStart -= StartOnlineMatch;
             OnlineMatchDirector.OnOpponentGone -= HandleOpponentGone;
@@ -219,22 +293,50 @@ namespace TableFootball.UI
         }
 
         /// <summary>
-        /// Counts one online result, win or loss.
-        ///
-        /// <c>onlineMatch</c> is cleared as it fires, so a match can only ever be counted once. Both
-        /// players reach this from their own copy of the same MatchWon — the host's from the goal that
-        /// decided it, the guest's from the relayed one — and a forfeit counts exactly like any other
+        /// Records one finished match, from the same MatchWon both players see — the host's from the
+        /// goal that decided it, the guest's from the relayed one — and a forfeit counts like any other
         /// result, since walking out is a way of losing.
+        ///
+        /// Two separate records, each guarded so a match can only count once: the online-only
+        /// leaderboard feed (<see cref="MatchStats"/>), and the overall progression
+        /// (<see cref="PlayerProgress"/>) that also credits vs-AI. Local PvP credits neither — with two
+        /// players on one device there is no single account owner, which <c>localTeam == null</c> marks.
         /// </summary>
-        private void RecordOnlineResult(Team winner)
+        private void OnMatchWon(Team winner)
         {
-            if (!onlineMatch || resultCounted)
+            if (localTeam == null)
             {
                 return;
             }
 
-            resultCounted = true;
-            MatchStats.RecordResult(winner == onlineLocalTeam);
+            bool won = winner == localTeam.Value;
+
+            if (onlineMatch && !resultCounted)
+            {
+                resultCounted = true;
+                MatchStats.RecordResult(won);
+
+                if (rankedMatch)
+                {
+                    // The win-only flourish, using the league's own win value synchronously —
+                    // SubmitResult below is fire-and-forget and its round trip has not resolved by the
+                    // time the banner needs a number, but the league does not change mid-match, so
+                    // EloRating's flat per-league rule already IS the exact points this result is worth.
+                    if (won && hud != null)
+                    {
+                        hud.ShowRankedProgress(EloRating.WinDelta(Ladder.Standing.League));
+                    }
+
+                    Ladder.SubmitResult(0, won);
+                }
+            }
+
+            if (!progressCounted)
+            {
+                progressCounted = true;
+                PlayerProgress.MatchOutcome outcome = PlayerProgress.RecordMatch(won);
+                if (hud != null) hud.ShowMatchProgress(outcome);
+            }
         }
 
         // ---------- opponent left ----------
@@ -301,6 +403,48 @@ namespace TableFootball.UI
                 string who = inviteDeclinedBy;
                 inviteDeclinedBy = null;
                 ShowInviteDeclined(who);
+            }
+
+            // Count time only while a match is genuinely being played — not while the pause menu holds
+            // the world stopped, which would otherwise pad the total with time spent doing nothing.
+            if (IsPlaying && (pause == null || !pause.IsOpen))
+            {
+                playClock += Time.unscaledDeltaTime;
+            }
+        }
+
+        /// <summary>
+        /// Credits a goal to the local player when their team scores. Gated exactly like the win/loss
+        /// record: <see cref="localTeam"/> is null for local PvP, where two people share one device and
+        /// there is no single account to credit.
+        /// </summary>
+        private void OnGoalScored(Team scorer)
+        {
+            if (IsPlaying && localTeam.HasValue && scorer == localTeam.Value)
+            {
+                PlayerProgress.RecordGoal();
+            }
+        }
+
+        /// <summary>Writes the whole-second part of the accumulated play time to the record, keeping the
+        /// sub-second remainder for the next flush so nothing is repeatedly rounded away.</summary>
+        private void FlushPlayTime()
+        {
+            int whole = Mathf.FloorToInt(playClock);
+            if (whole > 0)
+            {
+                PlayerProgress.AddPlayTime(whole);
+                playClock -= whole;
+            }
+        }
+
+        /// <summary>Persist play time when the app is backgrounded, so a match closed from the task
+        /// switcher rather than the menu does not lose the time spent in it.</summary>
+        private void OnApplicationPause(bool paused)
+        {
+            if (paused)
+            {
+                FlushPlayTime();
             }
         }
 
@@ -386,6 +530,7 @@ namespace TableFootball.UI
             // A fresh match, so its result has not been counted yet.
             onlineMatch = true;
             resultCounted = false;
+            progressCounted = false;
             IsPlaying = true;
 
             if (hud != null) hud.ResultsHidden = false;
@@ -477,8 +622,43 @@ namespace TableFootball.UI
             if (menu != null) menu.Close();
             if (hud != null) hud.SetVisible(false);
 
-            if (start != null) start.Show(OpenMenu);
-            else loading.Show(bootLoadSeconds, OpenMenu);
+            if (start != null) start.Show(AfterTitle);
+            else AfterTitle();
+        }
+
+        /// <summary>
+        /// What the title tap lands on. A brand new player is shown the sign-in / guest choice once
+        /// (<see cref="OnboardingScreen"/>), which opens the menu itself when they are through; everyone
+        /// else goes straight to the menu. The world stays frozen throughout — onboarding is front end,
+        /// and its network calls are Tasks that a stopped clock does not touch.
+        ///
+        /// Kept as its own step rather than folded into Boot because the loading-bar fallback path
+        /// (no title screen built) has to reach it too.
+        /// </summary>
+        private void AfterTitle()
+        {
+            if (start == null)
+            {
+                // No title screen to hold the boot, so the loading bar covered the sign-in round trip.
+                // Run it before deciding, exactly as Boot used to open the menu behind the bar.
+                loading.Show(bootLoadSeconds, ShowOnboardingOrMenu);
+            }
+            else
+            {
+                ShowOnboardingOrMenu();
+            }
+        }
+
+        private void ShowOnboardingOrMenu()
+        {
+            if (onboarding != null && OnboardingScreen.NeedsOnboarding)
+            {
+                onboarding.Show(OpenMenu);
+            }
+            else
+            {
+                OpenMenu();
+            }
         }
 
         /// <summary>Leaves play and returns to the menu, behind the loading curtain.</summary>
@@ -488,6 +668,9 @@ namespace TableFootball.UI
             // doing: nothing that follows from it — their opponent's forfeit win, their own recorded
             // loss — is news they should be handed a scoreboard about on their way to the menu.
             leavingDeliberately = true;
+
+            // Bank the time spent in the match just left, before IsPlaying drops and the clock stops.
+            FlushPlayTime();
 
             if (hud != null)
             {
@@ -503,6 +686,15 @@ namespace TableFootball.UI
             {
                 resultCounted = true;
                 MatchStats.RecordResult(won: false);
+                if (rankedMatch) Ladder.SubmitResult(0, false);
+            }
+
+            // The same loss counts against progression — silently, since ResultsHidden means no
+            // post-match screen is shown on a deliberate exit.
+            if (IsPlaying && onlineMatch && !progressCounted)
+            {
+                progressCounted = true;
+                PlayerProgress.RecordMatch(won: false);
             }
 
             IsPlaying = false;
@@ -555,6 +747,20 @@ namespace TableFootball.UI
             loading.Show(transitionLoadSeconds, OpenMenu);
         }
 
+        /// <summary>
+        /// Tells the figure skinner which side the player here is holding, so their own equipped kit
+        /// lands on their own figures and the opposition keeps its default colour.
+        ///
+        /// Routed through GameFlow because this is the only class that knows which team the local
+        /// player has — it differs between vs-AI, local PvP and online — and the skinner is
+        /// deliberately ignorant of match modes.
+        /// </summary>
+        private void TellFigureSkinnerLocalTeam(Team team)
+        {
+            var skinner = FindAnyObjectByType<FigureSkinner>();
+            if (skinner != null) skinner.SetLocalTeam(team);
+        }
+
         private void OpenSettings()
         {
             if (pause != null) pause.OpenSettingsStandalone();
@@ -563,13 +769,63 @@ namespace TableFootball.UI
         private void OpenMenu()
         {
             Freeze();
+            // On for the whole front end. It stays on through Online/Friends/Profile (they are reached
+            // from here and return here) and is only switched off when a match actually goes live.
+            if (stage != null) stage.SetActive(true);
             if (hud != null) hud.SetVisible(false);
+            // Follows hud's own visibility exactly: a pause icon means nothing before a match exists,
+            // and every front-end screen is reached through here.
+            if (pause != null) pause.SetPauseButtonVisible(false);
             if (online != null) online.Close();
+            if (league != null) league.Close();
+            if (store != null) store.Close();
+            if (levelPath != null) levelPath.Close();
             if (friends != null) friends.Close();
             if (profile != null) profile.Close();
             if (friendProfile != null) friendProfile.Close();
             if (menu != null) menu.Open();
             GameSfx.PlayMenuMusic();
+        }
+
+        /// <summary>
+        /// Runs the ranked rewards forward against the latest standing: banks the payout if the ladder
+        /// week has turned over, and unlocks the badge for whatever league the player is now in.
+        ///
+        /// Both are idempotent, which is what makes it safe to hang off an event that fires on every
+        /// refresh — the payout only pays when the week index actually moves, and a badge already
+        /// owned is granted no second time.
+        /// </summary>
+        private void SyncRankedRewards()
+        {
+            RankedRewards.Sync();
+            LeagueBadges.Sync();
+        }
+
+        /// <summary>
+        /// The cosmetics store. A pure front-end viewer with no session behind it, so it sits frozen
+        /// like the league screen rather than running the world the way the online flow has to.
+        /// </summary>
+        private void OpenStore()
+        {
+            if (menu != null) menu.Close();
+            if (levelPath != null) levelPath.Close();
+            if (hud != null) hud.SetVisible(false);
+
+            Freeze();
+
+            if (store != null) store.Open();
+        }
+
+        /// <summary>The level path — frozen, for the same reason the store is.</summary>
+        private void OpenLevelPath()
+        {
+            if (menu != null) menu.Close();
+            if (store != null) store.Close();
+            if (hud != null) hud.SetVisible(false);
+
+            Freeze();
+
+            if (levelPath != null) levelPath.Open();
         }
 
         /// <summary>
@@ -682,6 +938,7 @@ namespace TableFootball.UI
         private void OpenOnline()
         {
             if (menu != null) menu.Close();
+            if (league != null) league.Close();
             if (hud != null) hud.SetVisible(false);
 
             Unfreeze();
@@ -689,12 +946,65 @@ namespace TableFootball.UI
             if (online != null) online.Open();
         }
 
+        /// <summary>
+        /// The ranked / league screen, reached from the online menu's own Ranked button. A front-end
+        /// viewer — no session is running yet, so it is safe to sit frozen like the rest of the menus.
+        /// </summary>
+        private void OpenRanked()
+        {
+            leagueFromMainMenu = false;
+            ShowLeague();
+        }
+
+        /// <summary>
+        /// The same screen, reached directly from the main menu's trophy button — the door that did
+        /// not exist before the ranked chip was added there. Skips the online screen entirely rather
+        /// than opening and immediately closing it.
+        /// </summary>
+        private void OpenRankedFromMenu()
+        {
+            leagueFromMainMenu = true;
+            ShowLeague();
+        }
+
+        private void ShowLeague()
+        {
+            if (menu != null) menu.Close();
+            if (online != null) online.Close();
+            if (hud != null) hud.SetVisible(false);
+
+            Freeze();
+
+            if (league != null) league.Open();
+        }
+
+        /// <summary>
+        /// Starts a ranked search from the league screen. Runs unfrozen like every path into a session
+        /// (Netcode needs a clock), and reuses the online screen's connect machinery — its spinner,
+        /// player-count wait and timeout — so ranked and casual share one connection flow.
+        /// </summary>
+        private void PlayRanked()
+        {
+            if (league != null) league.Close();
+            if (hud != null) hud.SetVisible(false);
+
+            Unfreeze();
+
+            if (online != null)
+            {
+                online.Open();             // arms the connect machinery (and clears RankedSearch)
+                online.StartRankedSearch();  // flags this search ranked and begins matchmaking
+            }
+        }
+
         private void StartLocalMatch(bool aiOpponent)
         {
             Team playerTeam = ApplyMode(aiOpponent);
 
             if (menu != null) menu.Close();
+            if (stage != null) stage.SetActive(false); // the top-down gameplay camera takes over now
             if (hud != null) hud.SetVisible(true);
+            if (pause != null) pause.SetPauseButtonVisible(true);
             GameSfx.StopMenuMusic();
 
             if (pause != null) pause.OnlineMatch = false;
@@ -708,8 +1018,17 @@ namespace TableFootball.UI
                 // half right and half wrong at the same table.
                 hud.LocalTeam = aiOpponent ? playerTeam : (Team?)null;
             }
+            // Mirrors hud.LocalTeam: vs-AI the player has a side to credit, local PvP has none.
+            localTeam = aiOpponent ? playerTeam : (Team?)null;
+
+            // The figure skinner needs a side even where progression does not have one. In local PvP
+            // nobody owns the RESULT, but the account on this device still has figures to dress, and
+            // they should be the ones this player is holding — playerTeam is that side in both modes.
+            TellFigureSkinnerLocalTeam(playerTeam);
+
             onlineMatch = false;
             resultCounted = false;
+            progressCounted = false;
             waitingForRematch = false;
 
             IsPlaying = true;
@@ -768,7 +1087,9 @@ namespace TableFootball.UI
 
             if (online != null) online.Close();
             if (menu != null) menu.Close();
+            if (stage != null) stage.SetActive(false); // the top-down gameplay camera takes over now
             if (hud != null) hud.SetVisible(true);
+            if (pause != null) pause.SetPauseButtonVisible(true);
             GameSfx.StopMenuMusic();
 
             // Captured now, while the session is unambiguously alive. See AwardForfeit.
@@ -786,8 +1107,15 @@ namespace TableFootball.UI
                 // which side this machine was playing.
                 hud.LocalTeam = onlineLocalTeam;
             }
+            // The local player always has a side online — credit their result.
+            localTeam = onlineLocalTeam;
+            TellFigureSkinnerLocalTeam(onlineLocalTeam);
             onlineMatch = true;
+            // Ranked-ness is decided by the search that formed this session, read here at the one
+            // moment the match actually begins — so it is always this match's own answer.
+            rankedMatch = online != null && online.RankedSearch;
             resultCounted = false;
+            progressCounted = false;
             waitingForRematch = false;
 
             Unfreeze();

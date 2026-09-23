@@ -157,6 +157,63 @@ namespace TableFootball.Net
         }
 
         /// <summary>
+        /// Finds a RANKED match. When the Matchmaker queue is configured on the dashboard (and the
+        /// LADDER_UGS define is on) it pools players by rating through that queue; until then it falls
+        /// back to open pairing through a public "Ranked" table, so ranked play is testable before the
+        /// server side is deployed. Either way the match is flagged ranked by the caller, so its result
+        /// feeds the ladder.
+        /// </summary>
+        public static async Task<bool> RankedMatchAsync()
+        {
+            if (!await ReadyAsync())
+            {
+                return false;
+            }
+
+            IsBusy = true;
+            try
+            {
+                var options = new SessionOptions
+                {
+                    Name = "Ranked",
+                    MaxPlayers = MaxPlayers,
+                    IsPrivate = false
+                }.WithRelayNetwork();
+
+#if LADDER_UGS
+                try
+                {
+                    Adopt(await MultiplayerService.Instance.MatchmakeSessionAsync(
+                        new MatchmakerOptions { QueueName = "ranked" }, options));
+                    Debug.Log("Ranked: matched through the skill queue.");
+                    return true;
+                }
+                catch (Exception queueError)
+                {
+                    // The queue is not configured yet, or matchmaking timed out: fall back to open
+                    // pairing rather than failing the player outright.
+                    Debug.LogWarning($"Ranked queue unavailable, pairing openly instead: {queueError.Message}");
+                }
+#endif
+
+                Adopt(await MultiplayerService.Instance.MatchmakeSessionAsync(
+                    new QuickJoinOptions { CreateSession = true }, options));
+                Debug.Log(Current.IsHost
+                    ? "Ranked (open pairing): no open table, hosting one."
+                    : "Ranked (open pairing): joined an open table.");
+                return true;
+            }
+            catch (Exception e)
+            {
+                return Fail("Could not find a ranked match", e);
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        /// <summary>
         /// Leaves the session and shuts the connection down. Safe to call when not in one, so the menu
         /// and the pause screen can both just call it without checking first.
         /// </summary>

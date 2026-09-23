@@ -166,7 +166,10 @@ namespace TableFootball.UI
                      released ? ArcadeTheme.EaseOutBack : ArcadeTheme.EaseSnap);
 
             bool lit = active || pressed;
-            if (fill != null) fill.color = fillBase;
+            // Pressing darkens the fill as well as dipping the scale — a control that only shrinks
+            // reads as pulling away from the finger, where one that also darkens reads as being
+            // pushed into the panel. Hover leaves the fill alone (see the quiet-hover note above).
+            if (fill != null) fill.color = pressed ? Color.Lerp(fillBase, Color.black, 0.12f) : fillBase;
             if (border != null) border.color = lit ? borderHover : borderBase;
             if (label != null) label.color = lit ? labelHover : labelBase;
             if (glow != null) glow.color = glowColor.WithAlpha(lit ? glowHover : glowBase);

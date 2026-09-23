@@ -43,6 +43,7 @@ namespace TableFootball.UI
         private TMP_InputField codeField;
         private TextMeshProUGUI statusText;
         private TextMeshProUGUI codeDisplay;
+        private MenuButton rankedButton;
         private MenuButton hostButton;
         private MenuButton joinButton;
         private MenuButton quickButton;
@@ -57,10 +58,18 @@ namespace TableFootball.UI
         /// <summary>Raised once both players are in and the table can start.</summary>
         public Action OnMatchReady;
 
+        /// <summary>Raised when the player chooses Ranked — opens the league screen / ranked queue.</summary>
+        public Action OnOpenRanked;
+
         /// <summary>Raised when the player backs out, after the session has been left.</summary>
         public Action OnBack;
 
         public bool IsOpen => root != null && root.activeSelf;
+
+        /// <summary>Whether the session now forming was started by a ranked search. Reset every time
+        /// the panel opens, set only by <see cref="StartRankedSearch"/>, so it can never go stale onto
+        /// a casual or friend match. GameFlow reads it when the match begins to decide ladder scoring.</summary>
+        public bool RankedSearch { get; private set; }
 
         public void Build(Transform canvasRoot)
         {
@@ -68,7 +77,8 @@ namespace TableFootball.UI
             UIFactory.Stretch(UIFactory.Rt(root));
             group = root.AddComponent<CanvasGroup>();
 
-            UIFactory.Backdrop(root.transform);
+            // Shared translucent dim, matching every other secondary screen. See UIFactory.ScrimDim.
+            UIFactory.ScrimDim(root.transform);
 
             var title = UIFactory.Text(root.transform, "ONLINE", ArcadeTheme.FsTitle, ArcadeTheme.Ink,
                                        display: true, bold: true, upper: true, tracking: 8f);
@@ -118,8 +128,13 @@ namespace TableFootball.UI
         {
             chooseGroup = BuildColumn(parent, "ChooseGroup");
 
+            // Ranked is the headline, so it carries the screen's one resting glow; the casual ways to
+            // play (host, quick match, join) sit below it as neutral choices.
+            rankedButton = UIFactory.Button(chooseGroup.transform, "Ranked",
+                                            MenuButton.Variant.Primary, Ranked);
+
             hostButton = UIFactory.Button(chooseGroup.transform, "Host Table",
-                                          MenuButton.Variant.Primary, Host);
+                                          MenuButton.Variant.Neutral, Host);
 
             quickButton = UIFactory.Button(chooseGroup.transform, "Quick Match",
                                            MenuButton.Variant.Neutral, QuickMatch);
@@ -251,6 +266,7 @@ namespace TableFootball.UI
             }
 
             opponentArrived = false;
+            RankedSearch = false; // casual until a ranked search says otherwise
             CancelConnectTimeout();
             codeField.text = string.Empty;
             SetStatus(string.Empty);
@@ -302,6 +318,7 @@ namespace TableFootball.UI
             // Working is the Choose screen with everything switched off, rather than a fourth panel:
             // the player can still see what they asked for while it happens.
             bool usable = choosing;
+            if (rankedButton != null) rankedButton.interactable = usable;
             if (hostButton != null) hostButton.interactable = usable;
             if (joinButton != null) joinButton.interactable = usable;
             if (quickButton != null) quickButton.interactable = usable;
@@ -468,6 +485,37 @@ namespace TableFootball.UI
             {
                 SetStatus(OnlineSession.LastError);
                 Show(Screen.Choose);
+            }
+        }
+
+        /// <summary>Ranked is a different door: the league screen, not a casual table. GameFlow owns
+        /// where it leads — this only reports the choice.</summary>
+        private void Ranked()
+        {
+            OnOpenRanked?.Invoke();
+        }
+
+        /// <summary>
+        /// Starts a ranked search on this screen's connect machinery (the searching spinner, the
+        /// player-count wait and the timeout are all shared with quick match). GameFlow calls this
+        /// after opening the panel, having flagged the match ranked.
+        /// </summary>
+        public async void StartRankedSearch()
+        {
+            RankedSearch = true;
+            SetStatus(string.Empty);
+            Show(Screen.Searching);
+
+            if (!await OnlineSession.RankedMatchAsync())
+            {
+                SetStatus(OnlineSession.LastError);
+                Show(Screen.Choose);
+                return;
+            }
+
+            if (OnlineSession.IsHost)
+            {
+                SetStatus(string.Empty);
             }
         }
 

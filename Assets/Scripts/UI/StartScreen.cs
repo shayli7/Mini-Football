@@ -39,8 +39,14 @@ namespace TableFootball.UI
         private GameObject logo;
         private CanvasGroup promptGroup;
 
+        /// <summary>The logo's ball-and-rods emblem, bobbed gently so the mark reads as hovering rather
+        /// than printed. Null if the logo was built without its mark.</summary>
+        private RectTransform markRt;
+        private Vector2 markOrigin;
+
         private Coroutine anim;
         private Coroutine breathe;
+        private Coroutine bob;
         private Action onStart;
 
         /// <summary>Guards against a double tap opening the menu twice.</summary>
@@ -82,6 +88,66 @@ namespace TableFootball.UI
             Halo("HaloRed", ArcadeTheme.Red, new Vector2(-430f, 170f), 820f, 26f, 31f);
             Halo("HaloBlue", ArcadeTheme.Blue, new Vector2(450f, -120f), 760f, 22f, 43f);
             Halo("HaloGold", ArcadeTheme.Gold, new Vector2(90f, 300f), 640f, 30f, 37f);
+
+            // A warm spotlight behind the wordmark, breathing slowly — the single thing that turns the
+            // flat wash into a lit stage. It sits under everything but the base wash, so the logo and
+            // the halos read as standing in its light.
+            Spotlight();
+
+            // A scatter of slow motes over the top, drifting on their own clocks. Faint enough to be
+            // atmosphere rather than confetti — stadium dust caught in the spotlight, the texture the
+            // bare gradient was missing.
+            Motes();
+        }
+
+        /// <summary>The breathing gold pool of light behind the logo.</summary>
+        private void Spotlight()
+        {
+            var go = UIFactory.Child(root.transform, "Spotlight");
+            var img = go.AddComponent<Image>();
+            img.sprite = ArcadeTheme.DiscGlow(60f);
+            img.type = Image.Type.Simple;
+            img.color = ArcadeTheme.Gold.WithAlpha(0.13f);
+            img.raycastTarget = false;
+
+            var rt = UIFactory.Rt(go);
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(1180f, 1180f);
+            rt.anchoredPosition = new Vector2(0f, 90f);
+
+            // A gentle swell, slower and softer than the pip's pulse, so it reads as light shifting
+            // rather than something blinking.
+            var pulse = go.AddComponent<UIPulse>();
+            pulse.Configure(4.6f, 0.62f, 0.06f);
+        }
+
+        /// <summary>A handful of faint drifting motes, for atmosphere over the wash.</summary>
+        private void Motes()
+        {
+            var colors = new[] { ArcadeTheme.Gold, ArcadeTheme.Blue, ArcadeTheme.Ink };
+
+            for (int i = 0; i < 12; i++)
+            {
+                var go = UIFactory.Child(root.transform, "Mote");
+                var img = go.AddComponent<Image>();
+                img.sprite = ArcadeTheme.Disc();
+                img.type = Image.Type.Simple;
+                img.color = colors[i % colors.Length].WithAlpha(UnityEngine.Random.Range(0.05f, 0.16f));
+                img.raycastTarget = false;
+
+                var rt = UIFactory.Rt(go);
+                rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                float s = UnityEngine.Random.Range(5f, 13f);
+                rt.sizeDelta = new Vector2(s, s);
+                rt.anchoredPosition = new Vector2(UnityEngine.Random.Range(-780f, 780f),
+                                                  UnityEngine.Random.Range(-400f, 400f));
+
+                // Each on its own amplitude and period, so they never sail in formation.
+                go.AddComponent<UIAmbientDrift>().Configure(UnityEngine.Random.Range(26f, 62f),
+                                                            UnityEngine.Random.Range(16f, 44f));
+            }
         }
 
         /// <summary>One soft color blob behind the logo.</summary>
@@ -117,24 +183,73 @@ namespace TableFootball.UI
             // Above centre, not on it: the prompt sits at the bottom, and a lockup centred on the
             // screen leaves the whole upper half with nothing to balance it.
             rt.anchoredPosition = new Vector2(0f, 40f);
+
+            // The ball-and-rods emblem, cached so it can be bobbed once the entrance settles. Found by
+            // name rather than passed back, so LogoLockup stays a one-call black box for every other
+            // caller; a build without the mark simply leaves this null and the bob no-ops.
+            var mark = logo.transform.Find("Mark");
+            if (mark != null)
+            {
+                markRt = (RectTransform)mark;
+                markOrigin = markRt.anchoredPosition;
+            }
         }
 
+        /// <summary>
+        /// The call to action, rebuilt with real weight: the display face at button size in gold, over
+        /// a soft halo and above a gold underline, so it reads as the one thing to do here rather than
+        /// a caption the eye slides past. The old prompt was body-sized muted grey and disappeared into
+        /// the wash.
+        ///
+        /// The three parts live in one holder with the breathing <see cref="CanvasGroup"/> on it, so
+        /// the glow, the type and the rule breathe as a single object.
+        /// </summary>
         private void BuildPrompt()
         {
-            var prompt = UIFactory.Text(root.transform, "TOUCH TO START", ArcadeTheme.FsBody,
-                                        ArcadeTheme.InkMuted, display: false, bold: true, upper: true,
-                                        tracking: 10f);
+            var holder = UIFactory.Child(root.transform, "Prompt");
+            var hrt = UIFactory.Rt(holder);
+            hrt.anchorMin = new Vector2(0.5f, 0f);
+            hrt.anchorMax = new Vector2(0.5f, 0f);
+            hrt.pivot = new Vector2(0.5f, 0f);
+            hrt.sizeDelta = new Vector2(760f, 104f);
+            hrt.anchoredPosition = new Vector2(0f, 96f);
 
-            var rt = UIFactory.Rt(prompt.gameObject);
-            rt.anchorMin = new Vector2(0f, 0f);
-            rt.anchorMax = new Vector2(1f, 0f);
-            rt.pivot = new Vector2(0.5f, 0f);
-            rt.offsetMin = new Vector2(ArcadeTheme.Xl2, 96f);
-            rt.offsetMax = new Vector2(-ArcadeTheme.Xl2, 136f);
-
-            // Its own group, so it can breathe without taking the rest of the screen with it.
-            promptGroup = prompt.gameObject.AddComponent<CanvasGroup>();
+            promptGroup = holder.AddComponent<CanvasGroup>();
             promptGroup.alpha = 0f;
+
+            // A soft pool of light so the words sit on the screen rather than in front of it.
+            var glowGo = UIFactory.Child(holder.transform, "Glow");
+            var glow = glowGo.AddComponent<Image>();
+            glow.sprite = ArcadeTheme.DiscGlow(50f);
+            glow.type = Image.Type.Simple;
+            glow.color = ArcadeTheme.Gold.WithAlpha(0.16f);
+            glow.raycastTarget = false;
+            var grt = UIFactory.Rt(glowGo);
+            grt.anchorMin = grt.anchorMax = new Vector2(0.5f, 0.5f);
+            grt.pivot = new Vector2(0.5f, 0.5f);
+            grt.sizeDelta = new Vector2(600f, 168f);
+            grt.anchoredPosition = new Vector2(0f, 6f);
+
+            // Display face, button-sized, gold — the same family as the FOOTBALL half of the wordmark,
+            // so the prompt and the brand read as one voice.
+            var prompt = UIFactory.Text(holder.transform, "TOUCH TO START", ArcadeTheme.FsButton * 1.22f,
+                                        ArcadeTheme.Gold, display: true, bold: true, upper: true,
+                                        tracking: 16f);
+            var prt = UIFactory.Rt(prompt.gameObject);
+            prt.anchorMin = new Vector2(0f, 0f);
+            prt.anchorMax = new Vector2(1f, 1f);
+            prt.offsetMin = new Vector2(0f, 26f);
+            prt.offsetMax = Vector2.zero;
+
+            // A short gold rule under the words, centred — the underline that gives the line a base to
+            // stand on instead of floating at the bottom of the screen.
+            var line = UIFactory.Child(holder.transform, "Underline");
+            UIFactory.RoundedImage(line, ArcadeTheme.RadSm, ArcadeTheme.Gold.WithAlpha(0.85f), false);
+            var lrt = UIFactory.Rt(line);
+            lrt.anchorMin = lrt.anchorMax = new Vector2(0.5f, 0f);
+            lrt.pivot = new Vector2(0.5f, 0f);
+            lrt.sizeDelta = new Vector2(160f, 3f);
+            lrt.anchoredPosition = new Vector2(0f, 12f);
         }
 
         /// <summary>
@@ -202,7 +317,37 @@ namespace TableFootball.UI
 
             // Last, so the invitation arrives after the thing it is inviting you into.
             breathe = StartCoroutine(Breathe());
+
+            // Started only now, not at build: the entrance PopIn drives the whole logo's scale, and a
+            // bob running under it would fight for the same transform. Once the pop has settled the
+            // mark is the bob's alone.
+            if (bob != null) StopCoroutine(bob);
+            bob = StartCoroutine(Bob());
+
             anim = null;
+        }
+
+        /// <summary>
+        /// The emblem hovering: a slow vertical bob on the ball-and-rods mark, forever. Small on
+        /// purpose — it should read as the mark being alive, not as it drifting off the wordmark.
+        /// Unscaled, since the world is frozen behind this; snaps still and centred under reduced
+        /// motion.
+        /// </summary>
+        private IEnumerator Bob()
+        {
+            if (markRt == null || ArcadeTheme.ReducedMotion)
+            {
+                yield break;
+            }
+
+            float e = 0f;
+            while (markRt != null)
+            {
+                e += Time.unscaledDeltaTime;
+                float k = Mathf.Sin(e / 2.2f * Mathf.PI * 2f);
+                markRt.anchoredPosition = markOrigin + new Vector2(0f, k * 7f);
+                yield return null;
+            }
         }
 
         /// <summary>
@@ -245,6 +390,12 @@ namespace TableFootball.UI
             {
                 StopCoroutine(breathe);
                 breathe = null;
+            }
+
+            if (bob != null)
+            {
+                StopCoroutine(bob);
+                bob = null;
             }
 
             if (anim != null)

@@ -58,6 +58,12 @@ namespace TableFootball
         [Tooltip("If the ball drops this far below its start height it is treated as lost and reset. " +
                  "0 disables the safety net.")]
         [SerializeField] private float fallResetDistance = 0.3f;
+        [Tooltip("Seconds the fall-through recovery takes to carry the ball back to the centre spot. " +
+                 "0 skips the flourish and teleports it back instantly, as before.")]
+        [SerializeField] private float pickupDuration = 0.45f;
+        [Tooltip("How high above a straight line home the ball rises at the midpoint of the carry, " +
+                 "in metres — the little lift that reads as being picked up rather than sliding back.")]
+        [SerializeField] private float pickupLiftHeight = 0.4f;
 
         [Header("Dead ball rescue")]
         [Tooltip("Below this speed the ball counts as standing still, in m/s.")]
@@ -230,6 +236,14 @@ namespace TableFootball
         private RodController controlRod;
         private float controlUntil;
 
+        // The fall-through recovery flourish: while active, FixedUpdate hands the ball entirely to
+        // TickPickup and does nothing else with it — no speed cap, no rescue, no possession — the same
+        // way a rod's own kinematic pose owns its transform outright while it is being driven.
+        private bool pickupActive;
+        private float pickupElapsed;
+        private Vector3 pickupStart;
+        private Quaternion pickupStartRot;
+
         // Possession, tracked authoritatively from real contact rather than inferred from distance.
         private Team? lastTouchTeam;
         private Team? controllingTeam;
@@ -267,6 +281,17 @@ namespace TableFootball
 
         /// <summary>The ball's own friction, before any surface overrides it.</summary>
         public float BaselineFriction => friction;
+
+        /// <summary>
+        /// The impact speeds that decide whether a contact is heard at all and how loud it is —
+        /// exposed so the guest can predict its own hits against the SAME thresholds the host judges
+        /// them by. Duplicating these numbers on the other side would let the two drift apart, and
+        /// the symptom would be a guest hearing kicks the host never reported, or missing ones it did.
+        /// </summary>
+        public float QuietImpactSpeed => quietImpactSpeed;
+
+        /// <inheritdoc cref="QuietImpactSpeed"/>
+        public float LoudImpactSpeed => loudImpactSpeed;
 
         private void Awake()
         {
@@ -358,16 +383,22 @@ namespace TableFootball
 
         private void FixedUpdate()
         {
+            if (pickupActive)
+            {
+                TickPickup(Time.fixedDeltaTime);
+                return;
+            }
+
             // Cap the speed: a hard enough flick could otherwise beat even continuous detection.
             if (maxSpeed > 0f && body.linearVelocity.sqrMagnitude > maxSpeed * maxSpeed)
             {
                 body.linearVelocity = body.linearVelocity.normalized * maxSpeed;
             }
 
-            // Safety net: if the ball escapes the table, put it back rather than lose it forever.
+            // Safety net: if the ball escapes the table, carry it back rather than lose it forever.
             if (fallResetDistance > 0f && transform.position.y < homePosition.y - fallResetDistance)
             {
-                ResetBall();
+                BeginPickup();
                 return;
             }
 
@@ -378,6 +409,58 @@ namespace TableFootball
             // Last thing in the step: this is the velocity the ball carries into whatever it hits
             // during the next one.
             lastVelocity = body.linearVelocity;
+        }
+
+        /// <summary>
+        /// Starts the fall-through recovery: freezes the ball where it fell and hands its transform
+        /// to <see cref="TickPickup"/> for a short carry back to the centre spot, rather than the
+        /// instant teleport a plain <see cref="ResetBall"/> would give. Only the fall-through path
+        /// uses this — a goal's reset and the dead-ball rescue's own escalating nudges stay as they
+        /// were, since a ball leaving the table is the one case that specifically reads as "lost and
+        /// found," not "play stopped."
+        /// </summary>
+        private void BeginPickup()
+        {
+            pickupActive = true;
+            pickupElapsed = 0f;
+            pickupStart = transform.position;
+            pickupStartRot = transform.rotation;
+
+            body.linearVelocity = Vector3.zero;
+            body.angularVelocity = Vector3.zero;
+
+            // Kinematic for the carry, exactly as a rod's body is: nothing — gravity, a stray
+            // collision — should be able to fight a position this method is setting outright.
+            body.isKinematic = true;
+
+            GameSfx.PlayWhistle();
+        }
+
+        /// <summary>
+        /// Carries the ball from where it fell back to the centre spot over
+        /// <see cref="pickupDuration"/>, along a gentle arc rather than a straight slide, so it reads
+        /// as picked up rather than dragged. Ends by handing back to <see cref="ResetBall"/>, so the
+        /// ball lands in exactly the state a plain reset would leave it in.
+        /// </summary>
+        private void TickPickup(float dt)
+        {
+            pickupElapsed += dt;
+            float p = pickupDuration > 0f ? Mathf.Clamp01(pickupElapsed / pickupDuration) : 1f;
+            float eased = Mathf.SmoothStep(0f, 1f, p);
+
+            Vector3 pos = Vector3.Lerp(pickupStart, homePosition, eased);
+            pos.y += Mathf.Sin(p * Mathf.PI) * pickupLiftHeight; // peaks at the midpoint, zero at both ends
+            Quaternion rot = Quaternion.Slerp(pickupStartRot, homeRotation, eased);
+
+            body.MovePosition(pos);
+            body.MoveRotation(rot);
+
+            if (p >= 1f)
+            {
+                pickupActive = false;
+                body.isKinematic = false;
+                ResetBall(); // lands exactly on the centre spot and clears every reset-adjacent flag
+            }
         }
 
         /// <summary>
@@ -500,6 +583,10 @@ namespace TableFootball
         /// </summary>
         private void OnCollisionEnter(Collision collision)
         {
+            // Being carried back to the centre spot: nothing it brushes past on the way should sound
+            // a hit or count as a touch.
+            if (pickupActive) return;
+
             // Figures and bars hang off a rod; anything else is the table itself.
             RodController rod = collision.collider != null
                 ? collision.collider.GetComponentInParent<RodController>()
@@ -526,6 +613,7 @@ namespace TableFootball
             if (rod != null)
             {
                 GameSfx.PlayBallHit(strength);
+                Haptics.Play(strength); // the tactile half of a hit on a figure
             }
             else
             {
@@ -550,6 +638,8 @@ namespace TableFootball
         /// </summary>
         private void OnCollisionStay(Collision collision)
         {
+            if (pickupActive) return;
+
             RodController rod = collision.collider != null
                 ? collision.collider.GetComponentInParent<RodController>()
                 : null;
@@ -978,6 +1068,17 @@ namespace TableFootball
         /// <summary>Stops the ball dead and returns it to its start position.</summary>
         public void ResetBall()
         {
+            // Cancel any fall-through carry in progress: a goal or another external reset always
+            // wins outright, and TickPickup must not still be steering the ball afterward. Only
+            // undoes the kinematic flag the carry itself set — never touches it otherwise, since an
+            // online guest's ball is deliberately kept kinematic for reasons that have nothing to do
+            // with this and must not be disturbed by an ordinary reset.
+            if (pickupActive)
+            {
+                pickupActive = false;
+                body.isKinematic = false;
+            }
+
             body.linearVelocity = Vector3.zero;
             body.angularVelocity = Vector3.zero;
             transform.SetPositionAndRotation(homePosition, homeRotation);

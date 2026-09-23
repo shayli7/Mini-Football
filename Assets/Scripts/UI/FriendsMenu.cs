@@ -65,7 +65,9 @@ namespace TableFootball.UI
             UIFactory.Stretch(UIFactory.Rt(root));
             group = root.AddComponent<CanvasGroup>();
 
-            UIFactory.Backdrop(root.transform);
+            // Shared translucent dim — the same background the account and settings screens wear, so
+            // the whole front end reads as one place. See UIFactory.ScrimDim.
+            UIFactory.ScrimDim(root.transform);
 
             var title = UIFactory.Text(root.transform, "FRIENDS", ArcadeTheme.FsTitle, ArcadeTheme.Ink,
                                        display: true, bold: true, upper: true, tracking: 8f);
@@ -163,7 +165,11 @@ namespace TableFootball.UI
         private void BuildHeader(Transform parent)
         {
             var panel = UIFactory.Panel(parent, "MyCodePanel");
-            panel.AddComponent<LayoutElement>().preferredHeight = 168f;
+            // Was 168, sized for the row layout before the new "add a friend by their code" caption
+            // and the extra breathing room added below — grown by exactly that caption's own footprint
+            // (its 24px height plus the 8px gap around it) so nothing added here starts overflowing
+            // the fixed-height panel it lives in.
+            panel.AddComponent<LayoutElement>().preferredHeight = 200f;
 
             var fill = panel.transform.Find("Fill");
             var column = UIFactory.Child(fill, "HeaderColumn");
@@ -198,7 +204,9 @@ namespace TableFootball.UI
             var textCol = UIFactory.Child(identity.transform, "Text");
             textCol.AddComponent<LayoutElement>().flexibleWidth = 1f;
             var tv = textCol.AddComponent<VerticalLayoutGroup>();
-            tv.spacing = 0f;
+            // Was 0 — the code and its caption sat with no gap between them at all, which is the
+            // literal "squished" the caption is beside.
+            tv.spacing = ArcadeTheme.Xs;
             tv.childAlignment = TextAnchor.MiddleLeft;
             tv.childForceExpandWidth = true;
             tv.childForceExpandHeight = false;
@@ -210,18 +218,40 @@ namespace TableFootball.UI
                                     align: TextAlignmentOptions.Left, richText: false);
             myCode.gameObject.AddComponent<LayoutElement>().preferredHeight = 30f;
 
+            // Bigger and taller, with the added spacing above: this line was the caption the "text is
+            // squished" complaint named directly, at 0.82x caption size in an 18px row with no gap
+            // above it to breathe into.
             var hint = UIFactory.Text(textCol.transform, "your code — share it to be added",
-                                      ArcadeTheme.FsCaption * 0.82f, ArcadeTheme.InkMuted,
+                                      ArcadeTheme.FsCaption, ArcadeTheme.InkMuted,
                                       display: false, bold: true, upper: true, tracking: 3f,
                                       align: TextAlignmentOptions.Left);
-            hint.gameObject.AddComponent<LayoutElement>().preferredHeight = 18f;
+            hint.gameObject.AddComponent<LayoutElement>().preferredHeight = 24f;
+
+            // Copy and Account now match Add's own footprint exactly (150 wide, 52 tall) rather than
+            // three different sizes for three buttons doing the same kind of job side by side.
+            const float actionWidth = 150f;
+            const float actionHeight = 52f;
+
+            // Copy the code to the clipboard, so sharing it is a tap rather than reading digits off
+            // the screen. The code is the display name with its #tag — exactly what a friend types in.
+            var copy = UIFactory.Button(identity.transform, "Copy", MenuButton.Variant.Neutral,
+                                        CopyCode, actionHeight);
+            copy.gameObject.GetComponent<LayoutElement>().preferredWidth = actionWidth;
 
             var account = UIFactory.Button(identity.transform, "Account", MenuButton.Variant.Ghost,
-                                           () => { Close(); OnOpenProfile?.Invoke(); }, 48f);
-            account.gameObject.GetComponent<LayoutElement>().preferredWidth = 150f;
+                                           () => { Close(); OnOpenProfile?.Invoke(); }, actionHeight);
+            account.gameObject.GetComponent<LayoutElement>().preferredWidth = actionWidth;
+
+            // A real caption for the add field, so its placeholder can be a short, legible example
+            // rather than a whole instructional sentence crammed into one line at button-text size.
+            var addCaption = UIFactory.Text(column.transform, "add a friend by their code",
+                                            ArcadeTheme.FsCaption, ArcadeTheme.InkMuted,
+                                            display: false, bold: true, upper: true, tracking: 3f,
+                                            align: TextAlignmentOptions.Left);
+            addCaption.gameObject.AddComponent<LayoutElement>().preferredHeight = 24f;
 
             var addRow = UIFactory.Child(column.transform, "AddRow");
-            addRow.AddComponent<LayoutElement>().preferredHeight = 52f;
+            addRow.AddComponent<LayoutElement>().preferredHeight = actionHeight;
             var rowLayout = addRow.AddComponent<HorizontalLayoutGroup>();
             rowLayout.spacing = ArcadeTheme.Sm;
             rowLayout.childAlignment = TextAnchor.MiddleCenter;
@@ -230,12 +260,15 @@ namespace TableFootball.UI
             rowLayout.childControlWidth = true;
             rowLayout.childControlHeight = true;
 
-            addField = UIFactory.TextInput(addRow.transform, "add by code, e.g. player#1234", 30,
-                                           TMP_InputField.CharacterValidation.None, height: 52f);
+            // Short, so the field's own placeholder reads as a real example rather than a sentence
+            // fighting for room at button-text size — the caption above now carries the instruction.
+            addField = UIFactory.TextInput(addRow.transform, "player#1234", 30,
+                                           TMP_InputField.CharacterValidation.None, height: actionHeight);
             addField.gameObject.GetComponent<LayoutElement>().flexibleWidth = 1f;
 
-            var add = UIFactory.Button(addRow.transform, "Add", MenuButton.Variant.Primary, Add, 52f);
-            add.gameObject.GetComponent<LayoutElement>().preferredWidth = 150f;
+            var add = UIFactory.Button(addRow.transform, "Add", MenuButton.Variant.Primary, Add,
+                                       actionHeight);
+            add.gameObject.GetComponent<LayoutElement>().preferredWidth = actionWidth;
         }
 
         private void BuildList(Transform parent)
@@ -296,6 +329,10 @@ namespace TableFootball.UI
             root.SetActive(true);
             root.transform.SetAsLastSibling();
             group.blocksRaycasts = true;
+
+            // A quick fade in, so arriving here reads as a transition rather than a hard cut.
+            group.alpha = 0f;
+            StartCoroutine(UITween.Fade(group, 0f, 1f, ArcadeTheme.TFast, ArcadeTheme.EaseOut));
 
             FriendsHub.OnChanged -= MarkDirty;
             FriendsHub.OnChanged += MarkDirty;
@@ -374,12 +411,99 @@ namespace TableFootball.UI
 
             if (rows.Count == 0)
             {
-                var empty = UIFactory.Text(listContent, "nobody here yet — share your code above",
-                                           ArcadeTheme.FsCaption, ArcadeTheme.InkMuted,
-                                           display: false, bold: true, upper: true, tracking: 3f);
-                empty.gameObject.AddComponent<LayoutElement>().preferredHeight = 44f;
-                rows.Add(empty.gameObject);
+                BuildEmptyState();
             }
+        }
+
+        /// <summary>
+        /// What fills the list before you know anyone — the first thing a new player sees here, and
+        /// what used to be a single grey line in the middle of a black panel. A friendly illustration
+        /// with a headline and a plain instruction reads as "you have not added anyone yet" rather than
+        /// as an empty, half-broken screen.
+        /// </summary>
+        private void BuildEmptyState()
+        {
+            var holder = UIFactory.Child(listContent, "Empty");
+            var le = holder.AddComponent<LayoutElement>();
+            le.preferredHeight = 300f;
+
+            var v = holder.AddComponent<VerticalLayoutGroup>();
+            v.childAlignment = TextAnchor.MiddleCenter;
+            v.spacing = ArcadeTheme.Md;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
+            v.padding = new RectOffset(0, 0, 24, 24);
+
+            // Two overlapping avatars — the "friends" idea, drawn from primitives like the rest of the
+            // UI. Team-coloured, so it belongs to this game and not to a stock empty-state icon.
+            var art = UIFactory.Child(holder.transform, "Art");
+            art.AddComponent<LayoutElement>().preferredHeight = 108f;
+            PersonBadge(art.transform, ArcadeTheme.Blue, new Vector2(-30f, 0f));
+            PersonBadge(art.transform, ArcadeTheme.Gold, new Vector2(30f, 0f));
+
+            var head = UIFactory.Text(holder.transform, "NO FRIENDS YET", ArcadeTheme.FsTitle * 0.5f,
+                                      ArcadeTheme.Ink, display: true, bold: true, upper: true,
+                                      tracking: 4f);
+            head.gameObject.AddComponent<LayoutElement>().preferredHeight = 40f;
+
+            var sub = UIFactory.Text(holder.transform,
+                                     "copy your code and share it, or add a friend by theirs above",
+                                     ArcadeTheme.FsCaption, ArcadeTheme.InkMuted,
+                                     display: false, bold: true, upper: true, tracking: 3f);
+            sub.gameObject.AddComponent<LayoutElement>().preferredHeight = 24f;
+            sub.textWrappingMode = TMPro.TextWrappingModes.Normal;
+
+            rows.Add(holder);
+        }
+
+        /// <summary>
+        /// One avatar in the empty-state illustration: a tinted ring around a masked person
+        /// silhouette, the same head-and-shoulders the friends icon on the main menu uses.
+        /// </summary>
+        private void PersonBadge(Transform parent, Color tint, Vector2 offset, float size = 92f)
+        {
+            var badge = UIFactory.Child(parent, "PersonBadge");
+            var brt = UIFactory.Rt(badge);
+            brt.anchorMin = brt.anchorMax = new Vector2(0.5f, 0.5f);
+            brt.pivot = new Vector2(0.5f, 0.5f);
+            brt.sizeDelta = new Vector2(size, size);
+            brt.anchoredPosition = offset;
+
+            // Ring outside, panel fill inside — the two-layer disc every avatar in the game wears.
+            var ring = badge.AddComponent<Image>();
+            ring.sprite = ArcadeTheme.Disc();
+            ring.color = tint.WithAlpha(0.5f);
+            ring.raycastTarget = false;
+
+            var fillGo = UIFactory.Child(badge.transform, "Fill");
+            var fill = fillGo.AddComponent<Image>();
+            fill.sprite = ArcadeTheme.Disc();
+            fill.color = ArcadeTheme.BgPanel;
+            fill.raycastTarget = false;
+            UIFactory.Stretch(UIFactory.Rt(fillGo), 3f);
+
+            // Silhouette, clipped so the shoulders read as a bust rather than a second circle.
+            var clip = UIFactory.Child(badge.transform, "Clip");
+            UIFactory.Stretch(UIFactory.Rt(clip), size * 0.2f);
+            clip.AddComponent<RectMask2D>();
+            SilhouetteDot(clip.transform, tint, new Vector2(0f, size * 0.10f), size * 0.30f);
+            SilhouetteDot(clip.transform, tint, new Vector2(0f, -size * 0.34f), size * 0.60f);
+        }
+
+        private void SilhouetteDot(Transform parent, Color tint, Vector2 pos, float diameter)
+        {
+            var go = UIFactory.Child(parent, "Dot");
+            var img = go.AddComponent<Image>();
+            img.sprite = ArcadeTheme.Disc();
+            img.color = tint.WithAlpha(0.85f);
+            img.raycastTarget = false;
+            var rt = UIFactory.Rt(go);
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(diameter, diameter);
+            rt.anchoredPosition = pos;
         }
 
         private void RefreshInviteBanner()
@@ -443,12 +567,19 @@ namespace TableFootball.UI
             bool online = FriendsHub.IsOnline(friend);
             string joinCode = FriendsHub.JoinCodeFor(friend);
 
-            string subtitle = !online ? "offline"
+            string status = !online ? "offline"
                 : string.IsNullOrEmpty(joinCode) ? "online" : "at a table";
+            // A level in front of the status, the way a real multiplayer roster reads. Placeholder —
+            // see PlayerProgress.MockLevelFor — but stable per friend, so it does not flicker.
+            string subtitle = $"lv {PlayerProgress.MockLevelFor(id)}  ·  {status}";
             Color tint = online ? ArcadeTheme.Go : ArcadeTheme.InkMuted;
 
             UIFactory.RowIdentity(row, FriendsHub.NameOf(friend), subtitle, tint,
                                   () => OpenProfile(id));
+
+            // A presence dot on every row now, not only online ones — green and pulsing when online,
+            // a static muted grey otherwise, so "no dot" never has to be read as its own kind of status.
+            UIFactory.OnlinePip(row, online, 18f);
 
             // Join only. Invite lives on the friend's own screen, which the row opens when tapped.
             //
@@ -470,6 +601,19 @@ namespace TableFootball.UI
         {
             Close();
             OnOpenFriendProfile?.Invoke(friendMemberId);
+        }
+
+        private void CopyCode()
+        {
+            string code = PlayerAccount.DisplayName;
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                SetStatus("NO CODE YET — TRY AGAIN IN A MOMENT");
+                return;
+            }
+
+            GUIUtility.systemCopyBuffer = code;
+            SetStatus("CODE COPIED");
         }
 
         private async void Add()

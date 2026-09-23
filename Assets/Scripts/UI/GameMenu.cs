@@ -39,6 +39,14 @@ namespace TableFootball.UI
         private bool standalone;
         private Coroutine overlayRoutine;
 
+        /// <summary>
+        /// Whether the pause icon is allowed to show at all, independent of whether the overlay it
+        /// opens is up. False by default: before a match exists there is nothing to pause, and the
+        /// overlay's own "Resume" / "Main Menu" make no sense on a front-end screen. See
+        /// <see cref="SetPauseButtonVisible"/>.
+        /// </summary>
+        private bool pauseButtonAllowed;
+
         public bool IsOpen => isOpen;
 
         /// <summary>
@@ -88,6 +96,23 @@ namespace TableFootball.UI
         public void Resume() => SetOpen(false);
 
         /// <summary>
+        /// Shows or hides the pause icon itself, separate from opening/closing the overlay it
+        /// triggers. GameFlow calls this true only once a match is actually live (alongside
+        /// <c>hud.SetVisible(true)</c>) and false the moment play returns to any front-end screen
+        /// (alongside every <c>hud.SetVisible(false)</c> that follows from <c>OpenMenu</c>) — the same
+        /// lifecycle the score HUD already follows, since a pause icon means nothing without a match
+        /// under it.
+        /// </summary>
+        public void SetPauseButtonVisible(bool visible)
+        {
+            pauseButtonAllowed = visible;
+            if (!standalone && pauseButton != null)
+            {
+                pauseButton.SetActive(!isOpen && pauseButtonAllowed);
+            }
+        }
+
+        /// <summary>
         /// Set by GameFlow. Leaving a match returns to the main menu instead of closing the game:
         /// the main menu carries the real Quit, so a mistap mid-match costs a match rather than the
         /// whole session.
@@ -135,7 +160,7 @@ namespace TableFootball.UI
             {
                 Time.timeScale = open ? 0f : 1f;
                 AudioListener.pause = open;
-                if (pauseButton != null) pauseButton.SetActive(!open);
+                if (pauseButton != null) pauseButton.SetActive(!open && pauseButtonAllowed);
             }
 
             overlayCg.blocksRaycasts = open;
@@ -285,10 +310,10 @@ namespace TableFootball.UI
         private void BuildOverlay()
         {
             overlay = UIFactory.Child(canvasRoot, "MenuOverlay");
-            var dim = overlay.AddComponent<Image>();
-            dim.color = ArcadeTheme.BgDeep.WithAlpha(0.72f);
-            dim.raycastTarget = true;
-            UIFactory.Stretch(UIFactory.Rt(overlay), -ArcadeTheme.Bleed);
+            UIFactory.Stretch(UIFactory.Rt(overlay), 0);
+            // The same shared dim the account/friends/online screens now use, so the settings overlay
+            // and those screens read as one design language rather than two. See UIFactory.ScrimDim.
+            UIFactory.ScrimDim(overlay.transform);
             overlayCg = overlay.AddComponent<CanvasGroup>();
 
             var panel = UIFactory.Panel(overlay.transform, "MenuPanel");

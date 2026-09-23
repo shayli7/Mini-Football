@@ -150,10 +150,10 @@ namespace TableFootball.UI
 
             for (int n = 3; n >= 1; n--)
             {
-                yield return Step(n.ToString(), ArcadeTheme.Ink, ArcadeTheme.Gold, StepSeconds);
+                yield return Step(n.ToString(), ArcadeTheme.Ink, ArcadeTheme.Gold, StepSeconds, finale: false);
             }
 
-            yield return Step("GO!", ArcadeTheme.Go, ArcadeTheme.Go, GoSeconds);
+            yield return Step("GO!", ArcadeTheme.Go, ArcadeTheme.Go, GoSeconds, finale: true);
 
             root.SetActive(false);
             running = null;
@@ -164,7 +164,7 @@ namespace TableFootball.UI
         /// fade rather than another scale, so the next numeral's entrance is the only movement the
         /// eye has to follow.
         /// </summary>
-        private IEnumerator Step(string text, Color ink, Color glow, float seconds)
+        private IEnumerator Step(string text, Color ink, Color glow, float seconds, bool finale)
         {
             number.text = text;
             number.color = ink;
@@ -176,10 +176,12 @@ namespace TableFootball.UI
 
             Transform t = number.transform;
 
-            // A tick per numeral, so the count is audible as well as visible. The kick-off whistle is
-            // deliberately NOT played here - it belongs to KickOff, which GameFlow calls once this
-            // whole sequence has finished.
-            GameSfx.PlayUiClick();
+            // The countdown's own audio: a beep per numeral, a distinct GO at the end. The kick-off
+            // whistle is deliberately NOT played here - it belongs to KickOff, which GameFlow calls
+            // once this whole sequence has finished, so it lands on the start of play rather than on
+            // the "GO".
+            if (finale) GameSfx.PlayCountdownGo();
+            else GameSfx.PlayCountdownTick();
 
             float enter = Mathf.Min(ArcadeTheme.TSlow, seconds * 0.55f);
             float exit = Mathf.Min(ArcadeTheme.TFast, seconds * 0.25f);

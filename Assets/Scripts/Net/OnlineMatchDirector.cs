@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -65,6 +66,13 @@ namespace TableFootball.Net
         /// <summary>Gap between one unanswered request to start and the next.</summary>
         private const float ReadyRetrySeconds = 0.5f;
 
+        /// <summary>
+        /// How often the host puts the match clock on the wire. The guest runs its own clock down
+        /// between these and is only corrected by them, so this is a correction rate rather than a
+        /// frame rate — four a second is far more than enough to keep the two in step.
+        /// </summary>
+        private const float ClockPublishSeconds = 0.25f;
+
         /// <summary>How many times the guest asks before giving up and saying so.</summary>
         private const int ReadyAttempts = 20;
 
@@ -76,6 +84,76 @@ namespace TableFootball.Net
 
         private readonly HashSet<ulong> rematchVotes = new();
         private Coroutine rematchTimer;
+
+        /// <summary>
+        /// The match clock, owned by the host like the ball and the score.
+        ///
+        /// It used to be owned by nobody: <see cref="MatchManager"/> counts down against local frame
+        /// time, so each machine ran its own stopwatch and the two drifted apart over a match — and a
+        /// phone that stopped running for a while came back with a clock its opponent's had left
+        /// behind. Sent as a NetworkVariable rather than an event because it is state, not news: a
+        /// guest that misses one update is corrected by the next instead of staying wrong.
+        /// </summary>
+        private readonly NetworkVariable<float> clock = new(
+            0f,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+
+        /// <summary>When the host next puts the clock on the wire, in unscaled time.</summary>
+        private float nextClockPublish;
+
+        /// <summary>
+        /// The TABLE's cosmetics for this match, chosen by the host.
+        ///
+        /// The pitch and the room are one shared thing both players look at, so they cannot be each
+        /// player's own choice: two machines rendering different pitches would be two different
+        /// games, and a screenshot would not match what the opponent saw. The host owns them for the
+        /// same reason it owns the clock and the ball — its answer is already authoritative.
+        ///
+        /// The FIGURES are different; see <see cref="netFiguresRed"/>.
+        ///
+        /// (The ball skin is host-owned too, but it lives on <see cref="NetworkedBall"/> alongside
+        /// the rest of the ball's networked state rather than here.)
+        ///
+        /// Fixed strings because Netcode needs a bounded size on the wire; catalogue ids are short
+        /// by design, and one that ever outgrew this would be truncated and resolve to the default.
+        /// </summary>
+        private readonly NetworkVariable<FixedString64Bytes> netField = new(
+            default,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+
+        private readonly NetworkVariable<FixedString64Bytes> netBackground = new(
+            default,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+
+        /// <summary>
+        /// One figure skin PER TEAM, because the figures are not shared scenery — they are each
+        /// player's own eleven, and each player dresses their own.
+        ///
+        /// Red is the host's side and Blue the guest's (see <see cref="LocalTeam"/>). Both are still
+        /// server-written, since NetworkVariable write permission here is Server: the guest cannot
+        /// publish directly and instead reports its choice with
+        /// <see cref="ReportFigureSkinRpc"/>, which the host copies into the Blue slot. Routing it
+        /// through the host keeps one writer and means a late joiner gets both values as part of the
+        /// spawn, exactly like every other piece of match state.
+        /// </summary>
+        private readonly NetworkVariable<FixedString64Bytes> netFiguresRed = new(
+            default,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+
+        private readonly NetworkVariable<FixedString64Bytes> netFiguresBlue = new(
+            default,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+
+        /// <summary>The table's skinners, if the scene has them. Optional: a table without them just
+        /// keeps the materials the model ships with.</summary>
+        private FieldSkinner fieldSkinner;
+        private FigureSkinner figureSkinner;
+        private BackgroundSkinner backgroundSkinner;
 
         /// <summary>The guest's standing request to be started, retried until it is answered.</summary>
         private Coroutine readyHandshake;
@@ -109,6 +187,38 @@ namespace TableFootball.Net
 
             ConfigureTable();
 
+            // The table's cosmetics, published by the host and worn by BOTH sides — the host wears
+            // its own published value rather than reading its inventory a second time, so the two
+            // machines cannot drift apart. A NetworkVariable's current value is delivered to a late
+            // joiner as part of the spawn, so a guest arriving afterwards still gets it with no RPC.
+            fieldSkinner = FindAnyObjectByType<FieldSkinner>();
+            figureSkinner = FindAnyObjectByType<FigureSkinner>();
+            backgroundSkinner = FindAnyObjectByType<BackgroundSkinner>();
+            netField.OnValueChanged += OnFieldSkinChanged;
+            netFiguresRed.OnValueChanged += OnFigureSkinChanged;
+            netFiguresBlue.OnValueChanged += OnFigureSkinChanged;
+            netBackground.OnValueChanged += OnBackgroundSkinChanged;
+
+            string myFigures = Inventory.EquippedId(CosmeticKind.FigureSkin) ?? string.Empty;
+
+            if (IsServer)
+            {
+                netField.Value = new FixedString64Bytes(
+                    Inventory.EquippedId(CosmeticKind.FieldSkin) ?? string.Empty);
+                netBackground.Value = new FixedString64Bytes(
+                    Inventory.EquippedId(CosmeticKind.Background) ?? string.Empty);
+                // The host dresses its own side directly; the guest's arrives by RPC below.
+                netFiguresRed.Value = new FixedString64Bytes(myFigures);
+            }
+            else
+            {
+                // The guest cannot write a server-owned variable, so it tells the host what it is
+                // wearing and the host publishes it for both machines.
+                ReportFigureSkinRpc(new FixedString64Bytes(myFigures));
+            }
+
+            ApplyNetSkins();
+
             // Subscribed by BOTH roles, unlike everything else here. On the host it reports the guest
             // leaving; on the guest it reports being cut off from the host. One player walking out has
             // to end the match on the other's screen no matter which of them it was.
@@ -128,6 +238,13 @@ namespace TableFootball.Net
                 return;
             }
 
+            // The guest takes the clock from the host from here on, rather than running its own.
+            clock.OnValueChanged += OnClockChanged;
+            if (match != null && clock.Value > 0f)
+            {
+                match.SyncClock(clock.Value);
+            }
+
             // The guest, and only the guest, says when the match may begin.
             //
             // Asked repeatedly rather than announced once. OnNetworkSpawn is the first moment this
@@ -139,12 +256,80 @@ namespace TableFootball.Net
             readyHandshake = StartCoroutine(ReadyHandshake());
         }
 
+        private void OnFieldSkinChanged(FixedString64Bytes previous, FixedString64Bytes current)
+        {
+            ApplyNetSkins();
+        }
+
+        private void OnFigureSkinChanged(FixedString64Bytes previous, FixedString64Bytes current)
+        {
+            ApplyNetSkins();
+        }
+
+        /// <summary>
+        /// The guest telling the host which figure skin it is wearing, so the host can publish it for
+        /// both machines. Server-only write permission is why this is an RPC rather than the guest
+        /// simply setting its own variable.
+        /// </summary>
+        [Rpc(SendTo.Server)]
+        private void ReportFigureSkinRpc(FixedString64Bytes id, RpcParams rpcParams = default)
+        {
+            netFiguresBlue.Value = id;
+        }
+
+        private void OnBackgroundSkinChanged(FixedString64Bytes previous, FixedString64Bytes current)
+        {
+            ApplyNetSkins();
+        }
+
+        /// <summary>
+        /// Wears whatever the host published. An empty value means the host had nothing equipped, in
+        /// which case the override is CLEARED rather than set to "" — the skinners read empty as
+        /// "no override", so setting it explicitly would be the same thing said twice.
+        /// </summary>
+        private void ApplyNetSkins()
+        {
+            if (fieldSkinner != null)
+            {
+                string id = netField.Value.ToString();
+                if (string.IsNullOrEmpty(id)) fieldSkinner.ClearOverride();
+                else fieldSkinner.SetOverride(id);
+            }
+
+            if (figureSkinner != null)
+            {
+                // Each side dressed independently, so the host's eleven wear the host's skin and the
+                // guest's wear theirs — the same two teams on both screens.
+                figureSkinner.SetTeamSkin(Team.Red, netFiguresRed.Value.ToString());
+                figureSkinner.SetTeamSkin(Team.Blue, netFiguresBlue.Value.ToString());
+            }
+
+            if (backgroundSkinner != null)
+            {
+                string id = netBackground.Value.ToString();
+                if (string.IsNullOrEmpty(id)) backgroundSkinner.ClearOverride();
+                else backgroundSkinner.SetOverride(id);
+            }
+        }
+
         public override void OnNetworkDespawn()
         {
             if (NetworkManager.Singleton != null)
             {
                 NetworkManager.Singleton.OnClientDisconnectCallback -= OnClientDisconnected;
             }
+
+            netField.OnValueChanged -= OnFieldSkinChanged;
+            netFiguresRed.OnValueChanged -= OnFigureSkinChanged;
+            netFiguresBlue.OnValueChanged -= OnFigureSkinChanged;
+            netBackground.OnValueChanged -= OnBackgroundSkinChanged;
+
+            // The local player's own choices come back the moment the online match ends. Without
+            // this the next local match would still be wearing the last host's table — cosmetics
+            // this player may not even own.
+            if (fieldSkinner != null) fieldSkinner.ClearOverride();
+            if (figureSkinner != null) figureSkinner.ClearOverride();
+            if (backgroundSkinner != null) backgroundSkinner.ClearOverride();
 
             StopRematchTimer();
             rematchVotes.Clear();
@@ -168,6 +353,17 @@ namespace TableFootball.Net
                 match.MatchRestarted -= OnHostRestart;
             }
 
+            if (!IsServer)
+            {
+                clock.OnValueChanged -= OnClockChanged;
+            }
+
+            // Whatever comes next — a local match, a match against the AI — runs its own clock again.
+            if (match != null)
+            {
+                match.ClearRemoteClock();
+            }
+
             // Give the table back the things ConfigureTable took away for the session's duration.
             //
             // The goal triggers are the ones that bite: they are switched off on the guest so that a
@@ -185,6 +381,38 @@ namespace TableFootball.Net
             foreach (RodTouchInput input in FindObjectsByType<RodTouchInput>(FindObjectsInactive.Include, FindObjectsSortMode.None))
             {
                 if (input != null) input.SetTeamRestriction(false, Team.Red);
+            }
+        }
+
+        /// <summary>
+        /// Host only: keeps the match clock on the wire.
+        ///
+        /// Unscaled time, like the rest of the online handshakes here, because the world sits at
+        /// timeScale 0 behind the pause menu and a win banner — and the clock the guest is being
+        /// corrected against has to go on being reported through those, not freeze on one machine.
+        /// </summary>
+        private void Update()
+        {
+            if (!IsSpawned || !IsServer || match == null)
+            {
+                return;
+            }
+
+            if (Time.unscaledTime < nextClockPublish)
+            {
+                return;
+            }
+
+            nextClockPublish = Time.unscaledTime + ClockPublishSeconds;
+            clock.Value = match.TimeRemaining;
+        }
+
+        /// <summary>Guest only: the host's clock arriving.</summary>
+        private void OnClockChanged(float previous, float current)
+        {
+            if (match != null)
+            {
+                match.SyncClock(current);
             }
         }
 

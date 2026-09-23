@@ -16,17 +16,60 @@ namespace TableFootball.UI
     public static class ArcadeTheme
     {
         // ---- Palette (hex from MASTER.md) ----
-        public static readonly Color BgDeep   = Hex("#0A0E14");
-        public static readonly Color BgPanel  = Hex("#141A24");
-        public static readonly Color BgRaised = Hex("#1E2735");
-        public static readonly Color Line      = Hex("#2A3547");
+        // Backgrounds lifted a few percent and Gold desaturated one notch — the punchy #FFB63D against
+        // near-black #0A0E14 read as high-contrast in the way a warning label does, not a game. Both
+        // moves are deliberately small: the whole UI (five-plus screens' worth) is built against these
+        // constants, so a bigger jump would relitigate a lot of already-tuned work rather than just
+        // taking the edge off it. OnGold is untouched — Gold is still light enough that dark text on
+        // it reads exactly the same.
+        public static readonly Color BgDeep   = Hex("#10141C");
+        public static readonly Color BgPanel  = Hex("#1A212B");
+        public static readonly Color BgRaised = Hex("#242D3C");
+        public static readonly Color Line      = Hex("#2E3A4C");
         public static readonly Color Ink       = Hex("#EAF0F7");
         public static readonly Color InkMuted  = Hex("#8A97A8");
         public static readonly Color Red       = Hex("#FF3355");
         public static readonly Color Blue      = Hex("#22A7FF");
-        public static readonly Color Gold      = Hex("#FFB63D");
-        public static readonly Color Go        = Hex("#3DFF88");
+        public static readonly Color Gold      = Hex("#E0A94A");
+        public static readonly Color Go        = Hex("#3DFF88"); // online status ONLY — a live presence dot
         public static readonly Color OnGold    = Hex("#241800"); // dark ink for gold primary buttons
+
+        // The football accent — turf green. Deliberately a calmer, deeper green than Go, which is a
+        // bright signal colour reserved for "this person is online right now". Pitch is a surface, a
+        // backdrop, a mode's identity; Go is a light that turns on. Keeping them apart is what stops a
+        // green card reading as an online indicator.
+        public static readonly Color Pitch     = Hex("#2FBF6B");
+        public static readonly Color PitchDark = Hex("#134A2C"); // turf in shadow, for pitch fills/lines
+
+        // ---- Ranked league tiers ----
+        // One accent per league, so a badge or a pod row reads its rank at a glance. Gold reuses the
+        // existing brand gold; the other three are tier metals. Kept here, not in Net/, because a
+        // colour is a UI fact — the ladder logic never needs to know what Bronze looks like.
+        public static readonly Color Bronze  = Hex("#C77B3B");
+        public static readonly Color Silver  = Hex("#B9C4D0");
+        public static readonly Color Diamond = Hex("#5EE6E0");
+
+        // ---- Currency ----
+        // The coin is its own yellow, brighter and greener than the brand Gold. They sit two
+        // centimetres apart in the main menu header — the ranked pill in Gold, the coin pill beside it
+        // — and at the same hue one would read as a dimmer version of the other rather than as a
+        // different thing. CoinDark is the coin's rim and the ink punched into its face.
+        public static readonly Color Coin     = Hex("#FFD24A");
+        public static readonly Color CoinDark = Hex("#A96E12");
+
+        // ---- Cosmetic rarity ----
+        // Four steps, deliberately not four arbitrary colours: Common is a neutral so it reads as "no
+        // rarity" rather than as a fifth tier, and the other three climb through the spectrum the way
+        // every collection game's players already expect. Used for a card's edge, its glow and its
+        // rarity label, so one item is one colour everywhere it appears.
+        // Common stays exactly as it was — it is deliberately neutral, the "no rarity" reading, and
+        // brightening it would give it a rarity it is not supposed to have. Rare/Epic/Legendary are
+        // each pushed a notch more saturated so a wall of cards sorts itself by colour at a glance
+        // instead of the three upper tiers reading as similarly muted.
+        public static readonly Color RarityCommon    = Hex("#8FA0B4");
+        public static readonly Color RarityRare      = Hex("#2E9CFF");
+        public static readonly Color RarityEpic      = Hex("#BD4DFF");
+        public static readonly Color RarityLegendary = Hex("#FF7A1A");
 
         // ---- Brand ----
         // The game's name lives here and nowhere else. It used to be spelled three different ways

@@ -54,6 +54,7 @@ namespace TableFootball.Net
             }
 
             PlayerPrefs.Save();
+            CloudSync.MarkDirty();
             OnChanged?.Invoke();
 
             // Fire-and-forget, matching every other courtesy broadcast in this game (see
@@ -76,6 +77,25 @@ namespace TableFootball.Net
         {
             PlayerPrefs.DeleteKey(WinsKey);
             PlayerPrefs.DeleteKey(LossesKey);
+            PlayerPrefs.Save();
+            OnChanged?.Invoke();
+        }
+
+        // ── Cloud sync ─────────────────────────────────────────────────────────────────────────
+
+        /// <summary>Copies the online win/loss count into the save document.</summary>
+        internal static void ExportTo(CloudSync.SaveDoc d)
+        {
+            d.onlineWins = PlayerPrefs.GetInt(WinsKey, 0);
+            d.onlineLosses = PlayerPrefs.GetInt(LossesKey, 0);
+        }
+
+        /// <summary>Writes the reconciled count back and redraws. Straight to PlayerPrefs so it does
+        /// not re-mark the store dirty.</summary>
+        internal static void ImportFrom(CloudSync.SaveDoc d)
+        {
+            PlayerPrefs.SetInt(WinsKey, d.onlineWins);
+            PlayerPrefs.SetInt(LossesKey, d.onlineLosses);
             PlayerPrefs.Save();
             OnChanged?.Invoke();
         }
