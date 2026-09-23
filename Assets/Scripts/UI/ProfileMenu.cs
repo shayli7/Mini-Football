@@ -1,5 +1,6 @@
 using System;
 using TableFootball.Net;
+using TableFootball.Progression;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -42,6 +43,7 @@ namespace TableFootball.UI
         private TextMeshProUGUI playedValue;
         private TextMeshProUGUI goalsValue;
         private TextMeshProUGUI timeValue;
+        private TextMeshProUGUI levelValue;
 
         private TMP_InputField nameField;
         private TMP_InputField createUser;
@@ -227,6 +229,11 @@ namespace TableFootball.UI
         /// This device's online record. Read from <see cref="MatchStats"/> rather than a server: it is
         /// the player's own screen, and their own device is where the count is both authoritative and
         /// instant — a friend's record is the one that has to come from somewhere else.
+        ///
+        /// The level sits in the same row rather than getting a block of its own. The overview is
+        /// already the tallest group in the game — the comment on <see cref="Column"/> says as much —
+        /// and a fourth number costs no height at all, where a ring would have cost 140. The big ring
+        /// lives on the quests screen, which has room for it.
         /// </summary>
         private void BuildRecord(Transform parent)
         {
@@ -244,6 +251,7 @@ namespace TableFootball.UI
             winsValue = UIFactory.StatBlock(row.transform, "won", ArcadeTheme.Go);
             lossesValue = UIFactory.StatBlock(row.transform, "lost", ArcadeTheme.Red);
             rateValue = UIFactory.StatBlock(row.transform, "win rate", ArcadeTheme.Gold);
+            levelValue = UIFactory.StatBlock(row.transform, "level", ArcadeTheme.Gold);
         }
 
         /// <summary>
@@ -445,7 +453,11 @@ namespace TableFootball.UI
             lossesValue.text = PlayerProgress.Losses.ToString();
             // A dash rather than 0% before the first match: nobody has a nought-percent win rate until
             // they have actually lost one.
+            // Reads PlayerProgress like winsValue/lossesValue just above, not MatchStats — the
+            // percentage has to be computed from the same pair of numbers the player sees it beside,
+            // or a rate and a scoreline that came from two different counters would visibly disagree.
             rateValue.text = PlayerProgress.WinPercent >= 0 ? $"{PlayerProgress.WinPercent}%" : "–";
+            levelValue.text = PlayerXp.Level.ToString();
 
             // All real now: played is wins + losses, goals and time are credited from the match loop.
             playedValue.text = PlayerProgress.Played.ToString();

@@ -249,6 +249,8 @@ namespace TableFootball.Net
                 Wallet.ResetLocal();
                 Inventory.ResetLocal();
                 RankedRewards.ResetLocal();
+                Progression.DailyQuests.ResetForNewPlayer();
+                Progression.PlayerXp.ResetForNewPlayer();
                 FriendsHub.Reset();
 
                 // The local record is now blank; pull the incoming player's cloud save into it, so
@@ -315,6 +317,8 @@ namespace TableFootball.Net
                 Wallet.ResetLocal();
                 Inventory.ResetLocal();
                 RankedRewards.ResetLocal();
+                Progression.DailyQuests.ResetForNewPlayer();
+                Progression.PlayerXp.ResetForNewPlayer();
 
                 // A player with no identity at all cannot host, join or be added, and nothing in the
                 // menu would explain why. Replacing it immediately keeps the game in a working state.

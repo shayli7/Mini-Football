@@ -14,6 +14,9 @@ and Unity's `Library/` churn fights OneDrive sync. Two older copies are stale ba
 them: `C:\Users\liaid\Dev\TableFootball` (the previous ASCII location) and one under
 `...\תכנות שי-לי\Table Football` (the original, on OneDrive).
 
+The project has moved before (it was at `C:\Users\liaid\Dev\TableFootball`), so treat the path above
+as the current location rather than a fixed one. What is fixed is the rule, not the folder.
+
 Only `Assets/`, `Packages/` and `ProjectSettings/` matter (~6 MB). `Library/` is ~1.8 GB and
 regenerates.
 

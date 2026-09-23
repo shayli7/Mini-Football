@@ -452,7 +452,7 @@ namespace TableFootball.UI
         // ---------- round icon buttons ----------
 
         /// <summary>Which glyph a round icon button draws.</summary>
-        public enum Icon { Door, Person, Sliders, Eye, Dice, Trophy, Store, Path }
+        public enum Icon { Door, Person, Sliders, Eye, Dice, Trophy, Store, Path, Quest }
 
         private static Image CircleImage(GameObject go, Color color, bool raycast)
         {
@@ -591,6 +591,18 @@ namespace TableFootball.UI
                     clip.AddComponent<RectMask2D>();
                     Dot(clip.transform, ArcadeTheme.Ink, new Vector2(0f, 7f), 14f);
                     Dot(clip.transform, ArcadeTheme.Ink, new Vector2(0f, -17f), 28f);
+                    break;
+
+                case Icon.Quest:
+                    // A checklist part-way through: three lines, the done ones ticked gold. The
+                    // screen behind this button is a list with things to clear off it, and the
+                    // glyph says that and also says there is something waiting.
+                    Rod(g, ArcadeTheme.Ink.WithAlpha(0.75f), new Vector2(4f, 10f), 20f, 3f, 0f);
+                    Rod(g, ArcadeTheme.Ink.WithAlpha(0.75f), new Vector2(4f, 0f), 20f, 3f, 0f);
+                    Rod(g, ArcadeTheme.Ink.WithAlpha(0.45f), new Vector2(4f, -10f), 20f, 3f, 0f);
+                    Dot(g, ArcadeTheme.Gold, new Vector2(-11f, 10f), 8f);
+                    Dot(g, ArcadeTheme.Gold, new Vector2(-11f, 0f), 8f);
+                    Dot(g, ArcadeTheme.Ink.WithAlpha(0.3f), new Vector2(-11f, -10f), 8f);
                     break;
 
                 case Icon.Sliders:

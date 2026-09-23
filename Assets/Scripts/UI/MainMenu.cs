@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using TableFootball.Net;
+using TableFootball.Progression;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -25,6 +26,7 @@ namespace TableFootball.UI
         private GameObject rootGroup;
         private GameObject difficultyGroup;
         private GameObject backHolder;
+        private GameObject questPip;
         private GameObject inviteBanner;
         private TMPro.TextMeshProUGUI inviteText;
         private TMPro.TextMeshProUGUI rankedPoints;
@@ -58,6 +60,9 @@ namespace TableFootball.UI
 
         /// <summary>Raised by the path icon in the bottom bar. Opens the level path.</summary>
         public Action OnOpenLevelPath;
+
+        /// <summary>Opens the daily quests screen.</summary>
+        public Action OnOpenQuests;
 
         /// <summary>Raised with a friend's join code when their invitation is accepted from here.</summary>
         public Action<string> OnAcceptInvite;
@@ -370,6 +375,7 @@ namespace TableFootball.UI
             Ladder.OnChanged -= RefreshRanked;
             LevelPath.OnChanged -= RefreshPathPip;
             PlayerProgress.OnChanged -= RefreshPathPip;
+            DailyQuests.OnChanged -= RefreshQuestPip;
         }
 
         /// <summary>
@@ -446,6 +452,17 @@ namespace TableFootball.UI
             // thing that would make a player open it on a day they levelled up without noticing.
             pathPip = UIFactory.CountPip(path.transform, 0);
 
+            // Quests sits beside Path rather than beside Friends/Settings: Store, Path and Quests are
+            // the rewards cluster — one to spend, one to track, one to earn from — where Friends and
+            // Settings are plain navigation. The same pip idiom as Path, for the same reason: an icon
+            // alone cannot say a quest was cleared since the player last looked.
+            var quests = UIFactory.IconButton(bar.transform, "Quests", UIFactory.Icon.Quest,
+                                              MenuButton.Variant.Neutral,
+                                              () => OnOpenQuests?.Invoke(), barHeight);
+            quests.SetAccent(navAccent, navGlow);
+            SquareCell(quests.gameObject, barHeight);
+            questPip = UIFactory.CountPip(quests.transform, 0);
+
             var spacer = UIFactory.Child(bar.transform, "Spacer");
             spacer.AddComponent<LayoutElement>().flexibleWidth = 1f;
 
@@ -470,6 +487,14 @@ namespace TableFootball.UI
             le.preferredWidth = size;
             le.minWidth = size;
         }
+
+        /// <summary>
+        /// Redraws the "cleared but not yet seen" count on the quests button — the same idiom as
+        /// <see cref="RefreshPathPip"/>, and for the same reason: the payoff happens on the result
+        /// screen, which a player can leave without reading, so the icon has to say so on their
+        /// behalf the next time they are looking at it.
+        /// </summary>
+        private void RefreshQuestPip() => UIFactory.SetCountPip(questPip, DailyQuests.UnseenCount);
 
         /// <summary>
         /// An invitation from a friend, across the top of the front screen.
@@ -627,6 +652,11 @@ namespace TableFootball.UI
             PlayerProgress.OnChanged += RefreshPathPip;
             RefreshPathPip();
 
+            DailyQuests.EnsureToday();
+            DailyQuests.OnChanged -= RefreshQuestPip;
+            DailyQuests.OnChanged += RefreshQuestPip;
+            RefreshQuestPip();
+
             root.SetActive(true);
             root.transform.SetAsLastSibling();
             group.blocksRaycasts = true;
@@ -645,6 +675,7 @@ namespace TableFootball.UI
             Ladder.OnChanged -= RefreshRanked;
             LevelPath.OnChanged -= RefreshPathPip;
             PlayerProgress.OnChanged -= RefreshPathPip;
+            DailyQuests.OnChanged -= RefreshQuestPip;
 
             if (anim != null)
             {

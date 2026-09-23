@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using TableFootball.Net;
+using TableFootball.Progression;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -35,6 +36,8 @@ namespace TableFootball.UI
         private TextMeshProUGUI bannerRed, bannerBlue;
 
         private Coroutine redPop, bluePop, flashRoutine, clockPop, bannerRoutine;
+        private QuestLedger ledger;
+        private RectTransform bannerPanel;
         private int lastTick = -1;
         private UIBurst burst;
 
@@ -53,8 +56,11 @@ namespace TableFootball.UI
         private TextMeshProUGUI rankedPointsText;
         private Coroutine rankedRoutine;
 
-        // The banner grows to fit whichever of the progression/ranked blocks are shown, and sits at
-        // the base height for a local-PvP result that has neither.
+        // The banner grows to fit whichever of the quest ledger, progression and ranked blocks are
+        // shown, and sits at the base height for a result with none of them — a local-PvP win, or an
+        // online/vs-AI win that cleared no quest. bannerPanel and bannerPanelRt name the SAME
+        // RectTransform (see BuildBanner) — two fields because two features grew this panel
+        // independently; kept both rather than rewiring every call site that already reads one.
         private const float BannerBaseHeight = 430f;
         private const float BannerTallHeight = 520f;
         // Tall enough for BOTH the ranked row and the XP block beneath it — a ranked win always shows
@@ -449,8 +455,11 @@ namespace TableFootball.UI
             var prt = UIFactory.Rt(panel);
             prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
             prt.pivot = new Vector2(0.5f, 0.5f);
-            prt.sizeDelta = new Vector2(460f, BannerBaseHeight);
+            // Widened from the original 460 to fit the quest ledger's rows comfortably; the
+            // ranked and progress blocks below just stretch to fill whatever width the panel has.
+            prt.sizeDelta = new Vector2(520f, BannerBaseHeight);
             bannerPanelRt = prt;
+            bannerPanel = prt;
 
             var fill = panel.transform.Find("Fill");
             var v = fill.gameObject.AddComponent<VerticalLayoutGroup>();
@@ -475,11 +484,17 @@ namespace TableFootball.UI
             bannerReason.gameObject.AddComponent<LayoutElement>().preferredHeight = 20f;
 
             // Above the XP block: for a ranked win, the trophy is the headline reward and the XP a
-            // secondary one, so it reads result -> ranked -> progression -> buttons.
+            // secondary one, so it reads result -> ranked -> progression -> quests -> buttons.
             BuildRankedBlock(fill);
 
-            // Between the result and the buttons, so the XP earned reads as a consequence of it.
+            // Between the result and the quest ledger, so the XP earned reads as a consequence of it.
             BuildProgressBlock(fill);
+
+            // Last of the three, right before the buttons — the quest ledger is today's specific
+            // wins, after the match's general progression. Starts hidden and contributes no height
+            // until a match actually clears something.
+            ledger = gameObject.AddComponent<QuestLedger>();
+            ledger.Build(fill);
 
             playAgainButton = UIFactory.Button(fill, "Play Again", MenuButton.Variant.Primary,
                                                PlayAgain);
@@ -494,6 +509,7 @@ namespace TableFootball.UI
             burt.sizeDelta = Vector2.zero;
             burt.anchoredPosition = Vector2.zero;
             burst = burstGo.AddComponent<UIBurst>();
+            ledger.OnSlam = () => burst.Play(ArcadeTheme.Gold);
 
             banner.SetActive(false);
         }
@@ -880,6 +896,19 @@ namespace TableFootball.UI
             // alone, against an empty table.
             if (playAgainButton != null) playAgainButton.gameObject.SetActive(!forfeit);
 
+            // Filled before the banner is shown, so the panel is already the right height when it
+            // scales in — growing it afterwards would be a visible jolt under the player's eyes.
+            //
+            // Reading the tracker's snapshot here is only safe because it subscribed to MatchWon
+            // first (see TableFootballUI) and has therefore already banked this match. Swap that
+            // order and this silently shows the last match's rewards.
+            bool hasLedger = ledger != null && ledger.Populate(QuestTracker.LastAwards);
+            if (bannerPanel != null)
+            {
+                bannerPanel.sizeDelta = new Vector2(bannerPanel.sizeDelta.x,
+                                                    BannerBaseHeight + (hasLedger ? ledger.Height : 0f));
+            }
+
             banner.SetActive(true);
             banner.transform.SetAsLastSibling();
 
@@ -919,6 +948,13 @@ namespace TableFootball.UI
             // is being congratulated on losing. Two players sharing one screen still get it: one of
             // them did just win, and it is their screen too.
             if (burst != null && celebrate) burst.Play(teamColor);
+
+            // Last, and deliberately after the result has finished landing: the match is what the
+            // player came for, and the quests are what they get for it.
+            if (ledger != null)
+            {
+                yield return ledger.Play();
+            }
 
             bannerRoutine = null;
         }
@@ -964,6 +1000,14 @@ namespace TableFootball.UI
         {
             if (banner != null) banner.SetActive(false);
             HideGoalPopup();
+
+            // The next result draws its own ledger. Putting this one away now, while the banner is
+            // hidden, is what stops a rematch opening on the last match's rewards.
+            if (ledger != null) ledger.Hide();
+            if (bannerPanel != null)
+            {
+                bannerPanel.sizeDelta = new Vector2(bannerPanel.sizeDelta.x, BannerBaseHeight);
+            }
 
             // Put the clock back, or a fresh match starts with the sudden-death banner still up.
             if (suddenDeathRoot != null) suddenDeathRoot.SetActive(false);

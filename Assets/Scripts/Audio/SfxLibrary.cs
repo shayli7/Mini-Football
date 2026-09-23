@@ -44,6 +44,13 @@ namespace TableFootball
         /// <summary>The "GO!" - higher and longer than a tick, so the start reads as an arrival.</summary>
         public static AudioClip CountdownGo => Get("sfx_countdown_go", () => Beep(0.40f, 1050f));
 
+        /// <summary>
+        /// A quest clearing: two notes, up. Shorter and drier than <see cref="Goal"/>, which is a
+        /// four-note flourish over a crowd — a reward that announced itself as loudly as a goal would
+        /// be competing with the result it is being handed out alongside.
+        /// </summary>
+        public static AudioClip Reward => Get("sfx_reward", () => Arpeggio(new[] { 659.25f, 987.77f }, 0.09f, 0.22f));
+
         private static AudioClip Get(string key, Func<AudioClip> build)
         {
             if (cache.TryGetValue(key, out AudioClip clip) && clip != null)

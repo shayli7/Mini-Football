@@ -1,4 +1,5 @@
 using TableFootball.Net;
+using TableFootball.Progression;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -92,10 +93,23 @@ namespace TableFootball.UI
             var friendsMenu = gameObject.AddComponent<FriendsMenu>();
             var profileMenu = gameObject.AddComponent<ProfileMenu>();
             var friendProfileMenu = gameObject.AddComponent<FriendProfileMenu>();
+            var questsMenu = gameObject.AddComponent<QuestsMenu>();
             var countdown = gameObject.AddComponent<CountdownScreen>();
             var onboarding = gameObject.AddComponent<OnboardingScreen>();
             var start = gameObject.AddComponent<StartScreen>();
             var flow = gameObject.AddComponent<GameFlow>();
+
+            // One more listener on MatchManager, alongside the HUD and the audio. It is added here
+            // rather than dropped on the table so the whole progression system boots and dies with
+            // the UI that shows it.
+            var questTracker = gameObject.AddComponent<QuestTracker>();
+
+            // BEFORE the HUD, and that order is load-bearing rather than tidy. Both subscribe to
+            // MatchWon; the HUD sizes its result panel around the quests the tracker has just
+            // banked, so a tracker that subscribed second would hand it the PREVIOUS match's
+            // ledger — an empty one first time out, and a stale one every time after. Multicast
+            // delegates fire in subscription order, so subscribing first is the whole fix.
+            questTracker.Build(match);
 
             hud.Build(canvasRoot, match);
             hud.OnOpenMenu = pause.Open;
@@ -112,6 +126,7 @@ namespace TableFootball.UI
             friendsMenu.Build(canvasRoot);
             profileMenu.Build(canvasRoot);
             friendProfileMenu.Build(canvasRoot);
+            questsMenu.Build(canvasRoot);
             countdown.Build(canvasRoot);
 
             // Built before the title screen so it sits under it: the title comes up first at boot, and
@@ -130,8 +145,8 @@ namespace TableFootball.UI
             // exist first.
             flow.Build(start, onboarding, loading, mainMenu, onlineMenu, leagueMenu,
                        storeMenu, levelPathMenu, friendsMenu,
-                       profileMenu, friendProfileMenu, pause, hud, countdown, match,
-                       bootLoadSeconds, transitionLoadSeconds);
+                       profileMenu, friendProfileMenu, questsMenu, pause, hud, countdown, match,
+                       questTracker, bootLoadSeconds, transitionLoadSeconds);
         }
 
         private Transform BuildCanvas()
