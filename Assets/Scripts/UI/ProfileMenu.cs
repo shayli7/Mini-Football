@@ -1,5 +1,6 @@
 using System;
 using TableFootball.Net;
+using TableFootball.Progression;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -40,6 +41,7 @@ namespace TableFootball.UI
         private TextMeshProUGUI winsValue;
         private TextMeshProUGUI lossesValue;
         private TextMeshProUGUI rateValue;
+        private TextMeshProUGUI levelValue;
 
         private TMP_InputField nameField;
         private TMP_InputField createUser;
@@ -220,6 +222,11 @@ namespace TableFootball.UI
         /// This device's online record. Read from <see cref="MatchStats"/> rather than a server: it is
         /// the player's own screen, and their own device is where the count is both authoritative and
         /// instant — a friend's record is the one that has to come from somewhere else.
+        ///
+        /// The level sits in the same row rather than getting a block of its own. The overview is
+        /// already the tallest group in the game — the comment on <see cref="Column"/> says as much —
+        /// and a fourth number costs no height at all, where a ring would have cost 140. The big ring
+        /// lives on the quests screen, which has room for it.
         /// </summary>
         private void BuildRecord(Transform parent)
         {
@@ -237,6 +244,7 @@ namespace TableFootball.UI
             winsValue = UIFactory.StatBlock(row.transform, "won", ArcadeTheme.Go);
             lossesValue = UIFactory.StatBlock(row.transform, "lost", ArcadeTheme.Red);
             rateValue = UIFactory.StatBlock(row.transform, "win rate", ArcadeTheme.Gold);
+            levelValue = UIFactory.StatBlock(row.transform, "level", ArcadeTheme.Gold);
         }
 
         private void BuildDelete(Transform parent)
@@ -406,6 +414,7 @@ namespace TableFootball.UI
             // A dash rather than 0% before the first match: nobody has a nought-percent win rate until
             // they have actually lost one.
             rateValue.text = MatchStats.WinPercent >= 0 ? $"{MatchStats.WinPercent}%" : "–";
+            levelValue.text = PlayerXp.Level.ToString();
 
             if (PlayerAccount.HasAccount)
             {

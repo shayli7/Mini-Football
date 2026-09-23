@@ -1,5 +1,6 @@
 using System.Collections;
 using TableFootball.Net;
+using TableFootball.Progression;
 using UnityEngine;
 
 namespace TableFootball.UI
@@ -26,10 +27,12 @@ namespace TableFootball.UI
         private FriendsMenu friends;
         private ProfileMenu profile;
         private FriendProfileMenu friendProfile;
+        private QuestsMenu quests;
         private GameMenu pause;
         private ScoreHud hud;
         private CountdownScreen countdown;
         private MatchManager match;
+        private QuestTracker questTracker;
 
         [SerializeField] private float bootLoadSeconds = 1.5f;
         [SerializeField] private float transitionLoadSeconds = 1.0f;
@@ -80,9 +83,9 @@ namespace TableFootball.UI
         public void Build(StartScreen startScreen, LoadingScreen loadingScreen,
                           MainMenu mainMenu, OnlineMenu onlineMenu,
                           FriendsMenu friendsMenu, ProfileMenu profileMenu,
-                          FriendProfileMenu friendProfileMenu,
+                          FriendProfileMenu friendProfileMenu, QuestsMenu questsMenu,
                           GameMenu pauseMenu, ScoreHud scoreHud, CountdownScreen countdownScreen,
-                          MatchManager matchManager,
+                          MatchManager matchManager, QuestTracker tracker,
                           float bootSeconds, float transitionSeconds)
         {
             start = startScreen;
@@ -92,10 +95,12 @@ namespace TableFootball.UI
             friends = friendsMenu;
             profile = profileMenu;
             friendProfile = friendProfileMenu;
+            quests = questsMenu;
             pause = pauseMenu;
             hud = scoreHud;
             countdown = countdownScreen;
             match = matchManager;
+            questTracker = tracker;
             bootLoadSeconds = bootSeconds;
             transitionLoadSeconds = transitionSeconds;
 
@@ -108,7 +113,13 @@ namespace TableFootball.UI
                 menu.OnOpenSettings += OpenSettings;
                 menu.OnOpenFriends += OpenFriends;
                 menu.OnOpenProfile += OpenProfileFromMenu;
+                menu.OnOpenQuests += OpenQuests;
                 menu.OnAcceptInvite = AcceptInvite;
+            }
+
+            if (quests != null)
+            {
+                quests.OnBack = OpenMenu;
             }
 
             if (online != null)
@@ -200,6 +211,7 @@ namespace TableFootball.UI
                 menu.OnOpenSettings -= OpenSettings;
                 menu.OnOpenFriends -= OpenFriends;
                 menu.OnOpenProfile -= OpenProfileFromMenu;
+                menu.OnOpenQuests -= OpenQuests;
             }
 
             if (match != null)
@@ -505,6 +517,14 @@ namespace TableFootball.UI
                 MatchStats.RecordResult(won: false);
             }
 
+            // The same door, for quests. No MatchWon will fire here — the opponent's does, on their
+            // machine — so without this the match would go uncounted and, worse, the win run would
+            // survive a quit, making leaving the cheapest way to protect it.
+            if (IsPlaying && questTracker != null)
+            {
+                questTracker.AbandonMatch();
+            }
+
             IsPlaying = false;
             onlineMatch = false;
             waitingForRematch = false;
@@ -560,6 +580,24 @@ namespace TableFootball.UI
             if (pause != null) pause.OpenSettingsStandalone();
         }
 
+        /// <summary>
+        /// The daily quests. Frozen, unlike the friends and online screens: nothing behind it is
+        /// waiting on a transport tick, so there is no reason to leave the table running under it.
+        /// Its own countdown reads unscaled time and does not care.
+        /// </summary>
+        private void OpenQuests()
+        {
+            if (menu != null) menu.Close();
+            if (friends != null) friends.Close();
+            if (profile != null) profile.Close();
+            if (friendProfile != null) friendProfile.Close();
+            if (hud != null) hud.SetVisible(false);
+
+            Freeze();
+
+            if (quests != null) quests.Open();
+        }
+
         private void OpenMenu()
         {
             Freeze();
@@ -568,6 +606,7 @@ namespace TableFootball.UI
             if (friends != null) friends.Close();
             if (profile != null) profile.Close();
             if (friendProfile != null) friendProfile.Close();
+            if (quests != null) quests.Close();
             if (menu != null) menu.Open();
             GameSfx.PlayMenuMusic();
         }
@@ -694,6 +733,7 @@ namespace TableFootball.UI
             Team playerTeam = ApplyMode(aiOpponent);
 
             if (menu != null) menu.Close();
+            if (quests != null) quests.Close();
             if (hud != null) hud.SetVisible(true);
             GameSfx.StopMenuMusic();
 
@@ -713,6 +753,20 @@ namespace TableFootball.UI
             waitingForRematch = false;
 
             IsPlaying = true;
+
+            // Everything quests need that MatchManager does not carry. Offline only the Hard-AI
+            // quest can come of it, and the tracker decides that from what is handed over here.
+            if (questTracker != null)
+            {
+                questTracker.BeginMatch(new MatchContext
+                {
+                    Online = false,
+                    LocalTeam = playerTeam,
+                    AiOpponent = aiOpponent,
+                    Difficulty = GameAudio.Difficulty,
+                    OpponentIsFriend = false,
+                });
+            }
 
             // Reset the score, the ball and the rods now, but do NOT start play: the countdown wants
             // a settled table to count over, and the kick-off whistle belongs after "GO!" rather than
@@ -768,6 +822,7 @@ namespace TableFootball.UI
 
             if (online != null) online.Close();
             if (menu != null) menu.Close();
+            if (quests != null) quests.Close();
             if (hud != null) hud.SetVisible(true);
             GameSfx.StopMenuMusic();
 
@@ -792,6 +847,20 @@ namespace TableFootball.UI
 
             Unfreeze();
             IsPlaying = true;
+
+            // Resolved now, while the session is unambiguously alive, for the same reason the local
+            // team is: by the time a result lands the host may be gone and the roster with it.
+            if (questTracker != null)
+            {
+                questTracker.BeginMatch(new MatchContext
+                {
+                    Online = true,
+                    LocalTeam = onlineLocalTeam,
+                    AiOpponent = false,
+                    Difficulty = GameAudio.Difficulty,
+                    OpponentIsFriend = FriendsHub.IsFriend(OnlineSession.OpponentId),
+                });
+            }
 
             // The table itself is not started here. The director restarts both machines off the one
             // message that brought us here, so the kick-off cannot depend on this side working out

@@ -26,6 +26,7 @@ namespace TableFootball
         [SerializeField] private AudioClip kickOffWhistleClip;
         [SerializeField] private AudioClip fullTimeWhistleClip;
         [SerializeField] private AudioClip uiClickClip;
+        [SerializeField] private AudioClip questClip;
 
         [Header("Menu music (placeholder — silent until a clip is assigned)")]
         [Tooltip("Looping music for the main menu. Drop a clip here or place one at Resources/Audio/MenuMusic. " +
@@ -55,6 +56,7 @@ namespace TableFootball
         [Range(0f, 1f)] [SerializeField] private float goalVolume = 0.7f;
         [Range(0f, 1f)] [SerializeField] private float whistleVolume = 0.45f;
         [Range(0f, 1f)] [SerializeField] private float uiVolume = 0.35f;
+        [Range(0f, 1f)] [SerializeField] private float questVolume = 0.5f;
 
         [Header("Voices")]
         [Tooltip("How many sounds may overlap. A busy rally can start several impacts at once.")]
@@ -217,6 +219,23 @@ namespace TableFootball
             if (instance == null) return;
             instance.Play(Resolve(instance.fullTimeWhistleClip, EndWhistle, SfxLibrary.Whistle),
                           instance.whistleVolume, 1f);
+        }
+
+        /// <summary>
+        /// A quest clearing on the result screen.
+        ///
+        /// <paramref name="step"/> is the row's place in the ledger, and raises the pitch a tone each
+        /// time. Three rows then climb, and that climb is most of what makes clearing the set feel
+        /// like more than clearing one quest — the same trick the score count-up uses, spread over
+        /// the whole list instead of one number.
+        /// </summary>
+        public static void PlayQuestComplete(int step)
+        {
+            if (instance == null) return;
+            instance.Play(instance.questClip ?? SfxLibrary.Reward,
+                          instance.questVolume,
+                          // A whole tone is 2^(2/12). Capped, or a four-row ledger ends up shrill.
+                          Mathf.Pow(1.122462f, Mathf.Clamp(step, 0, 3)));
         }
 
         public static void PlayUiClick()
