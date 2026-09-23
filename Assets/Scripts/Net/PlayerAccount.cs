@@ -234,6 +234,8 @@ namespace TableFootball.Net
                 // LeaderboardHub), the honest thing is to admit this device does not know the
                 // incoming player's record rather than show them the previous player's.
                 MatchStats.ResetLocal();
+                Progression.DailyQuests.ResetForNewPlayer();
+                Progression.PlayerXp.ResetForNewPlayer();
                 FriendsHub.Reset();
 
                 await RefreshAsync();
@@ -291,6 +293,8 @@ namespace TableFootball.Net
                 GameServices.SignOut(clearCredentials: true);
                 FriendsHub.Reset();
                 MatchStats.ResetLocal();
+                Progression.DailyQuests.ResetForNewPlayer();
+                Progression.PlayerXp.ResetForNewPlayer();
 
                 // A player with no identity at all cannot host, join or be added, and nothing in the
                 // menu would explain why. Replacing it immediately keeps the game in a working state.

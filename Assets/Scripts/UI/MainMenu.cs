@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using TableFootball.Net;
+using TableFootball.Progression;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -30,6 +31,7 @@ namespace TableFootball.UI
         private GameObject confirmRoot;
         private Transform confirmPanel;
         private MenuButton profileButton;
+        private GameObject questDot;
         private GameObject inviteBanner;
         private TMPro.TextMeshProUGUI inviteText;
         private Coroutine anim;
@@ -51,6 +53,9 @@ namespace TableFootball.UI
 
         /// <summary>Raised by the avatar, top left. Goes straight to the account screen.</summary>
         public Action OnOpenProfile;
+
+        /// <summary>Opens the daily quests screen.</summary>
+        public Action OnOpenQuests;
 
         /// <summary>Raised with a friend's join code when their invitation is accepted from here.</summary>
         public Action<string> OnAcceptInvite;
@@ -253,6 +258,7 @@ namespace TableFootball.UI
         {
             PlayerAccount.OnChanged -= RefreshAvatar;
             FriendsHub.OnChanged -= MarkInviteDirty;
+            DailyQuests.OnChanged -= RefreshQuestDot;
         }
 
         /// <summary>The corner icons: the player's own things, bottom left.</summary>
@@ -269,13 +275,56 @@ namespace TableFootball.UI
             frt.pivot = new Vector2(0f, 0f);
             frt.anchoredPosition = new Vector2(margin, margin);
 
+            var quests = UIFactory.IconButton(root.transform, "Quests", UIFactory.Icon.Quest,
+                                              MenuButton.Variant.Neutral,
+                                              () => OnOpenQuests?.Invoke(), size);
+            var qrt = UIFactory.Rt(quests.gameObject);
+            qrt.anchorMin = qrt.anchorMax = new Vector2(0f, 0f);
+            qrt.pivot = new Vector2(0f, 0f);
+            qrt.anchoredPosition = new Vector2(margin + size + ArcadeTheme.Md, margin);
+
+            BuildQuestDot(quests.transform);
+
             var settings = UIFactory.IconButton(root.transform, "Settings", UIFactory.Icon.Sliders,
                                                 MenuButton.Variant.Neutral,
                                                 () => OnOpenSettings?.Invoke(), size);
             var srt = UIFactory.Rt(settings.gameObject);
             srt.anchorMin = srt.anchorMax = new Vector2(0f, 0f);
             srt.pivot = new Vector2(0f, 0f);
-            srt.anchoredPosition = new Vector2(margin + size + ArcadeTheme.Md, margin);
+            srt.anchoredPosition = new Vector2(margin + 2f * (size + ArcadeTheme.Md), margin);
+        }
+
+        /// <summary>
+        /// The gold dot on the quests button, for something cleared but not yet looked at.
+        ///
+        /// It exists because the payoff happens on the result screen, which a player can leave
+        /// without reading — and a quest that quietly banked itself while they were tapping through
+        /// is a reward they never found out about.
+        /// </summary>
+        private void BuildQuestDot(Transform parent)
+        {
+            var go = UIFactory.Child(parent, "Unseen");
+            var img = go.AddComponent<Image>();
+            img.sprite = ArcadeTheme.Disc();
+            img.color = ArcadeTheme.Gold;
+            img.raycastTarget = false;
+
+            var rt = UIFactory.Rt(go);
+            rt.anchorMin = rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(16f, 16f);
+            rt.anchoredPosition = new Vector2(-4f, -4f);
+
+            questDot = go;
+            RefreshQuestDot();
+        }
+
+        private void RefreshQuestDot()
+        {
+            if (questDot != null)
+            {
+                questDot.SetActive(DailyQuests.HasUnseen);
+            }
         }
 
         /// <summary>
@@ -476,6 +525,11 @@ namespace TableFootball.UI
             FriendsHub.OnChanged += MarkInviteDirty;
             RefreshInvite();
 
+            DailyQuests.EnsureToday();
+            DailyQuests.OnChanged -= RefreshQuestDot;
+            DailyQuests.OnChanged += RefreshQuestDot;
+            RefreshQuestDot();
+
             root.SetActive(true);
             root.transform.SetAsLastSibling();
             group.blocksRaycasts = true;
@@ -491,6 +545,7 @@ namespace TableFootball.UI
         public void Close()
         {
             FriendsHub.OnChanged -= MarkInviteDirty;
+            DailyQuests.OnChanged -= RefreshQuestDot;
 
             if (anim != null)
             {

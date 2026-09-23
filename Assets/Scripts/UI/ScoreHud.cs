@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using TableFootball.Progression;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -31,6 +32,11 @@ namespace TableFootball.UI
         private TextMeshProUGUI bannerRed, bannerBlue;
 
         private Coroutine redPop, bluePop, flashRoutine, clockPop, bannerRoutine;
+        private QuestLedger ledger;
+        private RectTransform bannerPanel;
+
+        /// <summary>The result panel with no quest ledger in it. Grown to fit when there is one.</summary>
+        private const float BannerBaseHeight = 430f;
         private int lastTick = -1;
         private UIBurst burst;
 
@@ -318,7 +324,8 @@ namespace TableFootball.UI
             var prt = UIFactory.Rt(panel);
             prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
             prt.pivot = new Vector2(0.5f, 0.5f);
-            prt.sizeDelta = new Vector2(460f, 430f);
+            prt.sizeDelta = new Vector2(520f, BannerBaseHeight);
+            bannerPanel = prt;
 
             var fill = panel.transform.Find("Fill");
             var v = fill.gameObject.AddComponent<VerticalLayoutGroup>();
@@ -342,6 +349,12 @@ namespace TableFootball.UI
                                           upper: true, tracking: 8f);
             bannerReason.gameObject.AddComponent<LayoutElement>().preferredHeight = 20f;
 
+            // Built before the buttons so it lands between the result and the way out of it, which
+            // is where the eye already is. Starts hidden and contributes no height until a match
+            // actually clears something.
+            ledger = gameObject.AddComponent<QuestLedger>();
+            ledger.Build(fill);
+
             playAgainButton = UIFactory.Button(fill, "Play Again", MenuButton.Variant.Primary,
                                                PlayAgain);
             UIFactory.Button(fill, "Main Menu", MenuButton.Variant.Ghost, () => OnReturnToMenu?.Invoke());
@@ -355,6 +368,7 @@ namespace TableFootball.UI
             burt.sizeDelta = Vector2.zero;
             burt.anchoredPosition = Vector2.zero;
             burst = burstGo.AddComponent<UIBurst>();
+            ledger.OnSlam = () => burst.Play(ArcadeTheme.Gold);
 
             banner.SetActive(false);
         }
@@ -520,6 +534,19 @@ namespace TableFootball.UI
             // alone, against an empty table.
             if (playAgainButton != null) playAgainButton.gameObject.SetActive(!forfeit);
 
+            // Filled before the banner is shown, so the panel is already the right height when it
+            // scales in — growing it afterwards would be a visible jolt under the player's eyes.
+            //
+            // Reading the tracker's snapshot here is only safe because it subscribed to MatchWon
+            // first (see TableFootballUI) and has therefore already banked this match. Swap that
+            // order and this silently shows the last match's rewards.
+            bool hasLedger = ledger != null && ledger.Populate(QuestTracker.LastAwards);
+            if (bannerPanel != null)
+            {
+                bannerPanel.sizeDelta = new Vector2(bannerPanel.sizeDelta.x,
+                                                    BannerBaseHeight + (hasLedger ? ledger.Height : 0f));
+            }
+
             banner.SetActive(true);
             banner.transform.SetAsLastSibling();
 
@@ -559,6 +586,13 @@ namespace TableFootball.UI
             // is being congratulated on losing. Two players sharing one screen still get it: one of
             // them did just win, and it is their screen too.
             if (burst != null && celebrate) burst.Play(teamColor);
+
+            // Last, and deliberately after the result has finished landing: the match is what the
+            // player came for, and the quests are what they get for it.
+            if (ledger != null)
+            {
+                yield return ledger.Play();
+            }
 
             bannerRoutine = null;
         }
@@ -603,6 +637,14 @@ namespace TableFootball.UI
         private void OnMatchRestarted()
         {
             if (banner != null) banner.SetActive(false);
+
+            // The next result draws its own ledger. Putting this one away now, while the banner is
+            // hidden, is what stops a rematch opening on the last match's rewards.
+            if (ledger != null) ledger.Hide();
+            if (bannerPanel != null)
+            {
+                bannerPanel.sizeDelta = new Vector2(bannerPanel.sizeDelta.x, BannerBaseHeight);
+            }
 
             // Put the clock back, or a fresh match starts with the sudden-death banner still up.
             if (suddenDeathRoot != null) suddenDeathRoot.SetActive(false);

@@ -391,6 +391,32 @@ namespace TableFootball.Net
             }
         }
 
+        /// <summary>
+        /// Whether a player id belongs to somebody on the friends list.
+        ///
+        /// Answered from the list already in memory rather than by asking the service: it is called
+        /// as a match ends, where a round trip would arrive after the result screen it is for. An
+        /// unloaded list answers false, which costs the player one quest tick and never miscounts a
+        /// stranger as a friend.
+        /// </summary>
+        public static bool IsFriend(string memberId)
+        {
+            if (string.IsNullOrEmpty(memberId))
+            {
+                return false;
+            }
+
+            foreach (Relationship friend in Friends)
+            {
+                if (friend?.Member?.Id == memberId)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         public static bool IsOnline(Relationship relationship) =>
             relationship?.Member?.Presence != null
             && relationship.Member.Presence.Availability == Availability.Online;

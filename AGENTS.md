@@ -8,10 +8,13 @@ throws). The table is Blender-authored and imported as `Assets/Models/FoosballTa
 
 ## The project path is load-bearing
 
-Must live at an **ASCII-only path outside OneDrive** — currently `C:\Users\liaid\Dev\TableFootball`.
+Must live at an **ASCII-only path outside OneDrive** — currently `C:\Unity-projects\Mini-Football`.
 Android's SDK/NDK/Gradle reject non-ASCII paths outright (`UnityException: Invalid project path`),
 and Unity's `Library/` churn fights OneDrive sync. An older copy under `...\תכנות שי-לי\Table Football`
 is a stale backup — never edit it.
+
+The project has moved before (it was at `C:\Users\liaid\Dev\TableFootball`), so treat the path above
+as the current location rather than a fixed one. What is fixed is the rule, not the folder.
 
 Only `Assets/`, `Packages/` and `ProjectSettings/` matter (~6 MB). `Library/` is ~1.8 GB and
 regenerates.
