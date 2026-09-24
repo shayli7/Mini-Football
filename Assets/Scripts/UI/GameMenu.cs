@@ -269,19 +269,21 @@ namespace TableFootball.UI
             var rt = UIFactory.Rt(root);
             rt.anchorMin = rt.anchorMax = new Vector2(1f, 1f);
             rt.pivot = new Vector2(1f, 1f);
-            rt.anchoredPosition = new Vector2(-ArcadeTheme.Xl, -ArcadeTheme.Xl);
-            rt.sizeDelta = new Vector2(56f, 56f);
+            // Level with the score strip and the same height, so the two read as one band across the
+            // top of the screen rather than two objects parked over the table.
+            rt.anchoredPosition = new Vector2(-ArcadeTheme.Lg, -ArcadeTheme.Sm);
+            rt.sizeDelta = new Vector2(ScoreHud.StripHeight, ScoreHud.StripHeight);
 
             var glowGo = UIFactory.Child(root.transform, "Glow");
-            var glow = UIFactory.GlowImage(glowGo, ArcadeTheme.RadMd, 24f, ArcadeTheme.Gold.WithAlpha(0.55f));
+            var glow = UIFactory.GlowImage(glowGo, ArcadeTheme.RadMd, 24f, ArcadeTheme.BlueSoft.WithAlpha(0f));
             UIFactory.Stretch(UIFactory.Rt(glowGo), -14);
 
             var borderGo = UIFactory.Child(root.transform, "Border");
-            var border = UIFactory.RoundedImage(borderGo, ArcadeTheme.RadMd, ArcadeTheme.Gold, false);
+            var border = UIFactory.RoundedImage(borderGo, ArcadeTheme.RadMd, ArcadeTheme.Line, false);
             UIFactory.Stretch(UIFactory.Rt(borderGo), 0);
 
             var fillGo = UIFactory.Child(root.transform, "Fill");
-            var fill = UIFactory.RoundedImage(fillGo, ArcadeTheme.RadMd, ArcadeTheme.BgRaised.WithAlpha(0.55f), true);
+            var fill = UIFactory.RoundedImage(fillGo, ArcadeTheme.RadMd, ArcadeTheme.BgPanel, true);
             UIFactory.Stretch(UIFactory.Rt(fillGo), 1.5f);
 
             // two-bar pause glyph
@@ -293,15 +295,17 @@ namespace TableFootball.UI
             for (int i = 0; i < 2; i++)
             {
                 var bar = UIFactory.Child(glyph.transform, "Bar");
-                UIFactory.RoundedImage(bar, 2, ArcadeTheme.Gold, false);
-                UIFactory.Rt(bar).sizeDelta = new Vector2(5f, 18f);
+                UIFactory.RoundedImage(bar, 2, ArcadeTheme.Ink, false);
+                UIFactory.Rt(bar).sizeDelta = new Vector2(4f, 16f);
                 bar.AddComponent<LayoutElement>();
             }
 
             var btn = root.AddComponent<MenuButton>();
             btn.fill = fill; btn.border = border; btn.glow = glow; btn.label = null;
             btn.targetGraphic = fill;
-            btn.Configure(MenuButton.Variant.IconGold);
+            // Blue, not gold: pausing is always available but never the thing the player should do
+            // next, and gold on screen for the whole match wore the highlight out.
+            btn.Configure(MenuButton.Variant.Ghost);
             btn.onClick.AddListener(Open);
 
             pauseButton = root;

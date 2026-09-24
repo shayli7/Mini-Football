@@ -20,20 +20,25 @@ screen, control, or visual.
 - Build controls with `UIFactory`, not raw `AddComponent<Image>()`/`Text`. **Reuse an existing
   factory piece before making a new one**; if you need a new reusable piece, add it to `UIFactory`.
 
-## The look — "Arcade Neon"
+## The look — black, blue and gold
 
-Dark, deep background; a few saturated neon accents; soft rounded panels that lift off the backdrop
-on a wide faint shadow; motion that is sprung but quiet. Restrained, not flashy — accents are
-feedback, not decoration. It's landscape, mobile-first, and safe-area aware.
+Roughly **60% black, 30% blue, 10% gold**. Black is the floor every screen stands on; blue is the
+panels and the ordinary buttons; gold is kept for the one thing on a screen the player should press
+next. None of the three at full brightness. Soft rounded panels lift off the backdrop on a wide faint
+shadow; motion is sprung but quiet. It's landscape, mobile-first, and safe-area aware.
 
 ## Palette (`ArcadeTheme`)
 
-Backgrounds go deep→raised: `BgDeep #0A0E14`, `BgPanel #141A24`, `BgRaised #1E2735`, hairlines
-`Line #2A3547`. Text: `Ink #EAF0F7`, muted `InkMuted #8A97A8`. Accents: `Red #FF3355`,
-`Blue #22A7FF`, `Gold #FFB63D` (primary action / brand), `OnGold #241800` (ink on gold buttons).
+Black floor, blue surfaces: `BgDeep #07090E` (black), `BgPanel #0F2036` (panel blue), `BgRaised
+#16304F` (rows, inputs, quiet buttons), hairlines `Line #1E3A5E`. The main blue button is `BlueFill
+#1C4675` with `BlueLine #2A5A8F`; `BlueSoft #7FA6D1` is for icons and small accents on blue. Text:
+`Ink #E9EEF5`, muted `InkMuted #93A1B5`. Highlight: `Gold #D6A73A` with `OnGold #1A1304` ink on it.
+Team colours are muted to sit inside the palette: `Red #C24A5A`, `Blue #3E78B8` — use them for team
+identity, not for UI chrome. `Danger #D98A93` marks destructive actions. The title screen's sky runs
+`SplashTop #02060F` → `SplashBottom #28609A`, dark at the top and lightening towards the bottom.
 
 Two greens, kept strictly apart — don't mix them:
-- **`Go #3DFF88`** — online-status **only**: a live-presence dot. A "light that turns on."
+- **`Go #4CC38A`** — online-status **only**: a live-presence dot. A "light that turns on."
 - **`Pitch #2FBF6B`** / `PitchDark #134A2C` — the football/turf accent: a surface, a mode's identity,
   a placeholder-stat tint ("coming soon"). Never use Pitch for online status, or Go for anything else.
 
@@ -85,8 +90,15 @@ deliberately mild because it runs on every button).
 All controls are `MenuButton : Selectable` (keyboard/gamepad nav for free; own visuals via
 `DoStateTransition`). Build with `UIFactory.Button(parent, label, variant, onClick)`.
 
-- Variants: `Primary` (gold fill, ink label — the main action), `Ghost` (raised fill, blue hover
-  accent), `Danger` (red accent — destructive, e.g. Delete Player), `Neutral`, `IconGold`.
+- Variants: `Primary` (gold fill, dark label — the one action to take next), `Blue` (the main blue
+  button for every other action — Host, Join, Rename, Sign In), `Ghost` (raised panel blue — Back,
+  Cancel, Later), `Neutral` (raised surface — cards, tiles, icon buttons), `Danger` (outlined in the
+  pale red — destructive, e.g. Delete Player), `IconGold`.
+- **Disabled** greys to the panel blue with a muted label, whatever the variant, so a disabled gold
+  button no longer reads as the thing to press.
+- **Shine**: the screen's one gold "start here" control may carry `UIShine.AddTo(button)` — a soft
+  band of light that sweeps across it every few seconds (`TShine`, `ShineRest`). Hidden under
+  `ReducedMotion` and while the button is not interactable. One per screen, like the resting glow.
 - **Hover is deliberately quiet**: it does *not* repaint the border or light a glow — the highlight
   is carried by the scale lift and the label alone. A lit outline reads as a box drawn around the
   thing rather than a response to the cursor. Don't "improve" this by adding hover glows.
@@ -160,6 +172,9 @@ Register a new screen in `TableFootballUI` (AddComponent + Build in order) and p
 
 - No scene Canvas, no UI prefabs, no imported art/fonts/sprites — runtime + procedural only.
 - No hard-coded hex or duration; every value is an `ArcadeTheme` token.
+- A `Glow` sprite's solid core must stop `feather` short of its texture edge (`ArcadeTheme.Bake`). When
+  it did not, the fade fell outside the texture and every "soft" panel shadow rendered as a hard dark
+  rectangle around its panel — with no error anywhere.
 - All motion on unscaled time and `ReducedMotion`-aware.
 - `Go` = online status only; `Pitch` = football accent. One resting glow per screen.
 - Progression/state logic stays out of the UI (`Net/PlayerProgress`, `Net/MatchStats`); screens read

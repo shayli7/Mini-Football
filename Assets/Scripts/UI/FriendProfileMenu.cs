@@ -289,7 +289,7 @@ namespace TableFootball.UI
             inviteButton.gameObject.SetActive(online);
             inviteButton.Configure(string.IsNullOrEmpty(joinCode)
                 ? MenuButton.Variant.Primary
-                : MenuButton.Variant.Neutral);
+                : MenuButton.Variant.Blue);
 
             // No status line for an absent friend. The presence text under their name already says
             // "offline" and both actions have removed themselves — saying it a third time in red

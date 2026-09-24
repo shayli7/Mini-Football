@@ -208,6 +208,7 @@ namespace TableFootball.UI
 
             claimAllButton = UIFactory.Button(row.transform, "Claim All Coins",
                                               MenuButton.Variant.Primary, ClaimAllCoins);
+            UIShine.AddTo(claimAllButton);
             UIFactory.Button(row.transform, "Back", MenuButton.Variant.Ghost, Back);
         }
 
@@ -452,14 +453,19 @@ namespace TableFootball.UI
                 view.SpineDown.color = unlocked ? ArcadeTheme.Gold : ArcadeTheme.Line;
             }
 
+            // A passed level is a solid blue node with its number in ink. It used to be gold text on
+            // a translucent gold face over a gold ring, which blended into one gold blob and lost the
+            // number — so the rows behind the player read as unlabelled dots. The level the player is
+            // standing on keeps a gold ring, so "here" is still marked when nothing is waiting.
             view.NodeRing.color = claimable ? accent
-                                : unlocked ? ArcadeTheme.Gold
+                                : level == reached ? ArcadeTheme.Gold
+                                : unlocked ? ArcadeTheme.BlueLine
                                 : ArcadeTheme.Line;
             view.NodeFace.color = claimable ? accent
-                                : unlocked ? ArcadeTheme.Gold.WithAlpha(0.22f)
+                                : unlocked ? ArcadeTheme.BlueFill
                                 : ArcadeTheme.BgDeep;
             view.NodeText.color = claimable ? ArcadeTheme.OnGold
-                                : unlocked ? ArcadeTheme.Gold
+                                : unlocked ? ArcadeTheme.Ink
                                 : ArcadeTheme.InkMuted;
 
             // The row a player is standing on gets a faint band behind it, so flicking down the path
@@ -474,7 +480,7 @@ namespace TableFootball.UI
             view.ClaimHolder.SetActive(claimable);
             view.StateText.gameObject.SetActive(!claimable);
             view.StateText.text = claimed ? "Claimed" : $"Level {level}";
-            view.StateText.color = claimed ? ArcadeTheme.Pitch : ArcadeTheme.InkMuted;
+            view.StateText.color = claimed ? ArcadeTheme.BlueSoft : ArcadeTheme.InkMuted;
         }
 
         private void RefreshAll()
