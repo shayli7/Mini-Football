@@ -1,0 +1,180 @@
+/* Chest opening overlay. See ChestOpening.cs, which drives every pose from code — this file only
+   places things. Laid out against a 760-unit-high panel. */
+
+.chest-open__scrim { background-color: rgba(3, 5, 9, 0.93); }
+
+.chest-open__flash { background-color: #FFFFFF; opacity: 0; }
+
+.chest-open__kicker {
+    position: absolute;
+    top: 52px;
+    left: 0;
+    right: 0;
+    font-size: 22px;
+    letter-spacing: 8px;
+    padding-left: 8px;
+    -unity-text-align: middle-center;
+}
+
+/* ---------- stage: everything centred on one point ---------- */
+
+.chest-open__stage {
+    position: absolute;
+    top: 100px;
+    left: 0;
+    right: 0;
+    height: 400px;
+}
+
+.chest-open__rays,
+.chest-open__glow,
+.chest-open__chest,
+.chest-open__card,
+.chest-open__sparks {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+}
+
+.chest-open__rays {
+    width: 720px;
+    height: 720px;
+    margin-left: -360px;
+    margin-top: -360px;
+    -unity-background-scale-mode: stretch-to-fill;
+}
+
+.chest-open__glow {
+    width: 440px;
+    height: 440px;
+    margin-left: -220px;
+    margin-top: -220px;
+    -unity-background-scale-mode: stretch-to-fill;
+}
+
+/* 220 x 196: the lid (76) overlaps the body (130) by 10 at the seam. Scales and squashes from its
+   base, so a landing flattens it onto the floor rather than about its middle. */
+.chest-open__chest {
+    width: 220px;
+    height: 196px;
+    margin-left: -110px;
+    margin-top: -98px;
+    transform-origin: 50% 100%;
+}
+
+.chest-open__inner {
+    position: absolute;
+    left: 22px;
+    right: 22px;
+    top: 56px;
+    height: 26px;
+    border-radius: 6px;
+}
+
+.chest-open__body {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 130px;
+    transform-origin: 50% 100%;
+}
+
+.chest-open__lid {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 76px;
+}
+
+.chest-open__card {
+    width: 230px;
+    height: 230px;
+    margin-left: -115px;
+    margin-top: -115px;
+    padding: 10px;
+    border-width: 3px;
+    border-radius: 24px;
+    background-color: var(--panel-2);
+}
+
+.chest-open__picture {
+    flex-grow: 1;
+    border-radius: 16px;
+    overflow: hidden;
+    align-items: center;
+    justify-content: center;
+}
+
+.chest-open__art {
+    position: absolute;
+    left: 6px;
+    top: 6px;
+    right: 6px;
+    bottom: 6px;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.chest-open__glyph { width: 110px; height: 110px; }
+
+.chest-open__sparks { width: 0; height: 0; overflow: visible; }
+
+.chest-open__spark {
+    position: absolute;
+    left: 0;
+    top: 0;
+    border-radius: 2px;
+}
+
+/* ---------- words and the way out ---------- */
+
+.chest-open__prompt {
+    position: absolute;
+    top: 540px;
+    left: 0;
+    right: 0;
+    font-size: 16px;
+    letter-spacing: 6px;
+    padding-left: 6px;
+    color: var(--ink);
+    -unity-text-align: middle-center;
+}
+
+.chest-open__info {
+    position: absolute;
+    top: 520px;
+    left: 0;
+    right: 0;
+    align-items: center;
+}
+
+.chest-open__name {
+    font-size: 30px;
+    letter-spacing: 1px;
+    -unity-text-align: middle-center;
+}
+
+.chest-open__detail {
+    margin-top: 4px;
+    font-size: 13px;
+    letter-spacing: 4px;
+    -unity-text-align: middle-center;
+}
+
+.chest-open__note {
+    margin-top: 6px;
+    font-size: 14px;
+    color: var(--muted);
+    -unity-text-align: middle-center;
+}
+
+.chest-open__collect {
+    position: absolute;
+    bottom: 40px;
+    left: 0;
+    right: 0;
+    align-items: center;
+}
+
+.chest-open__collect .btn { width: 260px; }

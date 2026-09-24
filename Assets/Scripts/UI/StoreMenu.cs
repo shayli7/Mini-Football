@@ -273,7 +273,9 @@ namespace TableFootball.UI
                  .style.color = affordable ? ArcadeTheme.Gold : ArcadeTheme.InkMuted;
         }
 
-        private static UiIcon.Glyph KindGlyph(CosmeticKind kind)
+        /// <summary>The icon standing in for a cosmetic with no rendered thumbnail. Shared with
+        /// <see cref="ChestOpening"/>.</summary>
+        internal static UiIcon.Glyph KindGlyph(CosmeticKind kind)
         {
             switch (kind)
             {

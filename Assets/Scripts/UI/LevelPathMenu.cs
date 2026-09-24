@@ -518,11 +518,33 @@ namespace TableFootball.UI
 
             // Coins land in the pill, which counts up on its own and is already on screen — showing a
             // card for them as well would be a modal dialog to dismiss for the most ordinary reward on
-            // the path. A skin or a chest is worth stopping for.
-            if (result.Item.Valid || result.FromChest)
+            // the path. A skin or a chest is worth stopping for, and a chest gets opened on screen.
+            if (result.FromChest)
+            {
+                OpenChest(result);
+            }
+            else if (result.Item.Valid)
             {
                 ShowReveal(result);
             }
+        }
+
+        /// <summary>
+        /// Plays the chest opening over the path. The path itself is faded out and stops taking
+        /// touches while it runs: the opening is on the UI Toolkit panel and this screen is still on
+        /// the uGUI canvas, and which of the two draws on top is not something to rely on.
+        /// </summary>
+        private void OpenChest(LevelPath.ClaimResult result)
+        {
+            group.alpha = 0f;
+            group.blocksRaycasts = false;
+
+            ChestOpening.Play(result.Tier, result.Item, result.Coins, () =>
+            {
+                if (!IsOpen) return;
+                group.alpha = 1f;
+                group.blocksRaycasts = true;
+            });
         }
 
         private void ClaimAllCoins()
@@ -674,6 +696,7 @@ namespace TableFootball.UI
 
             root.SetActive(true);
             root.transform.SetAsLastSibling();
+            group.alpha = 1f;
             group.blocksRaycasts = true;
 
             RefreshAll();
@@ -713,6 +736,7 @@ namespace TableFootball.UI
         {
             PlayerProgress.OnChanged -= RefreshAll;
             LevelPath.OnChanged -= RefreshAll;
+            ChestOpening.Cancel();
 
             if (root != null)
             {
