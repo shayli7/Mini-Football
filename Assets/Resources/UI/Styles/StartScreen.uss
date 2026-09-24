@@ -1,0 +1,113 @@
+/* Title screen. See StartScreen.cs. */
+
+.start__sky {
+    -unity-background-scale-mode: stretch-to-fill;
+}
+
+/* The pitch's centre circle and halfway line, faint, low on the screen. */
+.start__circle {
+    position: absolute;
+    left: 50%;
+    bottom: -300px;
+    width: 600px;
+    height: 600px;
+    translate: -300px 0;
+    border-radius: 300px;
+    border-width: 2px;
+    border-color: rgba(233, 238, 245, 0.07);
+}
+
+.start__halfway {
+    position: absolute;
+    left: -200px;
+    right: -200px;
+    bottom: 30px;
+    height: 2px;
+    background-color: rgba(233, 238, 245, 0.07);
+}
+
+.start__mote {
+    position: absolute;
+    bottom: 0;
+    width: 4px;
+    height: 4px;
+    border-radius: 2px;
+    background-color: #7FA6D1;
+    opacity: 0;
+}
+
+.start__mote--gold { background-color: #D6A73A; }
+
+.start__logo {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 26%;
+    align-items: center;
+}
+
+.start__rod {
+    width: 180px;
+    height: 36px;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 22px;
+}
+
+.start__rod-bar {
+    width: 180px;
+    height: 6px;
+    border-radius: 3px;
+    background-color: #3E78B8;
+}
+
+.start__knob {
+    position: absolute;
+    left: 72px;
+    top: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 18px;
+    background-color: #F2F4F7;
+    border-width: 5px;
+    border-color: rgba(214, 167, 58, 0.35);
+}
+
+.start__mini {
+    font-size: 38px;
+    letter-spacing: 18px;
+    padding-left: 18px;
+    -unity-text-align: middle-center;
+}
+
+.start__football {
+    font-size: 104px;
+    letter-spacing: 10px;
+    padding-left: 10px;
+    color: #D6A73A;
+    -unity-text-align: middle-center;
+    text-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+.start__prompt {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 64px;
+    align-items: center;
+}
+
+.start__prompt-text {
+    font-size: 20px;
+    letter-spacing: 8px;
+    padding-left: 8px;
+    -unity-text-align: middle-center;
+}
+
+.start__underline {
+    width: 120px;
+    height: 3px;
+    margin-top: 14px;
+    border-radius: 2px;
+    background-color: #D6A73A;
+}

@@ -1,0 +1,250 @@
+/*
+ * Mini Football — base styles for the UI Toolkit screens.
+ *
+ * Black, blue and gold at roughly 60 / 30 / 10: black is the floor, blue the panels and ordinary
+ * buttons, gold only the one thing to press next. The same hex values as ArcadeTheme.cs; if one
+ * changes, change both.
+ *
+ * Fonts are set from code by class (f-display, f-display-semi, f-body-medium, f-body-semi) — see
+ * UiFonts.cs. Sizes are in panel units against a fixed 760-unit height (UiToolkitHost).
+ */
+
+:root {
+    --black: #07090E;
+    --panel: #0F2036;
+    --panel-2: #122742;
+    --raised: #16304F;
+    --line: #1E3A5E;
+    --line-2: #23446B;
+    --blue-fill: #1C4675;
+    --blue-line: #2A5A8F;
+    --blue-soft: #7FA6D1;
+    --ink: #E9EEF5;
+    --muted: #93A1B5;
+    --dim: #5F6E84;
+    --gold: #D6A73A;
+    --gold-soft: rgba(214, 167, 58, 0.14);
+    --on-gold: #1A1304;
+    --red: #C24A5A;
+    --blue: #3E78B8;
+    --danger: #D98A93;
+}
+
+.app {
+    color: var(--ink);
+    font-size: 16px;
+}
+
+Label {
+    -unity-font-style: normal;
+    color: var(--ink);
+    margin: 0;
+    padding: 0;
+}
+
+/* ---------- layout ---------- */
+
+.screen {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* Full-screen backgrounds reach past the safe area to the screen edge. */
+.bleed {
+    position: absolute;
+    left: -200px;
+    top: -200px;
+    right: -200px;
+    bottom: -200px;
+}
+
+.row { flex-direction: row; align-items: center; }
+.col { flex-direction: column; }
+.grow { flex-grow: 1; }
+.center { align-items: center; justify-content: center; }
+
+/* ---------- type ---------- */
+
+.caption {
+    font-size: 13px;
+    letter-spacing: 3px;
+    color: var(--muted);
+    -unity-text-align: middle-left;
+}
+
+.muted { color: var(--muted); }
+.gold { color: var(--gold); }
+
+/* ---------- surfaces ---------- */
+
+.panel {
+    background-color: var(--panel);
+    border-width: 1px;
+    border-color: var(--line);
+    border-radius: 22px;
+}
+
+.chip {
+    flex-direction: row;
+    align-items: center;
+    background-color: var(--panel);
+    border-width: 1px;
+    border-color: var(--line);
+    border-radius: 14px;
+    height: 52px;
+    padding: 0 18px 0 12px;
+}
+
+.chip__value {
+    font-size: 20px;
+    margin-left: 10px;
+}
+
+/* ---------- buttons ---------- */
+
+.btn {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    height: 54px;
+    padding: 0 24px;
+    border-width: 1px;
+    border-radius: 14px;
+    transition-property: scale, background-color, border-color, opacity;
+    transition-duration: 0.12s, 0.12s, 0.12s, 0.2s;
+    transition-timing-function: ease-out-cubic;
+}
+
+.btn:hover { scale: 1.03 1.03; }
+.btn:active { scale: 0.97 0.97; }
+
+.btn__label {
+    font-size: 16px;
+    letter-spacing: 3px;
+    -unity-text-align: middle-center;
+}
+
+.btn--gold { background-color: var(--gold); border-color: var(--gold); color: var(--on-gold); }
+.btn--gold:active { background-color: #BE9230; }
+.btn--blue { background-color: var(--blue-fill); border-color: var(--blue-line); color: var(--ink); }
+.btn--blue:active { background-color: #173C66; }
+.btn--ghost { background-color: var(--raised); border-color: var(--line-2); color: var(--ink); }
+.btn--ghost:active { background-color: #122842; }
+.btn--danger { background-color: rgba(0, 0, 0, 0); border-color: #4A2A33; color: var(--danger); }
+
+.btn.is-disabled {
+    background-color: var(--raised);
+    border-color: var(--line-2);
+    color: var(--dim);
+    scale: 1 1;
+}
+
+.icon-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background-color: var(--raised);
+    border-width: 1px;
+    border-color: var(--line-2);
+    align-items: center;
+    justify-content: center;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.icon-btn:hover { scale: 1.05 1.05; }
+.icon-btn:active { scale: 0.95 0.95; }
+
+.icon { width: 22px; height: 22px; }
+
+/* The light sweep across the screen's one gold control. Moved from code (UiShine). */
+.shine {
+    position: absolute;
+    top: -40px;
+    bottom: -40px;
+    width: 46px;
+    background-color: rgba(255, 255, 255, 0.28);
+    rotate: -20deg;
+}
+
+.clip { overflow: hidden; }
+
+/* ---------- header (every full-screen menu) ---------- */
+
+.header {
+    position: absolute;
+    left: 48px;
+    right: 48px;
+    top: 28px;
+    height: 56px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+}
+
+.header__title {
+    font-size: 36px;
+    letter-spacing: 6px;
+    -unity-text-align: middle-center;
+}
+
+.header__back {
+    position: absolute;
+    left: 0;
+    width: 132px;
+    height: 52px;
+    padding: 0;
+}
+
+/* ---------- progress ---------- */
+
+.bar {
+    height: 8px;
+    border-radius: 4px;
+    background-color: var(--black);
+    overflow: hidden;
+}
+
+.bar__fill {
+    height: 100%;
+    border-radius: 4px;
+    background-color: var(--gold);
+    transition-property: width;
+    transition-duration: 0.9s;
+    transition-timing-function: ease-out-cubic;
+}
+
+.pip {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-radius: 6px;
+    background-color: var(--gold);
+}
+
+/* ---------- motion ---------- */
+
+.enter {
+    transition-property: opacity, translate;
+    transition-duration: 0.42s, 0.42s;
+    transition-timing-function: ease-out-cubic, ease-out-cubic;
+}
+
+.enter-from {
+    opacity: 0;
+    translate: 0 26px;
+}
+
+.instant {
+    transition-duration: 0s;
+}
+
+.reduced-motion .enter,
+.reduced-motion .btn,
+.reduced-motion .icon-btn,
+.reduced-motion .bar__fill {
+    transition-duration: 0s;
+}

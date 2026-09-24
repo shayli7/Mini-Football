@@ -119,6 +119,13 @@ namespace TableFootball.UI
         /// </summary>
         public Action OnLeaveMatch;
 
+        /// <summary>
+        /// Raised when Settings, opened straight from the main menu, is closed. GameFlow hides the
+        /// main menu while it is up and reopens it here: the menu is drawn by UI Toolkit and this panel
+        /// by uGUI, and which of the two draws on top is not something either system promises.
+        /// </summary>
+        public Action OnStandaloneClosed;
+
         public void Quit()
         {
             if (OnLeaveMatch != null)
@@ -223,6 +230,7 @@ namespace TableFootball.UI
             {
                 SetOpen(false);
                 standalone = false;
+                OnStandaloneClosed?.Invoke();
                 return;
             }
 

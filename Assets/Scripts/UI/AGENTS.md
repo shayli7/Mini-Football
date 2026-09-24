@@ -20,6 +20,43 @@ screen, control, or visual.
 - Build controls with `UIFactory`, not raw `AddComponent<Image>()`/`Text`. **Reuse an existing
   factory piece before making a new one**; if you need a new reusable piece, add it to `UIFactory`.
 
+## Two UI systems, mid-migration
+
+The front end is moving from uGUI (the `Canvas` built by `TableFootballUI`) to **UI Toolkit**, one
+screen at a time, so it can match the design canvas closely. Moved so far: **`StartScreen`** and
+**`MainMenu`**. Everything else is still uGUI and follows the rest of this guide.
+
+A migrated screen keeps its class name and its whole public surface (`Build`, `Open`/`Close`/`Show`,
+the `On…` callbacks), so `GameFlow` and `TableFootballUI` do not change when one moves. Inside it:
+
+- **Host** — `Toolkit/UiToolkitHost` builds one `PanelSettings` + `UIDocument` at runtime (nothing in
+  the scene). Screens add a full-screen element to `UiToolkitHost.Root`, which is inset to the safe
+  area. Reference 1280×760 with match = 1: the height is always 760 units, so lay out for 760 tall and
+  let the width flex (~1690 at 20:9, ~1350 at 16:9).
+- **Styles** — `Resources/UI/Styles/*.uss`: `Base.uss` holds the palette variables and shared
+  components (`.btn--gold/blue/ghost/danger`, `.panel`, `.chip`, `.bar`, `.header`, `.enter`); each
+  screen adds its own sheet. Looks live in USS, never in C#. The hex values mirror `ArcadeTheme`.
+- **Fonts** — Oxanium (display) and Barlow (body) from Google Fonts (OFL), in `Resources/UI/Fonts`.
+  Set from code by class through `Toolkit/UiFonts` (`f-display`, `f-display-semi`, `f-body-medium`,
+  `f-body-semi`); call `UiFonts.Apply(root)` once a screen is built. One file per weight — UI
+  Toolkit's synthesised bold does not look like the real one.
+- **Icons** — `Toolkit/UiIcon`, line glyphs drawn with the vector API on a 24-unit grid. Add a glyph
+  there rather than importing an image.
+- **Building** — `Toolkit/UiKit`: `El`, `Text`, `Button`, `OnTap` (plays the UI click), `Show`,
+  `Enter` (the standard rise-and-fade entrance, via the `.enter` transition), `Loop` (per-frame
+  ambient motion on unscaled time), `Fade`. All of it honours `ArcadeTheme.ReducedMotion`.
+
+Two rules that fail silently:
+
+- **Only a displayed screen may take the pointer.** `RodTouchInput` asks the EventSystem whether a
+  touch is over UI, and UI Toolkit panels answer too. The panel root and `UiToolkitHost.Root` are
+  `PickingMode.Ignore`; a screen blocks touches only while `display` is not `none`. A picking element
+  left visible over the table makes every rod dead, with no error.
+- **Never rely on which system draws on top.** A uGUI panel opened over a UI Toolkit screen may draw
+  underneath it. The one case today — Settings opened from the main menu — closes the menu first and
+  reopens it from `GameMenu.OnStandaloneClosed`. Do the same for any new overlap until both sides
+  have moved.
+
 ## The look — black, blue and gold
 
 Roughly **60% black, 30% blue, 10% gold**. Black is the floor every screen stands on; blue is the
