@@ -58,6 +58,25 @@ namespace TableFootball.UI.Toolkit
             return b;
         }
 
+        /// <summary>
+        /// The top row every full-screen menu shares: the title centred, Back in the top-left corner
+        /// — always the same corner, so the way out never moves between screens. Returns the header,
+        /// so a screen can hang something on its right (<c>.header__right</c>).
+        /// </summary>
+        public static VisualElement Header(VisualElement parent, string title, Action onBack)
+        {
+            var header = El("header", parent);
+            Text(title, "header__title f-display", header);
+            if (onBack != null)
+            {
+                var back = El("btn btn--ghost header__back", header);
+                back.Add(new UiIcon(UiIcon.Glyph.ChevronLeft, ArcadeTheme.Ink, 2.5f));
+                Text("BACK", "btn__label f-display", back);
+                OnTap(back, onBack);
+            }
+            return header;
+        }
+
         public static void Show(VisualElement e, bool show)
         {
             if (e == null) return;
@@ -131,6 +150,47 @@ namespace TableFootball.UI.Toolkit
                     done?.Invoke();
                 }
             }).Every(16);
+        }
+
+        // ---------- textures ----------
+
+        private static Texture2D topGlow;
+
+        /// <summary>
+        /// A soft blue light falling from the top centre of the screen — the one gradient the design
+        /// has, which USS cannot draw. Baked once, small, and stretched to fill.
+        /// </summary>
+        public static Texture2D TopGlow()
+        {
+            if (topGlow != null) return topGlow;
+
+            const int w = 64, h = 64;
+            topGlow = new Texture2D(w, h, TextureFormat.RGBA32, false)
+            {
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear,
+                name = "MenuTopGlow"
+            };
+
+            Color c = ArcadeTheme.BlueFill;
+            var px = new Color32[w * h];
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    // Texture rows run bottom-up; the light sits at the top edge.
+                    float dx = (x + 0.5f) / w - 0.5f;
+                    float dy = 1f - (y + 0.5f) / h;
+                    float d = Mathf.Sqrt(dx * dx * 1.4f + dy * dy * 2.2f);
+                    float a = Mathf.Clamp01(1f - d / 0.75f);
+                    a = a * a * 0.55f;
+                    px[y * w + x] = new Color(c.r, c.g, c.b, a);
+                }
+            }
+
+            topGlow.SetPixels32(px);
+            topGlow.Apply(false, false);
+            return topGlow;
         }
 
         private static void AddClasses(VisualElement e, string classes)

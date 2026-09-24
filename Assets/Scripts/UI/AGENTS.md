@@ -23,7 +23,7 @@ screen, control, or visual.
 ## Two UI systems, mid-migration
 
 The front end is moving from uGUI (the `Canvas` built by `TableFootballUI`) to **UI Toolkit**, one
-screen at a time, so it can match the design canvas closely. Moved so far: **`StartScreen`** and
+screen at a time, so it can match the design canvas closely. Moved so far: **`StartScreen`**, **`StoreMenu`** and
 **`MainMenu`**. Everything else is still uGUI and follows the rest of this guide.
 
 A migrated screen keeps its class name and its whole public surface (`Build`, `Open`/`Close`/`Show`,

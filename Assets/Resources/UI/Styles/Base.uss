@@ -199,6 +199,19 @@ Label {
     padding: 0;
 }
 
+.header__back .icon {
+    width: 18px;
+    height: 18px;
+    margin-right: 6px;
+}
+
+.header__right {
+    position: absolute;
+    right: 0;
+    flex-direction: row;
+    align-items: center;
+}
+
 /* ---------- progress ---------- */
 
 .bar {

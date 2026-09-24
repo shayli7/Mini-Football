@@ -104,7 +104,7 @@ namespace TableFootball.UI
             scrim.pickingMode = PickingMode.Ignore;
             var glow = UiKit.El("bleed menu__glow", root);
             glow.pickingMode = PickingMode.Ignore;
-            glow.style.backgroundImage = new StyleBackground(TopGlow());
+            glow.style.backgroundImage = new StyleBackground(UiKit.TopGlow());
 
             BuildHeader();
 
@@ -540,47 +540,6 @@ namespace TableFootball.UI
         {
             foreach (var l in loops) l.Pause();
             loops.Clear();
-        }
-
-        // ---------- textures ----------
-
-        private static Texture2D topGlow;
-
-        /// <summary>
-        /// A soft blue light falling from the top centre of the screen — the one gradient the design
-        /// has, which USS cannot draw. Baked once, small, and stretched to fill.
-        /// </summary>
-        private static Texture2D TopGlow()
-        {
-            if (topGlow != null) return topGlow;
-
-            const int w = 64, h = 64;
-            topGlow = new Texture2D(w, h, TextureFormat.RGBA32, false)
-            {
-                wrapMode = TextureWrapMode.Clamp,
-                filterMode = FilterMode.Bilinear,
-                name = "MenuTopGlow"
-            };
-
-            Color c = ArcadeTheme.BlueFill;
-            var px = new Color32[w * h];
-            for (int y = 0; y < h; y++)
-            {
-                for (int x = 0; x < w; x++)
-                {
-                    // Texture rows run bottom-up; the light sits at the top edge.
-                    float dx = (x + 0.5f) / w - 0.5f;
-                    float dy = 1f - (y + 0.5f) / h;
-                    float d = Mathf.Sqrt(dx * dx * 1.4f + dy * dy * 2.2f);
-                    float a = Mathf.Clamp01(1f - d / 0.75f);
-                    a = a * a * 0.55f;
-                    px[y * w + x] = new Color(c.r, c.g, c.b, a);
-                }
-            }
-
-            topGlow.SetPixels32(px);
-            topGlow.Apply(false, false);
-            return topGlow;
         }
     }
 }

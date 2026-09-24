@@ -1,0 +1,236 @@
+/* Store. See StoreMenu.cs. Laid out against a 760-unit-high panel. */
+
+.store__scrim { background-color: rgba(7, 9, 14, 0.9); }
+.store__glow { -unity-background-scale-mode: stretch-to-fill; }
+
+.store .header__right .icon { width: 24px; height: 24px; }
+
+/* ---------- tabs ---------- */
+
+.store__tabs {
+    position: absolute;
+    top: 102px;
+    left: 0;
+    right: 0;
+    flex-direction: row;
+    justify-content: center;
+}
+
+.store__tab {
+    height: 46px;
+    padding: 0 22px;
+    margin: 0 4px;
+    border-radius: 14px;
+    border-width: 2px;
+    border-color: rgba(0, 0, 0, 0);
+    background-color: var(--panel);
+    align-items: center;
+    justify-content: center;
+    transition-property: background-color, border-color, scale;
+    transition-duration: 0.15s, 0.15s, 0.12s;
+}
+
+.store__tab:hover { background-color: var(--raised); }
+.store__tab:active { scale: 0.96 0.96; }
+
+.store__tab.is-selected {
+    background-color: var(--blue-fill);
+    border-color: var(--gold);
+}
+
+.store__tab-label {
+    font-size: 14px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    -unity-text-align: middle-center;
+}
+
+.store__tab.is-selected .store__tab-label { color: var(--ink); }
+
+/* ---------- caption and status ---------- */
+
+.store__info {
+    position: absolute;
+    top: 160px;
+    left: 64px;
+    right: 64px;
+    height: 24px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.store__caption {
+    font-size: 13px;
+    letter-spacing: 3px;
+    color: var(--muted);
+}
+
+.store__status {
+    font-size: 14px;
+    letter-spacing: 1px;
+    color: var(--gold);
+    -unity-text-align: middle-right;
+}
+
+/* ---------- grid ---------- */
+
+.store__grid {
+    position: absolute;
+    top: 196px;
+    bottom: 16px;
+    left: 48px;
+    right: 48px;
+}
+
+.store__grid-content {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding-bottom: 24px;
+}
+
+.store-card {
+    width: 216px;
+    height: 244px;
+    margin: 9px;
+    padding: 10px;
+    background-color: var(--panel);
+    border-width: 2px;
+    border-radius: 18px;
+    transition-property: scale, translate;
+    transition-duration: 0.12s, 0.2s;
+    transition-timing-function: ease-out-cubic;
+}
+
+.store-card:hover { scale: 1.03 1.03; }
+.store-card:active { scale: 0.97 0.97; }
+.store-card.is-equipped { background-color: var(--panel-2); }
+
+.store-card__picture {
+    height: 118px;
+    border-radius: 12px;
+    overflow: hidden;
+    align-items: center;
+    justify-content: center;
+}
+
+.store-card__art {
+    position: absolute;
+    left: 4px;
+    top: 4px;
+    right: 4px;
+    bottom: 4px;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.store-card__glyph { width: 56px; height: 56px; }
+
+.store-card__badge {
+    width: 84px;
+    height: 84px;
+    border-radius: 42px;
+    border-width: 4px;
+    align-items: center;
+    justify-content: center;
+}
+
+.store-card__badge .icon { width: 42px; height: 42px; }
+
+.store-card__name {
+    margin-top: 10px;
+    font-size: 15px;
+    -unity-text-align: middle-center;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.store-card__rarity {
+    margin-top: 2px;
+    font-size: 11px;
+    letter-spacing: 3px;
+    -unity-text-align: middle-center;
+}
+
+.store-card__footer {
+    height: 36px;
+    margin-top: auto;
+    border-radius: 10px;
+    align-items: center;
+    justify-content: center;
+}
+
+.store-card__footer .icon { width: 20px; height: 20px; }
+
+.store-card__state {
+    font-size: 12px;
+    letter-spacing: 2px;
+    -unity-text-align: middle-center;
+}
+
+.store-card__price {
+    font-size: 18px;
+    margin-left: 8px;
+}
+
+.store-card__check {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 30px;
+    height: 30px;
+    border-radius: 15px;
+    background-color: var(--gold);
+    border-width: 3px;
+    border-color: var(--black);
+    align-items: center;
+    justify-content: center;
+}
+
+.store-card__check .icon { width: 16px; height: 16px; }
+
+/* ---------- confirm ---------- */
+
+.store__confirm {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+.store__confirm-dim { background-color: rgba(3, 5, 9, 0.7); }
+
+.store__confirm-panel {
+    width: 460px;
+    padding: 30px;
+    align-items: center;
+}
+
+.store__confirm-title {
+    font-size: 24px;
+    -unity-text-align: middle-center;
+    white-space: normal;
+}
+
+.store__confirm-price {
+    margin: 18px 0 24px 0;
+    justify-content: center;
+}
+
+.store__confirm-price .icon { width: 34px; height: 34px; }
+
+.store__confirm-amount {
+    font-size: 40px;
+    color: var(--gold);
+    margin-left: 12px;
+}
+
+.store__confirm-buttons {
+    width: 100%;
+}
+
+.store__confirm-buttons .btn { margin: 0 6px; }
