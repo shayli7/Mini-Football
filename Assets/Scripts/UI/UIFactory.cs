@@ -191,12 +191,12 @@ namespace TableFootball.UI
             trt.offsetMax = new Vector2(ArcadeTheme.Bleed, ArcadeTheme.Bleed);
             trt.localRotation = Quaternion.Euler(0f, 0f, 180f);
 
-            // Stadium lights across the top, drifting so the light is never quite still. A warm gold
-            // key light hangs over the centre — the dramatic overhead the flat scrim was missing —
-            // flanked by the two cooler team-coloured lights that used to be the whole rig.
-            StageGlow(go.transform, ArcadeTheme.Gold, new Vector2(0.5f, 1.02f), 0.17f, 1040f);
-            StageGlow(go.transform, ArcadeTheme.Pitch, new Vector2(0.2f, 0.9f), 0.16f);
-            StageGlow(go.transform, ArcadeTheme.Blue, new Vector2(0.8f, 0.92f), 0.16f);
+            // Stadium lights across the top, drifting so the light is never quite still: one broad
+            // blue key light over the centre, two fainter ones either side. All blue — gold is the
+            // highlight colour, and a gold wash behind everything would spend it on the background.
+            StageGlow(go.transform, ArcadeTheme.Blue, new Vector2(0.5f, 1.02f), 0.22f, 1040f);
+            StageGlow(go.transform, ArcadeTheme.BlueSoft, new Vector2(0.2f, 0.9f), 0.08f);
+            StageGlow(go.transform, ArcadeTheme.BlueSoft, new Vector2(0.8f, 0.92f), 0.08f);
 
             return tint;
         }
@@ -325,7 +325,7 @@ namespace TableFootball.UI
             var shadow = Child(root.transform, "Shadow");
             GlowImage(shadow, ArcadeTheme.RadLg, ArcadeTheme.ShadowFeather,
                       Color.black.WithAlpha(ArcadeTheme.ShadowAlpha));
-            Stretch(Rt(shadow), -12, -16, -12, -8);
+            Stretch(Rt(shadow), -24, -30, -24, -16);
 
             // border
             var border = Child(root.transform, "Border");
@@ -341,27 +341,6 @@ namespace TableFootball.UI
         }
 
         // ---------- button ----------
-
-        /// <summary>
-        /// A thin, faint bright bar hugging the top inside edge of a control, read as a bevel catching
-        /// the light. The cheapest honest way to add depth without a second baked sprite per radius.
-        /// </summary>
-        private static void InnerHighlight(Transform fill)
-        {
-            var hi = Child(fill, "InnerHighlight");
-            var img = hi.AddComponent<Image>();
-            img.sprite = ArcadeTheme.RoundedSolid(ArcadeTheme.RadSm);
-            img.type = Image.Type.Sliced;
-            img.pixelsPerUnitMultiplier = 1f;
-            img.color = Color.white.WithAlpha(0.06f);
-            img.raycastTarget = false;
-            var rt = Rt(hi);
-            rt.anchorMin = new Vector2(0f, 1f);
-            rt.anchorMax = new Vector2(1f, 1f);
-            rt.pivot = new Vector2(0.5f, 1f);
-            rt.offsetMin = new Vector2(10f, -6f);
-            rt.offsetMax = new Vector2(-10f, -2f);
-        }
 
         public static MenuButton Button(Transform parent, string label, MenuButton.Variant variant,
                                         Action onClick, float height = 62f)
@@ -385,11 +364,6 @@ namespace TableFootball.UI
             var fillGo = Child(root.transform, "Fill");
             var fill = RoundedImage(fillGo, ArcadeTheme.RadMd, ArcadeTheme.BgRaised, true);
             Stretch(Rt(fillGo), 1.5f);
-
-            // A faint inner highlight along the top edge, catching the light — the touch that turns a
-            // flat rectangle into a raised, moulded control. Non-raycast, so it never intercepts a
-            // tap, and thin enough to read as a bevel rather than a second bar.
-            InnerHighlight(fillGo.transform);
 
             // label
             var lab = Text(root.transform, label, ArcadeTheme.FsButton, ArcadeTheme.Ink,
@@ -1107,7 +1081,7 @@ namespace TableFootball.UI
             var prt = Rt(pictureGo);
             prt.anchorMin = Vector2.zero;
             prt.anchorMax = Vector2.one;
-            prt.offsetMin = new Vector2(16f, note != null ? 78f : 62f);
+            prt.offsetMin = new Vector2(16f, note != null ? 92f : 66f);
             prt.offsetMax = new Vector2(-16f, -16f);
 
             if (art == null)
@@ -1138,8 +1112,10 @@ namespace TableFootball.UI
             var lrt = Rt(label.gameObject);
             lrt.anchorMin = Vector2.zero;
             lrt.anchorMax = new Vector2(1f, 0f);
-            lrt.offsetMin = new Vector2(8f, note != null ? 26f : 12f);
-            lrt.offsetMax = new Vector2(-8f, note != null ? 52f : 46f);
+            // Clear of the card's bottom edge with room to breathe — the note used to sit right on
+            // the border, and the caption was crowded down onto it.
+            lrt.offsetMin = new Vector2(8f, note != null ? 40f : 14f);
+            lrt.offsetMax = new Vector2(-8f, note != null ? 70f : 50f);
 
             if (note != null)
             {
@@ -1148,15 +1124,19 @@ namespace TableFootball.UI
                 var srt = Rt(sub.gameObject);
                 srt.anchorMin = Vector2.zero;
                 srt.anchorMax = new Vector2(1f, 0f);
-                srt.offsetMin = new Vector2(8f, 8f);
-                srt.offsetMax = new Vector2(-8f, 26f);
+                srt.offsetMin = new Vector2(8f, 16f);
+                srt.offsetMax = new Vector2(-8f, 38f);
             }
 
             var btn = root.AddComponent<MenuButton>();
             btn.fill = fill; btn.border = border; btn.glow = glow; btn.label = label;
             btn.targetGraphic = fill;
             btn.Configure(MenuButton.Variant.Neutral);
-            if (primary) btn.SetAccent(ArcadeTheme.Gold, 0.3f);
+            if (primary)
+            {
+                btn.SetAccent(ArcadeTheme.Gold, 0.3f);
+                UIShine.AddTo(btn);
+            }
             if (onClick != null) btn.onClick.AddListener(() => onClick());
 
             btn.interactable = interactable;

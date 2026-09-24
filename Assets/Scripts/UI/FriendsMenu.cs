@@ -234,7 +234,7 @@ namespace TableFootball.UI
 
             // Copy the code to the clipboard, so sharing it is a tap rather than reading digits off
             // the screen. The code is the display name with its #tag — exactly what a friend types in.
-            var copy = UIFactory.Button(identity.transform, "Copy", MenuButton.Variant.Neutral,
+            var copy = UIFactory.Button(identity.transform, "Copy", MenuButton.Variant.Blue,
                                         CopyCode, actionHeight);
             copy.gameObject.GetComponent<LayoutElement>().preferredWidth = actionWidth;
 

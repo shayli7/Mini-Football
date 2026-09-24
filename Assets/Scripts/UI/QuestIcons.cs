@@ -24,8 +24,8 @@ namespace TableFootball.UI
 
         public static Color TierColor(QuestTier tier) => tier switch
         {
-            QuestTier.Bronze => ArcadeTheme.InkMuted,
-            QuestTier.Silver => ArcadeTheme.Blue,
+            QuestTier.Bronze => ArcadeTheme.Bronze,
+            QuestTier.Silver => ArcadeTheme.Silver,
             _ => ArcadeTheme.Gold,
         };
 

@@ -212,12 +212,12 @@ namespace TableFootball.UI
             nameField = UIFactory.TextInput(right, "new name", 20,
                                             TMP_InputField.CharacterValidation.None,
                                             height: 50f);
-            UIFactory.Button(right, "Rename", MenuButton.Variant.Neutral, Rename, 50f);
+            UIFactory.Button(right, "Rename", MenuButton.Variant.Blue, Rename, 50f);
 
             createButton = UIFactory.Button(right, "Create Account",
                                             MenuButton.Variant.Primary, () => Show(Screen.Create), 50f);
             signInButton = UIFactory.Button(right, "Sign In",
-                                            MenuButton.Variant.Ghost, () => Show(Screen.SignIn), 50f);
+                                            MenuButton.Variant.Blue, () => Show(Screen.SignIn), 50f);
 
             // Offered to anonymous players too, not only to those with a username: the player and
             // their friends list exist either way, and erasing them is the player's call either way.
@@ -248,10 +248,12 @@ namespace TableFootball.UI
             h.childControlWidth = true;
             h.childControlHeight = true;
 
-            winsValue = UIFactory.StatBlock(row.transform, "won", ArcadeTheme.Go);
-            lossesValue = UIFactory.StatBlock(row.transform, "lost", ArcadeTheme.Red);
+            // One colour for the record, with gold kept for the win rate — the figure the rest add
+            // up to. Seven stats in five colours read as a chart legend rather than a record.
+            winsValue = UIFactory.StatBlock(row.transform, "won", ArcadeTheme.Ink);
+            lossesValue = UIFactory.StatBlock(row.transform, "lost", ArcadeTheme.Ink);
             rateValue = UIFactory.StatBlock(row.transform, "win rate", ArcadeTheme.Gold);
-            levelValue = UIFactory.StatBlock(row.transform, "level", ArcadeTheme.Gold);
+            levelValue = UIFactory.StatBlock(row.transform, "level", ArcadeTheme.Ink);
         }
 
         /// <summary>
@@ -274,8 +276,8 @@ namespace TableFootball.UI
             h.childControlHeight = true;
 
             playedValue = UIFactory.StatBlock(row.transform, "played", ArcadeTheme.Ink);
-            goalsValue = UIFactory.StatBlock(row.transform, "goals", ArcadeTheme.Gold);
-            timeValue = UIFactory.StatBlock(row.transform, "time played", ArcadeTheme.Blue);
+            goalsValue = UIFactory.StatBlock(row.transform, "goals", ArcadeTheme.Ink);
+            timeValue = UIFactory.StatBlock(row.transform, "time played", ArcadeTheme.Ink);
         }
 
         private void BuildDelete(Transform parent)

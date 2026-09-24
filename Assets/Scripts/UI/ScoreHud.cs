@@ -147,7 +147,7 @@ namespace TableFootball.UI
             BuildFlash(canvasRoot);
             BuildGoalPopup(canvasRoot);
             BuildHud(canvasRoot);
-            BuildClock(canvasRoot);
+            BuildSuddenDeath(canvasRoot);
             BuildBanner(canvasRoot);
 
             if (match != null)
@@ -181,6 +181,28 @@ namespace TableFootball.UI
 
         // ---------- build ----------
 
+        /// <summary>
+        /// Height of the in-match score strip. Public so the pause button can match it, and the two
+        /// read as one band across the top of the screen.
+        /// </summary>
+        public const float StripHeight = 48f;
+
+        // The strip's cells. Sized around the digits, not the other way round: every unit of height
+        // here is pitch the players cannot see, so the numbers are as big as a glance needs and no
+        // bigger.
+        private const float TeamCellWidth = 150f;
+        private const float ClockCellWidth = 84f;
+        private const float StripDigit = 30f;
+        private const float StripClock = 20f;
+
+        /// <summary>
+        /// The score strip: one slim bar across the top edge — red score, clock, blue score.
+        ///
+        /// It used to be a 400x100 score panel with the clock in a second panel stacked under it, which
+        /// together reached about 160 units down into the table. One row at <see cref="StripHeight"/>
+        /// gives almost all of that back to the pitch; the clock moved into the middle of the row
+        /// rather than hanging below it.
+        /// </summary>
         private void BuildHud(Transform root)
         {
             var hud = UIFactory.Panel(root, "ScoreHUD");
@@ -189,91 +211,112 @@ namespace TableFootball.UI
             rt.anchorMin = new Vector2(0.5f, 1f);
             rt.anchorMax = new Vector2(0.5f, 1f);
             rt.pivot = new Vector2(0.5f, 1f);
-            // Tight to the top edge. The table fills the screen underneath and every pixel the HUD
-            // takes is pitch the players cannot see — the safe-area root already keeps it clear of
-            // any cutout, so it does not need a margin of its own as well.
-            rt.anchoredPosition = new Vector2(0f, -ArcadeTheme.Xs);
-            // Shorter, not just higher. It already sits 4px off the top edge, so the only pitch left
-            // to give back is the panel's own height — 132 was sized around 88px digits that do not
-            // need to be that big to be read across a phone held at arm's length.
-            rt.sizeDelta = new Vector2(400f, 100f);
+            // Tight to the top edge — the safe-area root already keeps it clear of any cutout.
+            rt.anchoredPosition = new Vector2(0f, -ArcadeTheme.Sm);
+            rt.sizeDelta = new Vector2(TeamCellWidth * 2f + ClockCellWidth + ArcadeTheme.Md * 2f, StripHeight);
 
-            // horizontal layout inside the fill
+            // The panel's drop shadow is sized to lift a menu panel off a backdrop. Under a strip this
+            // thin it would only smear a dark band over the top of the pitch.
+            var shadow = hud.transform.Find("Shadow");
+            if (shadow != null) shadow.gameObject.SetActive(false);
+
             var fill = hud.transform.Find("Fill");
             var row = fill.gameObject.AddComponent<HorizontalLayoutGroup>();
             row.childAlignment = TextAnchor.MiddleCenter;
             row.spacing = 0f;
-            row.padding = new RectOffset(6, 6, 6, 6);
+            row.padding = new RectOffset((int)ArcadeTheme.Md, (int)ArcadeTheme.Md, 0, 0);
+            row.childControlWidth = true;
+            row.childControlHeight = true;
+            row.childForceExpandWidth = false;
             row.childForceExpandHeight = true;
 
-            redNum = BuildTeamColumn(fill, "RED", ArcadeTheme.Red, out _);
-            BuildVs(fill);
-            blueNum = BuildTeamColumn(fill, "BLUE", ArcadeTheme.Blue, out _);
+            redNum = BuildTeamCell(fill, "RED", ArcadeTheme.Red, leading: true);
+            BuildClock(fill);
+            blueNum = BuildTeamCell(fill, "BLUE", ArcadeTheme.Blue, leading: false);
         }
 
-        private TextMeshProUGUI BuildTeamColumn(Transform parent, string teamName, Color teamColor, out GameObject col)
+        /// <summary>
+        /// One team's half of the strip: a thin stripe in the team colour, the name, the score. Mirrored
+        /// for the right-hand team so both scores sit against the clock.
+        /// </summary>
+        private TextMeshProUGUI BuildTeamCell(Transform parent, string teamName, Color teamColor, bool leading)
         {
-            col = UIFactory.Child(parent, "Team_" + teamName);
-            var le = col.AddComponent<LayoutElement>();
-            le.preferredWidth = 180f; le.flexibleWidth = 1f;
+            var cell = UIFactory.Child(parent, "Team_" + teamName);
+            var le = cell.AddComponent<LayoutElement>();
+            le.preferredWidth = TeamCellWidth;
+            le.flexibleWidth = 1f;
 
-            var v = col.AddComponent<VerticalLayoutGroup>();
-            v.childAlignment = TextAnchor.MiddleCenter;
-            v.spacing = 2f;
-            v.childForceExpandHeight = false;
+            var h = cell.AddComponent<HorizontalLayoutGroup>();
+            h.childAlignment = leading ? TextAnchor.MiddleLeft : TextAnchor.MiddleRight;
+            h.spacing = ArcadeTheme.Md;
+            h.padding = new RectOffset(0, 0, 0, 0);
+            h.childControlWidth = true;
+            h.childControlHeight = true;
+            h.childForceExpandWidth = false;
+            h.childForceExpandHeight = false;
 
-            // glow behind the digit — opt out of the layout group so it isn't repositioned
-            var glow = UIFactory.Child(col.transform, "Glow");
-            UIFactory.GlowImage(glow, ArcadeTheme.RadMd, 30f, teamColor.WithAlpha(0.28f));
-            glow.AddComponent<LayoutElement>().ignoreLayout = true;
-            UIFactory.Stretch(UIFactory.Rt(glow), -6);
-            glow.transform.SetAsFirstSibling();
+            TextMeshProUGUI num = null;
+            if (leading)
+            {
+                Stripe(cell.transform, teamColor);
+                TeamName(cell.transform, teamName);
+                num = StripDigitLabel(cell.transform);
+            }
+            else
+            {
+                num = StripDigitLabel(cell.transform);
+                TeamName(cell.transform, teamName);
+                Stripe(cell.transform, teamColor);
+            }
+            return num;
+        }
 
-            var label = UIFactory.Text(col.transform, teamName, ArcadeTheme.FsTeam, teamColor,
-                                       display: false, bold: true, upper: true, tracking: 22f);
-            label.gameObject.AddComponent<LayoutElement>().preferredHeight = 18f;
+        private static void Stripe(Transform parent, Color teamColor)
+        {
+            var go = UIFactory.Child(parent, "Stripe");
+            UIFactory.RoundedImage(go, 2, teamColor, false);
+            var le = go.AddComponent<LayoutElement>();
+            le.preferredWidth = 4f;
+            le.preferredHeight = StripHeight * 0.42f;
+        }
 
-            // Scaled down from FsScore rather than using it: the result banner still wants the full
-            // 88 for a number the player is meant to stop and look at, while this one is read at a
-            // glance mid-rally and only has to be unmistakable.
-            var num = UIFactory.Text(col.transform, "0", ArcadeTheme.FsScore * 0.62f, Color.white,
-                                     display: true, bold: true);
-            num.gameObject.AddComponent<LayoutElement>().preferredHeight = 58f;
+        private static void TeamName(Transform parent, string teamName)
+        {
+            var t = UIFactory.Text(parent, teamName, ArcadeTheme.FsCaption, ArcadeTheme.InkMuted,
+                                   display: false, bold: true, upper: true, tracking: 6f);
+            var le = t.gameObject.AddComponent<LayoutElement>();
+            le.preferredWidth = 56f;
+            le.preferredHeight = StripHeight;
+        }
 
-            // underbar
-            var bar = UIFactory.Child(col.transform, "Bar");
-            UIFactory.RoundedImage(bar, ArcadeTheme.RadSm, teamColor, false);
-            bar.AddComponent<LayoutElement>().preferredHeight = 3f;
-            var brt = UIFactory.Rt(bar);
-            brt.sizeDelta = new Vector2(110f, 3f);
-
+        private static TextMeshProUGUI StripDigitLabel(Transform parent)
+        {
+            var num = UIFactory.Text(parent, "0", StripDigit, Color.white, display: true, bold: true);
+            var le = num.gameObject.AddComponent<LayoutElement>();
+            le.preferredWidth = 40f;
+            le.preferredHeight = StripHeight;
             return num;
         }
 
         /// <summary>
-        /// The match clock, sitting just under the score. Its own panel rather than a third column
-        /// inside the score row, so the red/vs/blue layout is untouched and the clock can be
-        /// replaced wholesale by the SUDDEN DEATH notice.
+        /// The match clock, in the middle of the strip on a black cell of its own. <see cref="clockRoot"/>
+        /// is the holder inside the cell, so hiding it for sudden death leaves the strip's shape alone.
         /// </summary>
-        private void BuildClock(Transform root)
+        private void BuildClock(Transform parent)
         {
-            var panel = UIFactory.Panel(root, "MatchClock");
-            clockRoot = panel;
+            var cell = UIFactory.Child(parent, "MatchClock");
+            var le = cell.AddComponent<LayoutElement>();
+            le.preferredWidth = ClockCellWidth;
+            le.flexibleWidth = 0f;
+            var bg = cell.AddComponent<Image>();
+            bg.color = ArcadeTheme.BgDeep;
+            bg.raycastTarget = false;
 
-            var rt = UIFactory.Rt(panel);
-            rt.anchorMin = new Vector2(0.5f, 1f);
-            rt.anchorMax = new Vector2(0.5f, 1f);
-            rt.pivot = new Vector2(0.5f, 1f);
-            // Clears the 100-high score panel plus its margin.
-            rt.anchoredPosition = new Vector2(0f, -(ArcadeTheme.Xs + 100f + ArcadeTheme.Xs));
-            rt.sizeDelta = new Vector2(180f, 46f);
-
-            var fill = panel.transform.Find("Fill");
-            clockText = UIFactory.Text(fill, "3:00", ArcadeTheme.FsTitle * 0.6f, ArcadeTheme.Ink,
+            clockRoot = UIFactory.Child(cell.transform, "Clock");
+            UIFactory.Stretch(UIFactory.Rt(clockRoot), 0);
+            clockText = UIFactory.Text(clockRoot.transform, "3:00", StripClock, ArcadeTheme.Ink,
                                        display: true, bold: true, tracking: 2f);
             UIFactory.Stretch(UIFactory.Rt(clockText.gameObject), 0);
-
-            BuildSuddenDeath(root);
         }
 
         /// <summary>
@@ -293,7 +336,8 @@ namespace TableFootball.UI
             rt.anchorMin = new Vector2(0.5f, 1f);
             rt.anchorMax = new Vector2(0.5f, 1f);
             rt.pivot = new Vector2(0.5f, 1f);
-            rt.anchoredPosition = new Vector2(0f, -(ArcadeTheme.Xs + 100f + ArcadeTheme.Xs));
+            // Just under the strip, where the eye already is.
+            rt.anchoredPosition = new Vector2(0f, -(ArcadeTheme.Sm + StripHeight + ArcadeTheme.Sm));
             rt.sizeDelta = new Vector2(320f, 54f);
 
             // Red border rather than the neutral Line, so the panel itself carries the alarm and the
@@ -307,37 +351,6 @@ namespace TableFootball.UI
             UIFactory.Stretch(UIFactory.Rt(t.gameObject), 0);
 
             panel.SetActive(false);
-        }
-
-        /// <summary>
-        /// The divider between the two score blocks: a hairline broken by the word itself.
-        ///
-        /// A bare "VS" floating between two 88px digits reads as a gap the layout forgot to fill.
-        /// Drawing the rule makes it a deliberate separator, which is what it always was.
-        /// </summary>
-        private void BuildVs(Transform parent)
-        {
-            var vs = UIFactory.Child(parent, "VS");
-            vs.AddComponent<LayoutElement>().preferredWidth = 56f;
-
-            Tick(vs.transform, 1f);
-            Tick(vs.transform, -1f);
-
-            var t = UIFactory.Text(vs.transform, "VS", ArcadeTheme.FsTeam, ArcadeTheme.InkMuted,
-                                   display: false, bold: true, upper: true, tracking: 12f);
-            UIFactory.Stretch(UIFactory.Rt(t.gameObject), 0);
-        }
-
-        /// <summary>One half of the divider rule, above or below the word.</summary>
-        private static void Tick(Transform parent, float dir)
-        {
-            var go = UIFactory.Child(parent, "Tick");
-            UIFactory.RoundedImage(go, ArcadeTheme.RadSm, ArcadeTheme.Line, false);
-            var rt = UIFactory.Rt(go);
-            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
-            rt.pivot = new Vector2(0.5f, 0.5f);
-            rt.sizeDelta = new Vector2(2f, 26f);
-            rt.anchoredPosition = new Vector2(0f, dir * 28f);
         }
 
         private void BuildFlash(Transform root)
@@ -498,6 +511,7 @@ namespace TableFootball.UI
 
             playAgainButton = UIFactory.Button(fill, "Play Again", MenuButton.Variant.Primary,
                                                PlayAgain);
+            UIShine.AddTo(playAgainButton);
             UIFactory.Button(fill, "Main Menu", MenuButton.Variant.Ghost, () => OnReturnToMenu?.Invoke());
 
             // Above the panel in sibling order so the dots read as thrown over it, not trapped

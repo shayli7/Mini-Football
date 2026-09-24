@@ -246,7 +246,8 @@ namespace TableFootball.UI
             // 400, not 340 — at 340 the name column was left ~70px after the avatar, badge and level
             // pill took their share, so any real name truncated to "Sh…". The header has ~700px of
             // spacer to give back, so widening the chip costs nothing else on the row.
-            chipCell.AddComponent<LayoutElement>().preferredWidth = 400f;
+            // 480 now: a generated name like "ShadyDeterminedOnion" still cut to "ShadyDe…" at 400.
+            chipCell.AddComponent<LayoutElement>().preferredWidth = 480f;
             BuildProfileChip(chipCell.transform);
 
             // The purse, immediately beside the chip and on the same plane by the same mechanism: a
@@ -418,7 +419,8 @@ namespace TableFootball.UI
             // them a constant presence without borrowing Store's gold, which has to stay the one
             // accent that says "something new lives here."
             Color navAccent = ArcadeTheme.Ink.WithAlpha(0.4f);
-            const float navGlow = 0.12f;
+            // No resting halo: five glowing icons in a row is five highlights, which is none.
+            const float navGlow = 0f;
 
             var friends = UIFactory.IconButton(bar.transform, "Friends", UIFactory.Icon.Person,
                                                MenuButton.Variant.Neutral,

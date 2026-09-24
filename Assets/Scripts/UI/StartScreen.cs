@@ -82,12 +82,12 @@ namespace TableFootball.UI
             UIFactory.Stretch(UIFactory.Rt(backdrop), -ArcadeTheme.Bleed);
             backdrop.AddComponent<UIAmbientDrift>();
 
-            // Three halos in the team colors, drifting independently. They are what stops the wash
-            // reading as a printed gradient: the color under the wordmark is never quite the same
-            // twice, but no single one of them is ever caught moving.
-            Halo("HaloRed", ArcadeTheme.Red, new Vector2(-430f, 170f), 820f, 26f, 31f);
-            Halo("HaloBlue", ArcadeTheme.Blue, new Vector2(450f, -120f), 760f, 22f, 43f);
-            Halo("HaloGold", ArcadeTheme.Gold, new Vector2(90f, 300f), 640f, 30f, 37f);
+            // Two soft blue halos low on the screen, drifting independently. They are what stops the
+            // sky reading as a printed gradient: the light near the prompt is never quite the same
+            // twice, but neither is ever caught moving. Kept below the wordmark so the top of the
+            // screen stays the dark end of the fade.
+            Halo("HaloLeft", ArcadeTheme.BlueSoft, new Vector2(-460f, -260f), 820f, 26f, 31f);
+            Halo("HaloRight", ArcadeTheme.Blue, new Vector2(470f, -300f), 760f, 22f, 43f);
 
             // A warm spotlight behind the wordmark, breathing slowly — the single thing that turns the
             // flat wash into a lit stage. It sits under everything but the base wash, so the logo and
@@ -107,7 +107,7 @@ namespace TableFootball.UI
             var img = go.AddComponent<Image>();
             img.sprite = ArcadeTheme.DiscGlow(60f);
             img.type = Image.Type.Simple;
-            img.color = ArcadeTheme.Gold.WithAlpha(0.13f);
+            img.color = ArcadeTheme.Gold.WithAlpha(0.08f);
             img.raycastTarget = false;
 
             var rt = UIFactory.Rt(go);
@@ -125,7 +125,7 @@ namespace TableFootball.UI
         /// <summary>A handful of faint drifting motes, for atmosphere over the wash.</summary>
         private void Motes()
         {
-            var colors = new[] { ArcadeTheme.Gold, ArcadeTheme.Blue, ArcadeTheme.Ink };
+            var colors = new[] { ArcadeTheme.Gold, ArcadeTheme.BlueSoft, ArcadeTheme.Ink };
 
             for (int i = 0; i < 12; i++)
             {
@@ -217,12 +217,12 @@ namespace TableFootball.UI
             promptGroup = holder.AddComponent<CanvasGroup>();
             promptGroup.alpha = 0f;
 
-            // A soft pool of light so the words sit on the screen rather than in front of it.
+            // A soft pool of shade, so the words keep their contrast where the sky is lightest.
             var glowGo = UIFactory.Child(holder.transform, "Glow");
             var glow = glowGo.AddComponent<Image>();
             glow.sprite = ArcadeTheme.DiscGlow(50f);
             glow.type = Image.Type.Simple;
-            glow.color = ArcadeTheme.Gold.WithAlpha(0.16f);
+            glow.color = ArcadeTheme.BgDeep.WithAlpha(0.28f);
             glow.raycastTarget = false;
             var grt = UIFactory.Rt(glowGo);
             grt.anchorMin = grt.anchorMax = new Vector2(0.5f, 0.5f);
@@ -230,10 +230,10 @@ namespace TableFootball.UI
             grt.sizeDelta = new Vector2(600f, 168f);
             grt.anchoredPosition = new Vector2(0f, 6f);
 
-            // Display face, button-sized, gold — the same family as the FOOTBALL half of the wordmark,
-            // so the prompt and the brand read as one voice.
+            // Display face, button-sized, in ink. Gold would sink into the light blue at the bottom of
+            // the sky; the gold stays in the underline, which is all it needs to say "press here".
             var prompt = UIFactory.Text(holder.transform, "TOUCH TO START", ArcadeTheme.FsButton * 1.22f,
-                                        ArcadeTheme.Gold, display: true, bold: true, upper: true,
+                                        ArcadeTheme.Ink, display: true, bold: true, upper: true,
                                         tracking: 16f);
             var prt = UIFactory.Rt(prompt.gameObject);
             prt.anchorMin = new Vector2(0f, 0f);
