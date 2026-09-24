@@ -15,24 +15,38 @@ namespace TableFootball.UI
     /// </summary>
     public static class ArcadeTheme
     {
-        // ---- Palette (hex from MASTER.md) ----
-        // Backgrounds lifted a few percent and Gold desaturated one notch — the punchy #FFB63D against
-        // near-black #0A0E14 read as high-contrast in the way a warning label does, not a game. Both
-        // moves are deliberately small: the whole UI (five-plus screens' worth) is built against these
-        // constants, so a bigger jump would relitigate a lot of already-tuned work rather than just
-        // taking the edge off it. OnGold is untouched — Gold is still light enough that dark text on
-        // it reads exactly the same.
-        public static readonly Color BgDeep   = Hex("#10141C");
-        public static readonly Color BgPanel  = Hex("#1A212B");
-        public static readonly Color BgRaised = Hex("#242D3C");
-        public static readonly Color Line      = Hex("#2E3A4C");
-        public static readonly Color Ink       = Hex("#EAF0F7");
-        public static readonly Color InkMuted  = Hex("#8A97A8");
-        public static readonly Color Red       = Hex("#FF3355");
-        public static readonly Color Blue      = Hex("#22A7FF");
-        public static readonly Color Gold      = Hex("#E0A94A");
-        public static readonly Color Go        = Hex("#3DFF88"); // online status ONLY — a live presence dot
-        public static readonly Color OnGold    = Hex("#241800"); // dark ink for gold primary buttons
+        // ---- Palette ----
+        // Black, blue and gold at roughly 60 / 30 / 10. Black is the floor every screen stands on;
+        // blue is the panels and the ordinary buttons; gold is kept for the one thing on a screen the
+        // player should press next, so it still means something when it appears. All three are held
+        // back from full brightness — the earlier neon set read as a warning label, not a game.
+        public static readonly Color BgDeep   = Hex("#07090E"); // the black floor
+        public static readonly Color BgPanel  = Hex("#0F2036"); // panel blue
+        public static readonly Color BgRaised = Hex("#16304F"); // rows, inputs and quiet buttons inside a panel
+        public static readonly Color Line      = Hex("#1E3A5E"); // panel hairlines
+        public static readonly Color Ink       = Hex("#E9EEF5");
+        public static readonly Color InkMuted  = Hex("#93A1B5");
+        public static readonly Color Gold      = Hex("#D6A73A"); // highlight — the next thing to press
+        public static readonly Color OnGold    = Hex("#1A1304"); // dark ink for gold primary buttons
+        public static readonly Color Go        = Hex("#4CC38A"); // online status ONLY — a live presence dot
+
+        // The main blue button: a step brighter than a panel so it reads as pressable against one.
+        public static readonly Color BlueFill = Hex("#1C4675");
+        public static readonly Color BlueLine = Hex("#2A5A8F");
+        // Soft blue for icons and small accents that sit on blue panels.
+        public static readonly Color BlueSoft = Hex("#7FA6D1");
+
+        // Team colours. Muted to sit inside the palette rather than shout over it; they still have
+        // to tell two sides apart at a glance, so they differ in lightness as well as hue.
+        public static readonly Color Red       = Hex("#C24A5A");
+        public static readonly Color Blue      = Hex("#3E78B8");
+
+        // Destructive actions (Delete Player): a pale red that reads as a warning on a blue panel.
+        public static readonly Color Danger = Hex("#D98A93");
+
+        // The title screen's sky: deep navy at the top lightening to a clear blue at the bottom.
+        public static readonly Color SplashTop    = Hex("#02060F");
+        public static readonly Color SplashBottom = Hex("#28609A");
 
         // The football accent — turf green. Deliberately a calmer, deeper green than Go, which is a
         // bright signal colour reserved for "this person is online right now". Pitch is a surface, a
@@ -98,10 +112,6 @@ namespace TableFootball.UI
         /// </summary>
         public const float Bleed = 200f;
 
-        /// <summary>How far the title screen's wash is mixed from the deep base toward full brand
-        /// color. See <see cref="SplashBackdrop"/>.</summary>
-        public const float SplashMix = 0.55f;
-
         // ---- Radii ----
         public const int RadSm = 8, RadMd = 14, RadLg = 20;
 
@@ -114,6 +124,11 @@ namespace TableFootball.UI
         // ---- Motion durations (seconds) ----
         public const float TFast = 0.12f, TNormal = 0.20f, TSlow = 0.32f, TFlash = 0.70f;
         public const float Stagger = 0.04f;
+
+        // The light sweep across the screen's one gold "start here" control (UIShine): a quick pass,
+        // then a long rest, so it catches the eye now and then instead of flickering.
+        public const float TShine = 0.9f, ShineRest = 2.8f;
+        public const float ShineAlpha = 0.22f;
 
         // ---- Motion magnitudes ----
         public const float HoverScale = 1.04f, PressScale = 0.97f, ScorePop = 1.28f, MenuFrom = 0.92f;
@@ -231,15 +246,11 @@ namespace TableFootball.UI
         }
 
         /// <summary>
-        /// The title screen backdrop: a diagonal wash across the three brand colors — red at one
-        /// corner, through gold, to blue at the other — laid over <see cref="BgDeep"/>.
+        /// The title screen backdrop: <see cref="SplashTop"/> at the top of the screen lightening to
+        /// <see cref="SplashBottom"/> at the bottom, like looking up out of a floodlit stadium.
         ///
-        /// Deliberately mixed only part of the way to full saturation. The wordmark sits on top of
-        /// this in ink and gold, and a screen at full chroma would leave the type with nothing to be
-        /// brighter than. <see cref="SplashMix"/> is where it stops being a background.
-        ///
-        /// Diagonal rather than vertical: a top-to-bottom fade reads as a sky, and every phone menu
-        /// in existence has one. Corner to corner reads as light falling across the screen.
+        /// Eased rather than linear, so the top half stays dark behind the wordmark — the ink and
+        /// gold type need something to be brighter than — and the light gathers down by the prompt.
         ///
         /// Baked small, stretched to fill, and not 9-sliced — a border would pin the gradient's edges
         /// and flatten it. The ±1/255 dither matters more here than anywhere else in the UI: a
@@ -265,24 +276,13 @@ namespace TableFootball.UI
             {
                 for (int x = 0; x < size; x++)
                 {
-                    // 0 at the top-left corner, 1 at the bottom-right. Texture y runs upward, so the
-                    // flip is what puts red at the top rather than under the player's thumbs.
-                    float t = (x + (last - y)) / (2f * last);
+                    // 0 at the top, 1 at the bottom. Texture y runs upward, hence the flip.
+                    float t = (last - y) / last;
+                    Color c = Color.Lerp(SplashTop, SplashBottom, t * t * (3f - 2f * t) * 0.35f + t * t * 0.65f);
 
-                    // Two stops, so gold gets a band of its own in the middle instead of being the
-                    // muddy halfway point between red and blue.
-                    Color band = t < 0.5f
-                        ? Color.Lerp(Red, Gold, t * 2f)
-                        : Color.Lerp(Gold, Blue, (t - 0.5f) * 2f);
-
-                    Color c = Color.Lerp(BgDeep, band, SplashMix);
-
-                    // The same corner vignette the menu backdrop uses, so the two screens are lit the
-                    // same way and the cut between them is a change of color, not of depth.
+                    // A faint side vignette, so the edges fall away and the light reads as centred.
                     float dx = ((x + 0.5f) - half) / half;
-                    float dy = ((y + 0.5f) - half) / half;
-                    float r = Mathf.Clamp01(Mathf.Sqrt(dx * dx + dy * dy) / 1.41421356f);
-                    c *= Mathf.Lerp(1f, 0.68f, r * r);
+                    c *= Mathf.Lerp(1f, 0.82f, dx * dx);
 
                     float d = (Hash(x, y) - 0.5f) * (2f / 255f);
                     px[y * size + x] = new Color32(
@@ -504,8 +504,12 @@ namespace TableFootball.UI
             int border = radius + Mathf.CeilToInt(feather) + 2;
             int size = border * 2 + 2;
             float half = size / 2f;
-            float bx = half - radius;
-            float by = half - radius;
+            // A glow's solid core has to stop short of the texture edge by the feather, or the fade
+            // falls outside the texture and is cut off — which is how every "soft" shadow in the game
+            // used to render as a hard dark rectangle around its panel.
+            float inset = glow ? Mathf.Ceil(feather) + 1f : 0f;
+            float bx = half - radius - inset;
+            float by = half - radius - inset;
 
             var tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
             {

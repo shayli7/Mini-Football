@@ -132,12 +132,13 @@ namespace TableFootball.UI
             // play (host, quick match, join) sit below it as neutral choices.
             rankedButton = UIFactory.Button(chooseGroup.transform, "Ranked",
                                             MenuButton.Variant.Primary, Ranked);
+            UIShine.AddTo(rankedButton);
 
             hostButton = UIFactory.Button(chooseGroup.transform, "Host Table",
-                                          MenuButton.Variant.Neutral, Host);
+                                          MenuButton.Variant.Blue, Host);
 
             quickButton = UIFactory.Button(chooseGroup.transform, "Quick Match",
-                                           MenuButton.Variant.Neutral, QuickMatch);
+                                           MenuButton.Variant.Blue, QuickMatch);
 
             // A rule with the label sitting in it, rather than a line of muted text drifting between
             // two buttons. Everything below it is one thing — join a table someone else opened — and
@@ -145,7 +146,7 @@ namespace TableFootball.UI
             BuildDivider(chooseGroup.transform, "or join with a code");
 
             codeField = UIFactory.CodeInput(chooseGroup.transform, "code", CodeLength);
-            joinButton = UIFactory.Button(chooseGroup.transform, "Join", MenuButton.Variant.Neutral, Join);
+            joinButton = UIFactory.Button(chooseGroup.transform, "Join", MenuButton.Variant.Blue, Join);
         }
 
         /// <summary>A horizontal rule broken by a caption, separating the two ways in.</summary>
