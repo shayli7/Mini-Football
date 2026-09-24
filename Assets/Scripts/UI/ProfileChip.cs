@@ -142,6 +142,11 @@ namespace TableFootball.UI
             var nle = nameText.gameObject.AddComponent<LayoutElement>();
             nle.preferredWidth = 0f;
             nle.flexibleWidth = 1f;
+            // Shrinks to fit before it truncates: generated names like "ShadyDeterminedOnion" are long,
+            // and cutting the player's own name to "ShadyDetermin…" was the first thing on screen.
+            nameText.enableAutoSizing = true;
+            nameText.fontSizeMax = ArcadeTheme.FsBody * 1.1f;
+            nameText.fontSizeMin = ArcadeTheme.FsBody * 0.72f;
             nameText.overflowMode = TextOverflowModes.Ellipsis;
             nameText.enableWordWrapping = false;
 

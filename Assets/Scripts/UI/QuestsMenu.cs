@@ -48,15 +48,7 @@ namespace TableFootball.UI
 
             UIFactory.Backdrop(root.transform);
 
-            var title = UIFactory.Text(root.transform, "DAILY QUESTS", ArcadeTheme.FsTitle,
-                                       ArcadeTheme.Ink, display: true, bold: true, upper: true,
-                                       tracking: 8f);
-            var trt = UIFactory.Rt(title.gameObject);
-            trt.anchorMin = new Vector2(0f, 1f);
-            trt.anchorMax = new Vector2(1f, 1f);
-            trt.pivot = new Vector2(0.5f, 1f);
-            trt.offsetMin = new Vector2(0f, -116f);
-            trt.offsetMax = new Vector2(0f, -46f);
+            UIFactory.ScreenHeader(root.transform, "Daily Quests", () => OnBack?.Invoke());
 
             resetLabel = UIFactory.Text(root.transform, string.Empty, ArcadeTheme.FsCaption,
                                         ArcadeTheme.InkMuted, display: false, bold: true,
@@ -65,15 +57,18 @@ namespace TableFootball.UI
             rrt.anchorMin = new Vector2(0f, 1f);
             rrt.anchorMax = new Vector2(1f, 1f);
             rrt.pivot = new Vector2(0.5f, 1f);
-            rrt.offsetMin = new Vector2(0f, -140f);
-            rrt.offsetMax = new Vector2(0f, -118f);
+            // Just under the header's title, as its subtitle.
+            float under = ArcadeTheme.Xl + ArcadeTheme.HeaderHeight;
+            rrt.offsetMin = new Vector2(0f, -(under + 26f));
+            rrt.offsetMax = new Vector2(0f, -(under + 4f));
 
             var panel = UIFactory.Panel(root.transform, "QuestsPanel");
             var prt = UIFactory.Rt(panel);
             prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
             prt.pivot = new Vector2(0.5f, 0.5f);
-            prt.sizeDelta = new Vector2(1180f, 452f);
-            prt.anchoredPosition = new Vector2(0f, -6f);
+            // Taller now the bottom of the screen no longer has to hold a Back button.
+            prt.sizeDelta = new Vector2(1180f, 520f);
+            prt.anchoredPosition = new Vector2(0f, -30f);
 
             var fill = panel.transform.Find("Fill");
             var row = UIFactory.Child(fill, "Row");
@@ -87,8 +82,6 @@ namespace TableFootball.UI
 
             BuildLevelColumn(row.transform);
             BuildQuestColumn(row.transform);
-
-            BuildBack(root.transform);
 
             root.SetActive(false);
         }
@@ -336,27 +329,6 @@ namespace TableFootball.UI
             xr.pivot = new Vector2(1f, 0f);
             xr.sizeDelta = new Vector2(90f, 30f);
             xr.anchoredPosition = new Vector2(-ArcadeTheme.Md, 14f);
-        }
-
-        private void BuildBack(Transform parent)
-        {
-            var holder = UIFactory.Child(parent, "BackHolder");
-            var rt = UIFactory.Rt(holder);
-            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0f);
-            rt.pivot = new Vector2(0.5f, 0f);
-            rt.sizeDelta = new Vector2(260f, 54f);
-            // The same place the friends list and the account screen put theirs, so moving between
-            // them does not move the way out.
-            rt.anchoredPosition = new Vector2(0f, 44f);
-
-            var layout = holder.AddComponent<VerticalLayoutGroup>();
-            layout.childForceExpandWidth = true;
-            layout.childForceExpandHeight = false;
-            layout.childControlWidth = true;
-            layout.childControlHeight = true;
-
-            UIFactory.Button(holder.transform, "Back", MenuButton.Variant.Ghost,
-                             () => OnBack?.Invoke(), 54f);
         }
 
         // ---------- state ----------

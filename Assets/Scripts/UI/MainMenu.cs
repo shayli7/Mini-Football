@@ -151,8 +151,8 @@ namespace TableFootball.UI
         /// so a distinct picture for each would be inventing a difference that is not there, and a
         /// null sprite draws the ARTWORK placeholder.
         ///
-        /// No subtitle under the captions: the level names carry it on their own, and the cards sit
-        /// side by side where the caption alone is the thing being compared.
+        /// A short line under each caption, and a three-bar strength meter in the corner, since the
+        /// three cards share one picture and nothing else told them apart.
         /// </summary>
         private void BuildDifficulty(Sprite art)
         {
@@ -162,14 +162,48 @@ namespace TableFootball.UI
             const float w = 296f;
             const float h = 340f;
 
-            UIFactory.Tile(difficultyGroup.transform, "Easy", art, () => StartAi(AiLevel.Easy),
-                           width: w, height: h, badge: UIFactory.Badge.AiVsPlayer);
+            var easy = UIFactory.Tile(difficultyGroup.transform, "Easy", art, () => StartAi(AiLevel.Easy),
+                                      note: "Learn the table", width: w, height: h,
+                                      badge: UIFactory.Badge.AiVsPlayer);
+            StrengthMeter(easy.transform, 1);
 
-            UIFactory.Tile(difficultyGroup.transform, "Normal", art, () => StartAi(AiLevel.Normal),
-                           width: w, height: h, badge: UIFactory.Badge.AiVsPlayer);
+            var normal = UIFactory.Tile(difficultyGroup.transform, "Normal", art, () => StartAi(AiLevel.Normal),
+                                        note: "A fair match", width: w, height: h,
+                                        badge: UIFactory.Badge.AiVsPlayer);
+            StrengthMeter(normal.transform, 2);
 
-            UIFactory.Tile(difficultyGroup.transform, "Hard", art, () => StartAi(AiLevel.Hard),
-                           width: w, height: h, badge: UIFactory.Badge.AiVsPlayer);
+            var hard = UIFactory.Tile(difficultyGroup.transform, "Hard", art, () => StartAi(AiLevel.Hard),
+                                      note: "Fast and sharp", width: w, height: h,
+                                      badge: UIFactory.Badge.AiVsPlayer);
+            StrengthMeter(hard.transform, 3);
+        }
+
+        /// <summary>
+        /// Three rising bars in the card's top-right corner, <paramref name="lit"/> of them gold — the
+        /// three cards share one picture, so this is what tells them apart at a glance before the
+        /// captions are read.
+        /// </summary>
+        private static void StrengthMeter(Transform card, int lit)
+        {
+            var holder = UIFactory.Child(card, "Strength");
+            UIFactory.RoundedImage(holder, ArcadeTheme.RadSm, ArcadeTheme.BgDeep.WithAlpha(0.82f), false);
+            var rt = UIFactory.Rt(holder);
+            rt.anchorMin = rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(1f, 1f);
+            rt.sizeDelta = new Vector2(52f, 40f);
+            rt.anchoredPosition = new Vector2(-ArcadeTheme.Xl, -ArcadeTheme.Xl);
+
+            for (int i = 0; i < 3; i++)
+            {
+                var bar = UIFactory.Child(holder.transform, "Bar");
+                UIFactory.RoundedImage(bar, 2, i < lit ? ArcadeTheme.Gold : ArcadeTheme.Line, false);
+                var brt = UIFactory.Rt(bar);
+                brt.anchorMin = brt.anchorMax = new Vector2(0.5f, 0f);
+                brt.pivot = new Vector2(0.5f, 0f);
+                float height = 10f + 7f * i;
+                brt.sizeDelta = new Vector2(7f, height);
+                brt.anchoredPosition = new Vector2((i - 1) * 12f, 9f);
+            }
         }
 
         /// <summary>
@@ -427,12 +461,14 @@ namespace TableFootball.UI
                                                () => OnOpenFriends?.Invoke(), barHeight);
             friends.SetAccent(navAccent, navGlow);
             SquareCell(friends.gameObject, barHeight);
+            NavLabel(friends.transform, "Friends", ArcadeTheme.InkMuted);
 
             var settings = UIFactory.IconButton(bar.transform, "Settings", UIFactory.Icon.Sliders,
                                                 MenuButton.Variant.Neutral,
                                                 () => OnOpenSettings?.Invoke(), barHeight);
             settings.SetAccent(navAccent, navGlow);
             SquareCell(settings.gameObject, barHeight);
+            NavLabel(settings.transform, "Settings", ArcadeTheme.InkMuted);
 
             // Gold, alone among the four. The shop is the one button here that leads somewhere new
             // rather than to a list the player has already seen, and the accent is what stops it being
@@ -442,12 +478,14 @@ namespace TableFootball.UI
                                              MenuButton.Variant.IconGold,
                                              () => OnOpenStore?.Invoke(), barHeight);
             SquareCell(store.gameObject, barHeight);
+            NavLabel(store.transform, "Store", ArcadeTheme.Gold);
 
             var path = UIFactory.IconButton(bar.transform, "LevelPath", UIFactory.Icon.Path,
                                             MenuButton.Variant.Neutral,
                                             () => OnOpenLevelPath?.Invoke(), barHeight);
             path.SetAccent(navAccent, navGlow);
             SquareCell(path.gameObject, barHeight);
+            NavLabel(path.transform, "Levels", ArcadeTheme.InkMuted);
 
             // The count of rewards waiting on the path, pinned to its button. The path is behind an
             // icon, and an icon cannot say "there are three things here for you" — which is the only
@@ -463,6 +501,7 @@ namespace TableFootball.UI
                                               () => OnOpenQuests?.Invoke(), barHeight);
             quests.SetAccent(navAccent, navGlow);
             SquareCell(quests.gameObject, barHeight);
+            NavLabel(quests.transform, "Quests", ArcadeTheme.InkMuted);
             questPip = UIFactory.CountPip(quests.transform, 0);
 
             var spacer = UIFactory.Child(bar.transform, "Spacer");
@@ -483,6 +522,22 @@ namespace TableFootball.UI
 
         /// <summary>Locks an icon button to a fixed square so the row's layout group cannot stretch it
         /// to the row's own (taller, if ever changed) height independently of its width.</summary>
+        /// <summary>
+        /// A small caption under a bottom-bar icon. Five round icons alone left players guessing which
+        /// was which; a word under each settles it without making the bar any taller — the caption
+        /// hangs into the bar's bottom margin.
+        /// </summary>
+        private static void NavLabel(Transform button, string text, Color color)
+        {
+            var t = UIFactory.Text(button, text, ArcadeTheme.FsCaption * 0.72f, color,
+                                   display: false, bold: true, upper: true, tracking: 3f);
+            var rt = UIFactory.Rt(t.gameObject);
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.sizeDelta = new Vector2(110f, 18f);
+            rt.anchoredPosition = new Vector2(0f, -ArcadeTheme.Xs);
+        }
+
         private static void SquareCell(GameObject go, float size)
         {
             var le = go.AddComponent<LayoutElement>();

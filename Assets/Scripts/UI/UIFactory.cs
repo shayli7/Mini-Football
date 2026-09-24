@@ -378,6 +378,160 @@ namespace TableFootball.UI
             return btn;
         }
 
+        // ---------- screen header ----------
+
+        /// <summary>
+        /// The top row every full-screen menu shares: the screen's name centred, and Back in the
+        /// top-left corner. Back used to sit at the bottom centre on some screens and inside the panel
+        /// on others, so the way out moved every time the player changed screen; here it is always in
+        /// the same corner, where every phone app has taught players to look for it.
+        ///
+        /// Pass null for <paramref name="onBack"/> for a title with no way out. Returns the Back
+        /// button, or null.
+        /// </summary>
+        public static MenuButton ScreenHeader(Transform parent, string title, Action onBack)
+        {
+            return ScreenHeader(parent, title, onBack, out _);
+        }
+
+        public static MenuButton ScreenHeader(Transform parent, string title, Action onBack,
+                                              out TextMeshProUGUI titleText)
+        {
+            var header = Child(parent, "Header");
+            var hrt = Rt(header);
+            hrt.anchorMin = new Vector2(0f, 1f);
+            hrt.anchorMax = new Vector2(1f, 1f);
+            hrt.pivot = new Vector2(0.5f, 1f);
+            hrt.offsetMin = new Vector2(ArcadeTheme.Xl2, -(ArcadeTheme.Xl + ArcadeTheme.HeaderHeight));
+            hrt.offsetMax = new Vector2(-ArcadeTheme.Xl2, -ArcadeTheme.Xl);
+
+            titleText = Text(header.transform, title, ArcadeTheme.FsTitle * 0.84f, ArcadeTheme.Ink,
+                             display: true, bold: true, upper: true, tracking: 8f);
+            Stretch(Rt(titleText.gameObject), 0);
+
+            if (onBack == null) return null;
+
+            var holder = Child(header.transform, "BackHolder");
+            var brt = Rt(holder);
+            brt.anchorMin = new Vector2(0f, 0f);
+            brt.anchorMax = new Vector2(0f, 1f);
+            brt.pivot = new Vector2(0f, 0.5f);
+            brt.sizeDelta = new Vector2(ArcadeTheme.BackWidth, 0f);
+            brt.anchoredPosition = Vector2.zero;
+
+            var v = holder.AddComponent<VerticalLayoutGroup>();
+            v.childAlignment = TextAnchor.MiddleCenter;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
+
+            return Button(holder.transform, "Back", MenuButton.Variant.Ghost, onBack, ArcadeTheme.HeaderHeight);
+        }
+
+        // ---------- action cards ----------
+
+        /// <summary>
+        /// A large tappable card: an icon tile, a title and a line saying what it does. For the
+        /// handful of big choices a screen offers (Ranked, Quick Match, Host Table), where a bare
+        /// button label does not say enough and a list of same-sized buttons gives no sense of which
+        /// one matters.
+        ///
+        /// A card with a <paramref name="callToAction"/> is the screen's headline: it gets the gold
+        /// accent and a gold pill along its foot carrying the shine. One per screen.
+        ///
+        /// The caller sizes it — through a <see cref="LayoutElement"/> it already carries, or its
+        /// RectTransform.
+        /// </summary>
+        public static MenuButton ActionCard(Transform parent, string title, string subtitle, Icon icon,
+                                            Action onClick, string callToAction = null)
+        {
+            var root = Child(parent, "Card_" + title);
+            root.AddComponent<LayoutElement>();
+
+            var shadowGo = Child(root.transform, "Shadow");
+            GlowImage(shadowGo, ArcadeTheme.RadLg, ArcadeTheme.ShadowFeather,
+                      Color.black.WithAlpha(ArcadeTheme.ShadowAlpha));
+            Stretch(Rt(shadowGo), -24, -30, -24, -16);
+
+            var glowGo = Child(root.transform, "Glow");
+            var glow = GlowImage(glowGo, ArcadeTheme.RadLg, 30f, ArcadeTheme.Gold.WithAlpha(0f));
+            Stretch(Rt(glowGo), -18);
+
+            var borderGo = Child(root.transform, "Border");
+            var border = RoundedImage(borderGo, ArcadeTheme.RadLg, ArcadeTheme.Line, false);
+            Stretch(Rt(borderGo), 0);
+
+            var fillGo = Child(root.transform, "Fill");
+            var fill = RoundedImage(fillGo, ArcadeTheme.RadLg, ArcadeTheme.BgRaised, true);
+            Stretch(Rt(fillGo), 2f);
+
+            var content = Child(fillGo.transform, "Content");
+            Stretch(Rt(content), ArcadeTheme.Xl);
+            var v = content.AddComponent<VerticalLayoutGroup>();
+            v.spacing = ArcadeTheme.Md;
+            v.childAlignment = TextAnchor.UpperLeft;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
+
+            // The tile sits in a full-width row so the column's width does not stretch it.
+            var iconRow = Child(content.transform, "IconRow");
+            iconRow.AddComponent<LayoutElement>().preferredHeight = ArcadeTheme.CardIcon;
+            var tile = Child(iconRow.transform, "IconTile");
+            RoundedImage(tile, ArcadeTheme.RadMd, ArcadeTheme.BlueFill, false);
+            var trt = Rt(tile);
+            trt.anchorMin = trt.anchorMax = new Vector2(0f, 0.5f);
+            trt.pivot = new Vector2(0f, 0.5f);
+            trt.sizeDelta = new Vector2(ArcadeTheme.CardIcon, ArcadeTheme.CardIcon);
+            trt.anchoredPosition = Vector2.zero;
+            var glyph = Child(tile.transform, "Glyph");
+            Stretch(Rt(glyph), ArcadeTheme.Md);
+            BuildIcon(glyph.transform, icon);
+
+            var head = Text(content.transform, title, ArcadeTheme.FsButton * 1.1f, ArcadeTheme.Ink,
+                            display: true, bold: true, upper: true, tracking: 4f,
+                            align: TextAlignmentOptions.Left);
+            head.gameObject.AddComponent<LayoutElement>().preferredHeight = ArcadeTheme.FsButton * 1.5f;
+
+            var sub = Text(content.transform, subtitle, ArcadeTheme.FsBody * 0.9f, ArcadeTheme.InkMuted,
+                           display: false, bold: false, align: TextAlignmentOptions.TopLeft);
+            sub.textWrappingMode = TextWrappingModes.Normal;
+            sub.gameObject.AddComponent<LayoutElement>().preferredHeight = ArcadeTheme.FsBody * 2.6f;
+
+            var btn = root.AddComponent<MenuButton>();
+            btn.fill = fill; btn.border = border; btn.glow = glow; btn.label = head;
+            btn.targetGraphic = fill;
+            btn.Configure(MenuButton.Variant.Neutral);
+
+            if (callToAction != null)
+            {
+                var push = Child(content.transform, "Spacer");
+                push.AddComponent<LayoutElement>().flexibleHeight = 1f;
+
+                var ctaRow = Child(content.transform, "CallToActionRow");
+                ctaRow.AddComponent<LayoutElement>().preferredHeight = ArcadeTheme.HeaderHeight;
+                var pill = Child(ctaRow.transform, "CallToAction");
+                var pillImg = RoundedImage(pill, ArcadeTheme.RadMd, ArcadeTheme.Gold, false);
+                var prt = Rt(pill);
+                prt.anchorMin = new Vector2(0f, 0f);
+                prt.anchorMax = new Vector2(0f, 1f);
+                prt.pivot = new Vector2(0f, 0.5f);
+                prt.sizeDelta = new Vector2(ArcadeTheme.CallToActionWidth, 0f);
+                prt.anchoredPosition = Vector2.zero;
+                var ctaText = Text(pill.transform, callToAction, ArcadeTheme.FsButton * 0.8f, ArcadeTheme.OnGold,
+                                   display: true, bold: true, upper: true, tracking: 6f);
+                Stretch(Rt(ctaText.gameObject), 0);
+
+                btn.SetAccent(ArcadeTheme.Gold, 0.3f);
+                UIShine.AddTo(pillImg, btn);
+            }
+
+            if (onClick != null) btn.onClick.AddListener(() => onClick());
+            return btn;
+        }
+
         // ---------- loader ----------
 
         /// <summary>
@@ -426,7 +580,7 @@ namespace TableFootball.UI
         // ---------- round icon buttons ----------
 
         /// <summary>Which glyph a round icon button draws.</summary>
-        public enum Icon { Door, Person, Sliders, Eye, Dice, Trophy, Store, Path, Quest }
+        public enum Icon { Door, Person, Sliders, Eye, Dice, Trophy, Store, Path, Quest, Table, Close }
 
         private static Image CircleImage(GameObject go, Color color, bool raycast)
         {
@@ -609,6 +763,23 @@ namespace TableFootball.UI
                     irt.anchoredPosition = Vector2.zero;
 
                     Dot(g, ArcadeTheme.Ink, Vector2.zero, 9f);
+                    break;
+
+                case Icon.Close:
+                    // A plain cross — close this pop-up.
+                    Rod(g, ArcadeTheme.Ink, Vector2.zero, 24f, 3.5f, 45f);
+                    Rod(g, ArcadeTheme.Ink, Vector2.zero, 24f, 3.5f, -45f);
+                    break;
+
+                case Icon.Table:
+                    // A table seen from above: the frame, the halfway line and the centre spot —
+                    // "a table of your own", for hosting one.
+                    Rod(g, ArcadeTheme.Ink, new Vector2(0f, 12f), 32f, 3f, 0f);
+                    Rod(g, ArcadeTheme.Ink, new Vector2(0f, -12f), 32f, 3f, 0f);
+                    Rod(g, ArcadeTheme.Ink, new Vector2(-15f, 0f), 27f, 3f, 90f);
+                    Rod(g, ArcadeTheme.Ink, new Vector2(15f, 0f), 27f, 3f, 90f);
+                    Rod(g, ArcadeTheme.Ink.WithAlpha(0.6f), new Vector2(0f, 0f), 21f, 2f, 90f);
+                    Dot(g, ArcadeTheme.Gold, Vector2.zero, 7f);
                     break;
 
                 case Icon.Trophy:
@@ -1533,6 +1704,23 @@ namespace TableFootball.UI
         /// A horizontal rule broken by a caption. Groups the controls beneath it into one idea, which
         /// a bare line of muted text floating between two buttons does not.
         /// </summary>
+        /// <summary>
+        /// A <see cref="StatBlock"/> on a raised tile of its own, for a grid of stats that has to read
+        /// as a set of numbers rather than a line of floating digits. Returns the value label.
+        /// </summary>
+        public static TextMeshProUGUI StatTile(Transform parent, string caption, Color color)
+        {
+            var tile = Child(parent, "Tile_" + caption);
+            var le = tile.AddComponent<LayoutElement>();
+            le.preferredHeight = ArcadeTheme.StatTileHeight;
+            le.flexibleWidth = 1f;
+            RoundedImage(tile, ArcadeTheme.RadMd, ArcadeTheme.BgRaised, false);
+
+            var value = StatBlock(tile.transform, caption, color);
+            Stretch(Rt(value.transform.parent.gameObject), 0f, ArcadeTheme.Sm, 0f, ArcadeTheme.Sm);
+            return value;
+        }
+
         public static void SectionRule(Transform parent, string caption)
         {
             var row = Child(parent, "Section_" + caption);
@@ -1779,7 +1967,7 @@ namespace TableFootball.UI
 
             // track
             var track = Child(root.transform, "Track");
-            RoundedImage(track, ArcadeTheme.RadSm, ArcadeTheme.BgRaised, true);
+            RoundedImage(track, ArcadeTheme.RadSm, ArcadeTheme.BgDeep, true);
             var trt = Rt(track);
             trt.anchorMin = new Vector2(0, 0.5f); trt.anchorMax = new Vector2(1, 0.5f);
             trt.sizeDelta = new Vector2(0, 10f); trt.anchoredPosition = Vector2.zero;
@@ -1790,7 +1978,8 @@ namespace TableFootball.UI
             fart.anchorMin = new Vector2(0, 0.5f); fart.anchorMax = new Vector2(1, 0.5f);
             fart.sizeDelta = new Vector2(-14f, 10f); fart.anchoredPosition = Vector2.zero;
             var fillGo = Child(fillArea.transform, "Fill");
-            RoundedImage(fillGo, ArcadeTheme.RadSm, ArcadeTheme.Gold, false);
+            // Blue, not gold: a volume level is a setting, not the thing to press next.
+            RoundedImage(fillGo, ArcadeTheme.RadSm, ArcadeTheme.Blue, false);
             var frt = Rt(fillGo);
             frt.anchorMin = Vector2.zero; frt.anchorMax = new Vector2(0, 1); frt.sizeDelta = new Vector2(14f, 0);
 
@@ -1800,9 +1989,13 @@ namespace TableFootball.UI
             hart.anchorMin = Vector2.zero; hart.anchorMax = Vector2.one;
             hart.offsetMin = new Vector2(7, 0); hart.offsetMax = new Vector2(-7, 0);
             var handleGo = Child(handleArea.transform, "Handle");
-            RoundedImage(handleGo, ArcadeTheme.RadSm, ArcadeTheme.Ink, true);
+            // A round knob with a blue rim, the way a volume thumb is drawn everywhere else.
+            CircleImage(handleGo, ArcadeTheme.BlueFill, true);
             var hrt = Rt(handleGo);
-            hrt.sizeDelta = new Vector2(20f, 26f);
+            hrt.sizeDelta = new Vector2(28f, 28f);
+            var knob = Child(handleGo.transform, "Knob");
+            CircleImage(knob, ArcadeTheme.Ink, false);
+            Stretch(Rt(knob), 4f);
 
             slider.fillRect = frt;
             slider.handleRect = hrt;
