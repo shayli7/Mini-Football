@@ -1,0 +1,388 @@
+/* Main menu. See MainMenu.cs. Laid out against a 760-unit-high panel. */
+
+.menu__scrim {
+    /* Dark, not opaque: the live table and the player's room background still show faintly. */
+    background-color: rgba(7, 9, 14, 0.86);
+}
+
+.menu__glow {
+    -unity-background-scale-mode: stretch-to-fill;
+}
+
+/* ---------- header ---------- */
+
+.menu__header {
+    position: absolute;
+    left: 36px;
+    right: 36px;
+    top: 22px;
+    height: 68px;
+    flex-direction: row;
+    align-items: center;
+}
+
+.menu__profile {
+    flex-direction: row;
+    align-items: center;
+    height: 68px;
+    padding: 8px 20px 8px 8px;
+    background-color: var(--panel);
+    border-width: 1px;
+    border-color: var(--line);
+    border-radius: 18px;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.menu__profile:hover { scale: 1.02 1.02; }
+.menu__profile:active { scale: 0.98 0.98; }
+
+.avatar {
+    width: 50px;
+    height: 50px;
+    border-radius: 25px;
+    background-color: var(--raised);
+    border-width: 2px;
+    border-color: var(--gold);
+    align-items: center;
+    justify-content: center;
+}
+
+.avatar__initial {
+    font-size: 22px;
+    color: var(--gold);
+    -unity-text-align: middle-center;
+}
+
+.menu__profile-info {
+    margin-left: 14px;
+}
+
+.menu__name {
+    font-size: 17px;
+    max-width: 300px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.level-pill {
+    font-size: 12px;
+    letter-spacing: 1px;
+    color: var(--gold);
+    background-color: var(--gold-soft);
+    border-radius: 6px;
+    padding: 3px 8px;
+    margin-left: 10px;
+}
+
+.menu__xp-row { margin-top: 7px; }
+
+.menu__xp-bar {
+    width: 150px;
+    height: 6px;
+}
+
+.menu__xp-label {
+    font-size: 12px;
+    color: var(--muted);
+    margin-left: 10px;
+}
+
+.menu__header .chip { margin-left: 12px; }
+.menu__header .chip .icon { width: 24px; height: 24px; }
+
+.chip--tap {
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.chip--tap:hover { scale: 1.04 1.04; }
+.chip--tap:active { scale: 0.96 0.96; }
+
+/* ---------- wordmark ---------- */
+
+.menu__logo {
+    position: absolute;
+    top: 100px;
+    left: 0;
+    right: 0;
+    align-items: center;
+}
+
+.menu__mini {
+    font-size: 16px;
+    letter-spacing: 10px;
+    padding-left: 10px;
+    -unity-text-align: middle-center;
+}
+
+.menu__football {
+    font-size: 42px;
+    letter-spacing: 6px;
+    padding-left: 6px;
+    color: var(--gold);
+    -unity-text-align: middle-center;
+}
+
+.menu__caption {
+    position: absolute;
+    top: 176px;
+    left: 0;
+    right: 0;
+    font-size: 13px;
+    letter-spacing: 4px;
+    color: var(--muted);
+    -unity-text-align: middle-center;
+}
+
+/* ---------- cards ---------- */
+
+.menu__cards {
+    position: absolute;
+    top: 206px;
+    left: 0;
+    right: 0;
+    flex-direction: row;
+    justify-content: center;
+}
+
+.card {
+    width: 320px;
+    height: 392px;
+    margin: 0 12px;
+    padding: 14px;
+    background-color: var(--panel);
+    border-width: 2px;
+    border-color: var(--line);
+    border-radius: 22px;
+}
+
+.card.enter {
+    transition-property: opacity, translate, scale, border-color, background-color;
+    transition-duration: 0.42s, 0.42s, 0.12s, 0.2s, 0.2s;
+    transition-timing-function: ease-out-cubic;
+}
+
+.card:hover { scale: 1.02 1.02; }
+.card:active { scale: 0.97 0.97; }
+
+.card.is-selected {
+    background-color: var(--panel-2);
+    border-color: var(--gold);
+    translate: 0 -10px;
+}
+
+/* After is-selected, so a selected card still rises in on entrance. */
+.card.enter-from {
+    opacity: 0;
+    translate: 0 26px;
+}
+
+.card__picture {
+    height: 180px;
+    border-radius: 12px;
+    overflow: hidden;
+    background-color: #0B1626;
+    -unity-background-scale-mode: scale-and-crop;
+}
+
+.card__shade {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 40%;
+    background-color: rgba(7, 9, 14, 0.35);
+}
+
+.card__title-row {
+    margin-top: 16px;
+    padding: 0 6px;
+}
+
+.card__icon-tile {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    background-color: var(--raised);
+    align-items: center;
+    justify-content: center;
+}
+
+.card__words { margin-left: 12px; flex-shrink: 1; }
+
+.card__title {
+    font-size: 19px;
+    letter-spacing: 1px;
+}
+
+.card__subtitle {
+    font-size: 14px;
+    color: var(--muted);
+    margin-top: 2px;
+}
+
+.card__name {
+    font-size: 26px;
+    letter-spacing: 3px;
+}
+
+.card__line {
+    font-size: 15px;
+    color: var(--muted);
+    margin: 10px 6px 0 6px;
+    white-space: normal;
+}
+
+.card__play {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    height: 50px;
+    margin-top: auto;
+    border-radius: 14px;
+    background-color: var(--blue-fill);
+    transition-property: background-color;
+    transition-duration: 0.2s;
+}
+
+.card__play-label {
+    font-size: 16px;
+    letter-spacing: 3px;
+}
+
+.card__play .icon {
+    width: 14px;
+    height: 14px;
+    margin-left: 8px;
+}
+
+.card.is-selected .card__play { background-color: var(--gold); }
+.card.is-selected .card__play-label { color: var(--on-gold); }
+
+.card__play .shine { left: -100px; }
+
+/* Strength meter on the difficulty cards. */
+.meter {
+    flex-direction: row;
+    align-items: flex-end;
+    height: 24px;
+}
+
+.meter__bar {
+    width: 8px;
+    margin-left: 4px;
+    border-radius: 2px;
+    background-color: var(--line-2);
+}
+
+.meter__bar--1 { height: 10px; }
+.meter__bar--2 { height: 17px; }
+.meter__bar--3 { height: 24px; }
+.meter__bar.is-lit { background-color: var(--gold); }
+
+.menu__back {
+    position: absolute;
+    left: 36px;
+    bottom: 30px;
+    width: 132px;
+    height: 52px;
+    padding: 0;
+}
+
+.menu__back .icon {
+    width: 18px;
+    height: 18px;
+    margin-right: 6px;
+}
+
+/* ---------- bottom bar ---------- */
+
+.nav-wrap {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 16px;
+    align-items: center;
+}
+
+.nav {
+    flex-direction: row;
+    padding: 8px;
+    background-color: var(--panel);
+    border-width: 1px;
+    border-color: var(--line);
+    border-radius: 24px;
+}
+
+.nav__item {
+    width: 108px;
+    height: 64px;
+    border-radius: 16px;
+    align-items: center;
+    justify-content: center;
+    transition-property: background-color, scale;
+    transition-duration: 0.12s, 0.12s;
+}
+
+.nav__item:hover { background-color: var(--raised); }
+.nav__item:active { scale: 0.95 0.95; }
+
+.nav__item .icon {
+    width: 24px;
+    height: 24px;
+}
+
+.nav__label {
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    margin-top: 5px;
+    -unity-text-align: middle-center;
+}
+
+.nav__pip {
+    position: absolute;
+    top: 6px;
+    right: 28px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 9px;
+    background-color: var(--gold);
+    color: var(--on-gold);
+    font-size: 11px;
+    -unity-text-align: middle-center;
+}
+
+/* ---------- invitation ---------- */
+
+.invite {
+    position: absolute;
+    top: 104px;
+    right: 36px;
+    width: 540px;
+    height: 76px;
+    flex-direction: row;
+    align-items: center;
+    padding: 0 14px 0 18px;
+    background-color: var(--panel-2);
+    border-width: 2px;
+    border-color: var(--gold);
+    border-radius: 18px;
+}
+
+.invite__text {
+    font-size: 15px;
+    color: var(--gold);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.invite__btn {
+    height: 46px;
+    padding: 0 18px;
+    margin-left: 8px;
+}

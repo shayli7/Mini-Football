@@ -224,6 +224,7 @@ namespace TableFootball.UI
             if (pause != null)
             {
                 pause.OnLeaveMatch = ReturnToMenu;
+                pause.OnStandaloneClosed = () => { if (menu != null) menu.Open(); };
             }
 
             // The record is kept here rather than in MatchManager, which is deliberately ignorant of
@@ -783,6 +784,10 @@ namespace TableFootball.UI
 
         private void OpenSettings()
         {
+            // The menu steps aside while Settings is up and comes back when it closes (see
+            // GameMenu.OnStandaloneClosed): the menu is UI Toolkit, Settings is still uGUI, and the
+            // order the two draw in is not guaranteed.
+            if (menu != null) menu.Close();
             if (pause != null) pause.OpenSettingsStandalone();
         }
 

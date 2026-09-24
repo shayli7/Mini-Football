@@ -1,37 +1,55 @@
 using System;
-using System.Collections;
+using System.Collections.Generic;
 using TableFootball.Net;
 using TableFootball.Progression;
+using TableFootball.UI.Toolkit;
 using UnityEngine;
-using UnityEngine.UI;
+using UnityEngine.UIElements;
 
 namespace TableFootball.UI
 {
     /// <summary>
-    /// The front door: pick Online or Local, then pick a local mode.
+    /// The front screen: who you are and what you have along the top, the wordmark, the three ways to
+    /// play as cards, and the bottom bar. Built on UI Toolkit (see <see cref="UiToolkitHost"/>) and
+    /// styled by <c>Resources/UI/Styles/MainMenu.uss</c>.
     ///
-    /// Two groups on one screen rather than two screens, matching <see cref="GameMenu"/> — going
-    /// "back" then costs a SetActive rather than a rebuild, and there is only ever one menu object
-    /// to show or hide.
+    /// Like every screen it reports choices through callbacks and never starts anything itself —
+    /// <see cref="GameFlow"/> owns the sequence. Choosing "Player vs AI" steps into the difficulty
+    /// cards in place; everything else leaves the screen.
     ///
-    /// It reports choices through callbacks and never starts a match itself; <see cref="GameFlow"/>
-    /// owns the sequence. That keeps the menu ignorant of rods, AI and match state, exactly as
-    /// ScoreHud is ignorant of everything but MatchManager's events.
+    /// The gold card is the mode the player last started, so the one highlighted thing on the screen
+    /// is "play again" — it defaults to Player vs AI for a new player. Every card still starts its
+    /// mode on the first tap: the highlight is a suggestion, not a selection step.
     /// </summary>
     public class MainMenu : MonoBehaviour
     {
-        private GameObject root;
-        private CanvasGroup group;
-        private Transform panel;
-        private GameObject rootGroup;
-        private GameObject difficultyGroup;
-        private GameObject backHolder;
-        private GameObject questPip;
-        private GameObject inviteBanner;
-        private TMPro.TextMeshProUGUI inviteText;
-        private TMPro.TextMeshProUGUI rankedPoints;
-        private GameObject pathPip;
-        private Coroutine anim;
+        private const string LastModeKey = "tf_lastmode";
+
+        private enum Mode { PlayerVsPlayer = 0, PlayerVsAi = 1, Online = 2 }
+
+        private VisualElement root;
+        private VisualElement modeRow;
+        private VisualElement difficultyRow;
+        private VisualElement logo;
+        private VisualElement caption;
+        private VisualElement nav;
+        private VisualElement backButton;
+        private VisualElement inviteBanner;
+        private Label inviteText;
+
+        private Label nameLabel;
+        private Label levelLabel;
+        private Label xpLabel;
+        private VisualElement xpFill;
+        private Label avatarInitial;
+        private Label coinLabel;
+        private Label rankedLabel;
+        private Label pathPip;
+        private Label questPip;
+
+        private readonly List<VisualElement> modeCards = new List<VisualElement>();
+        private readonly List<VisualElement> difficultyCards = new List<VisualElement>();
+        private readonly List<IVisualElementScheduledItem> loops = new List<IVisualElementScheduledItem>();
 
         /// <summary>Set from the friends service callback, acted on in <see cref="Update"/>.</summary>
         private bool inviteDirty;
@@ -39,26 +57,25 @@ namespace TableFootball.UI
         /// <summary>Raised with true for "AI vs Player", false for "Player vs Player".</summary>
         public Action<bool> OnStartLocal;
 
-        /// <summary>Raised when Online is chosen. The online screen is its own panel, not a group here.</summary>
+        /// <summary>Raised when Online is chosen. The online screen is its own screen.</summary>
         public Action OnOpenOnline;
 
-        /// <summary>Raised by the settings icon. GameFlow hands this to the existing settings panel.</summary>
+        /// <summary>Raised by the settings button. GameFlow hands this to the settings panel.</summary>
         public Action OnOpenSettings;
 
-        /// <summary>Raised by the person icon. The friends list carries the account screen behind it.</summary>
+        /// <summary>Raised by the friends button.</summary>
         public Action OnOpenFriends;
 
-        /// <summary>Raised by the avatar, top left. Goes straight to the account screen.</summary>
+        /// <summary>Raised by the profile chip, top left. Goes straight to the account screen.</summary>
         public Action OnOpenProfile;
 
-        /// <summary>Raised by the trophy button beside the chip. Opens the league screen directly —
-        /// the same door <see cref="OnlineMenu"/>'s own Ranked button leads to.</summary>
+        /// <summary>Raised by the trophy chip, top right. Opens the league screen directly.</summary>
         public Action OnOpenRanked;
 
-        /// <summary>Raised by the shop icon in the bottom bar. Opens the cosmetics store.</summary>
+        /// <summary>Raised by the store button in the bottom bar.</summary>
         public Action OnOpenStore;
 
-        /// <summary>Raised by the path icon in the bottom bar. Opens the level path.</summary>
+        /// <summary>Raised by the levels button in the bottom bar. Opens the level path.</summary>
         public Action OnOpenLevelPath;
 
         /// <summary>Opens the daily quests screen.</summary>
@@ -67,152 +84,226 @@ namespace TableFootball.UI
         /// <summary>Raised with a friend's join code when their invitation is accepted from here.</summary>
         public Action<string> OnAcceptInvite;
 
-        public bool IsOpen => root != null && root.activeSelf;
+        public bool IsOpen => root != null && root.style.display != DisplayStyle.None;
 
+        /// <summary>
+        /// <paramref name="canvasRoot"/> is the uGUI canvas the other screens still hang off, unused
+        /// here and kept so TableFootballUI's boot order does not change. <paramref name="localArt"/>
+        /// is no longer drawn — the "Local" step it illustrated was folded into the three cards.
+        /// </summary>
         public void Build(Transform canvasRoot, Sprite onlineArt, Sprite localArt,
                           Sprite playerVsPlayerArt, Sprite aiVsPlayerArt)
         {
-            root = UIFactory.Child(canvasRoot, "MainMenu");
-            UIFactory.Stretch(UIFactory.Rt(root));
-            group = root.AddComponent<CanvasGroup>();
+            root = UiKit.El("screen menu", UiToolkitHost.Root, "MainMenu");
+            var sheet = Resources.Load<StyleSheet>("UI/Styles/MainMenu");
+            if (sheet != null) root.styleSheets.Add(sheet);
+            // The floor of the menu: nothing behind it may be touched while it is up.
+            root.pickingMode = PickingMode.Position;
 
-            // A translucent scrim, not the opaque Backdrop the other screens use: MenuStageCamera
-            // renders the real 3D table behind the menu, and this darkens it just enough to keep the
-            // logo, cards and footer readable over the top.
-            UIFactory.StageScrim(root.transform);
+            var scrim = UiKit.El("bleed menu__scrim", root);
+            scrim.pickingMode = PickingMode.Ignore;
+            var glow = UiKit.El("bleed menu__glow", root);
+            glow.pickingMode = PickingMode.Ignore;
+            glow.style.backgroundImage = new StyleBackground(TopGlow());
 
-            // One header row owns the whole top edge — chip and trophy on the same plane, sharing one
-            // reserved height — so the logo below it has a KNOWN band to start from instead of an
-            // eyeballed gap. See BuildHeader.
             BuildHeader();
 
-            // Moved below the header rather than sharing its band — at full size the wordmark and the
-            // header's own content used to occupy overlapping vertical territory by construction, both
-            // anchored to the top independently with no shared accounting of how tall either one was.
-            // Sized as big as the gap between the header's known bottom edge and the card panel's own
-            // (unmoved) top edge allows, rather than shrunk arbitrarily.
-            var logo = UIFactory.LogoLockup(root.transform, scale: 0.9f);
-            var trt = UIFactory.Rt(logo);
-            trt.anchorMin = new Vector2(0f, 1f);
-            trt.anchorMax = new Vector2(1f, 1f);
-            trt.pivot = new Vector2(0.5f, 1f);
-            trt.offsetMin = new Vector2(0f, -292f);
-            trt.offsetMax = new Vector2(0f, -132f);
+            logo = UiKit.El("menu__logo", root);
+            UiKit.Text(ArcadeTheme.GameNameA, "menu__mini f-display-semi", logo);
+            UiKit.Text(ArcadeTheme.GameNameB, "menu__football f-display", logo);
 
-            panel = UIFactory.Child(root.transform, "Choices").transform;
-            var prt = UIFactory.Rt(panel.gameObject);
-            prt.anchorMin = new Vector2(0.5f, 0.5f);
-            prt.anchorMax = new Vector2(0.5f, 0.5f);
-            prt.pivot = new Vector2(0.5f, 0.5f);
-            // Must comfortably exceed three tiles plus the gaps, or the layout group shrinks them back
-            // down to fit and the cards never actually get bigger. Three cards at 336 plus two of
-            // BuildRow's widened gaps (60 each) is 1128; 1180 leaves a little slack, and still clears
-            // the ~1385 the narrowest supported aspect (4:3) gives the canvas.
-            prt.sizeDelta = new Vector2(1180f, 400f);
-            // Sits the cards in the middle of the band between the logo and the footer, rather than
-            // in the middle of the screen. Centring them on the screen is what left the big dead gap
-            // under the title, because the logo above them is not balanced by anything below.
-            prt.anchoredPosition = new Vector2(0f, -60f);
+            caption = UiKit.Text("CHOOSE A DIFFICULTY", "menu__caption f-body-semi", root);
 
-            rootGroup = BuildRow(panel, "RootGroup");
+            modeRow = UiKit.El("menu__cards", root);
+            modeCards.Add(ModeCard("PLAYER VS PLAYER", "Play a friend beside you", UiIcon.Glyph.TwoPlayers,
+                                   playerVsPlayerArt, () => ChooseMode(Mode.PlayerVsPlayer)));
+            modeCards.Add(ModeCard("PLAYER VS AI", "Challenge the computer", UiIcon.Glyph.Robot,
+                                   aiVsPlayerArt, () => ChooseMode(Mode.PlayerVsAi)));
+            modeCards.Add(ModeCard("ONLINE", "Play over the internet", UiIcon.Glyph.Globe,
+                                   onlineArt, () => ChooseMode(Mode.Online)));
 
-            // Three top-level cards, shown at once — no "Local" step in between. The old two-then-two
-            // structure buried the modes a tap deeper than they deserve.
-            const float cardW = 336f;
-            UIFactory.Tile(rootGroup.transform, "Player vs Player", playerVsPlayerArt,
-                           () => Choose(aiOpponent: false), note: "Play a friend beside you",
-                           width: cardW, badge: UIFactory.Badge.PlayerVsPlayer);
-            UIFactory.Tile(rootGroup.transform, "Player vs AI", aiVsPlayerArt,
-                           ShowDifficulty, note: "Challenge the computer",
-                           width: cardW, badge: UIFactory.Badge.AiVsPlayer);
-            UIFactory.Tile(rootGroup.transform, "Online", onlineArt, () => OnOpenOnline?.Invoke(),
-                           note: "Play over the internet",
-                           width: cardW, badge: UIFactory.Badge.Online);
-
-            BuildDifficulty(aiVsPlayerArt);
+            difficultyRow = UiKit.El("menu__cards", root);
+            difficultyCards.Add(DifficultyCard("EASY", "Learn the table.", 1, aiVsPlayerArt, AiLevel.Easy));
+            difficultyCards.Add(DifficultyCard("NORMAL", "A fair match for most players.", 2, aiVsPlayerArt, AiLevel.Normal));
+            difficultyCards.Add(DifficultyCard("HARD", "Fast and sharp.", 3, aiVsPlayerArt, AiLevel.Hard));
 
             BuildBottomBar();
+
+            backButton = UiKit.El("btn btn--ghost menu__back", root);
+            backButton.Add(new UiIcon(UiIcon.Glyph.ChevronLeft, ArcadeTheme.Ink, 2.5f) { name = "BackIcon" });
+            UiKit.Text("BACK", "btn__label f-display", backButton);
+            UiKit.OnTap(backButton, ShowModes);
+
             BuildInviteBanner();
 
-            ShowRoot();
-            root.SetActive(false);
+            UiFonts.Apply(root);
+            ShowModes();
+            UiKit.Show(root, false);
         }
 
-        /// <summary>
-        /// The difficulty step, shown after "AI vs Player" is chosen.
-        ///
-        /// Picking a level starts the match immediately rather than needing a confirm — the whole
-        /// step is one extra tap, which is about as much ceremony as choosing an opponent deserves.
-        ///
-        /// All three cards are styled identically. Accenting one as the recommended choice makes
-        /// the other two read as worse options rather than as different ones.
-        ///
-        /// The three cards share the AI mode's artwork. They are the same mode at three strengths,
-        /// so a distinct picture for each would be inventing a difference that is not there, and a
-        /// null sprite draws the ARTWORK placeholder.
-        ///
-        /// A short line under each caption, and a three-bar strength meter in the corner, since the
-        /// three cards share one picture and nothing else told them apart.
-        /// </summary>
-        private void BuildDifficulty(Sprite art)
+        // ---------- build: header ----------
+
+        private void BuildHeader()
         {
-            difficultyGroup = BuildRow(panel, "DifficultyGroup");
+            var header = UiKit.El("menu__header", root);
 
-            // Narrower than the two-card rows: three of these have to share the same panel width.
-            const float w = 296f;
-            const float h = 340f;
+            // The identity chip: avatar, name, level and XP. The whole chip opens the account screen.
+            var chip = UiKit.El("menu__profile", header);
+            UiKit.OnTap(chip, () => OnOpenProfile?.Invoke());
+            var avatar = UiKit.El("avatar", chip);
+            avatarInitial = UiKit.Text("?", "avatar__initial f-display", avatar);
 
-            var easy = UIFactory.Tile(difficultyGroup.transform, "Easy", art, () => StartAi(AiLevel.Easy),
-                                      note: "Learn the table", width: w, height: h,
-                                      badge: UIFactory.Badge.AiVsPlayer);
-            StrengthMeter(easy.transform, 1);
+            var info = UiKit.El("menu__profile-info", chip);
+            var nameRow = UiKit.El("row", info);
+            nameLabel = UiKit.Text("—", "menu__name f-display-semi", nameRow);
+            levelLabel = UiKit.Text("LV 1", "level-pill f-display", nameRow);
+            var xpRow = UiKit.El("row menu__xp-row", info);
+            var bar = UiKit.El("bar menu__xp-bar", xpRow);
+            xpFill = UiKit.El("bar__fill", bar);
+            xpLabel = UiKit.Text(string.Empty, "menu__xp-label", xpRow);
 
-            var normal = UIFactory.Tile(difficultyGroup.transform, "Normal", art, () => StartAi(AiLevel.Normal),
-                                        note: "A fair match", width: w, height: h,
-                                        badge: UIFactory.Badge.AiVsPlayer);
-            StrengthMeter(normal.transform, 2);
+            var coins = UiKit.El("chip", header);
+            coins.Add(new UiIcon(UiIcon.Glyph.Coin, ArcadeTheme.Gold, 2f));
+            coinLabel = UiKit.Text("0", "chip__value f-display", coins);
 
-            var hard = UIFactory.Tile(difficultyGroup.transform, "Hard", art, () => StartAi(AiLevel.Hard),
-                                      note: "Fast and sharp", width: w, height: h,
-                                      badge: UIFactory.Badge.AiVsPlayer);
-            StrengthMeter(hard.transform, 3);
+            UiKit.El("grow", header);
+
+            var ranked = UiKit.El("chip chip--tap", header);
+            ranked.Add(new UiIcon(UiIcon.Glyph.Trophy, ArcadeTheme.Gold, 2f));
+            rankedLabel = UiKit.Text("—", "chip__value f-display", ranked);
+            UiKit.OnTap(ranked, () => OnOpenRanked?.Invoke());
         }
 
-        /// <summary>
-        /// Three rising bars in the card's top-right corner, <paramref name="lit"/> of them gold — the
-        /// three cards share one picture, so this is what tells them apart at a glance before the
-        /// captions are read.
-        /// </summary>
-        private static void StrengthMeter(Transform card, int lit)
-        {
-            var holder = UIFactory.Child(card, "Strength");
-            UIFactory.RoundedImage(holder, ArcadeTheme.RadSm, ArcadeTheme.BgDeep.WithAlpha(0.82f), false);
-            var rt = UIFactory.Rt(holder);
-            rt.anchorMin = rt.anchorMax = new Vector2(1f, 1f);
-            rt.pivot = new Vector2(1f, 1f);
-            rt.sizeDelta = new Vector2(52f, 40f);
-            rt.anchoredPosition = new Vector2(-ArcadeTheme.Xl, -ArcadeTheme.Xl);
+        // ---------- build: cards ----------
 
+        private VisualElement ModeCard(string title, string subtitle, UiIcon.Glyph glyph, Sprite art, Action onTap)
+        {
+            var card = UiKit.El("card", modeRow);
+            UiKit.OnTap(card, onTap);
+
+            var picture = UiKit.El("card__picture", card);
+            if (art != null) picture.style.backgroundImage = new StyleBackground(art);
+            UiKit.El("card__shade", picture);
+
+            var titleRow = UiKit.El("row card__title-row", card);
+            var tile = UiKit.El("card__icon-tile", titleRow);
+            tile.Add(new UiIcon(glyph, ArcadeTheme.BlueSoft, 2f));
+            var words = UiKit.El("col card__words", titleRow);
+            UiKit.Text(title, "card__title f-display", words);
+            UiKit.Text(subtitle, "card__subtitle", words);
+
+            PlayBar(card);
+            return card;
+        }
+
+        private VisualElement DifficultyCard(string title, string line, int strength, Sprite art, AiLevel level)
+        {
+            var card = UiKit.El("card card--tall", difficultyRow);
+            UiKit.OnTap(card, () => StartAi(level));
+
+            var picture = UiKit.El("card__picture", card);
+            if (art != null) picture.style.backgroundImage = new StyleBackground(art);
+            UiKit.El("card__shade", picture);
+
+            var nameRow = UiKit.El("row card__title-row", card);
+            UiKit.Text(title, "card__name f-display grow", nameRow);
+            var meter = UiKit.El("meter", nameRow);
             for (int i = 0; i < 3; i++)
             {
-                var bar = UIFactory.Child(holder.transform, "Bar");
-                UIFactory.RoundedImage(bar, 2, i < lit ? ArcadeTheme.Gold : ArcadeTheme.Line, false);
-                var brt = UIFactory.Rt(bar);
-                brt.anchorMin = brt.anchorMax = new Vector2(0.5f, 0f);
-                brt.pivot = new Vector2(0.5f, 0f);
-                float height = 10f + 7f * i;
-                brt.sizeDelta = new Vector2(7f, height);
-                brt.anchoredPosition = new Vector2((i - 1) * 12f, 9f);
+                var b = UiKit.El("meter__bar meter__bar--" + (i + 1), meter);
+                if (i < strength) b.AddToClassList("is-lit");
+            }
+
+            UiKit.Text(line, "card__line", card);
+            PlayBar(card);
+            return card;
+        }
+
+        /// <summary>The PLAY strip along a card's foot, with the shine that runs on the gold one.</summary>
+        private static void PlayBar(VisualElement card)
+        {
+            var play = UiKit.El("card__play clip", card);
+            UiKit.Text("PLAY", "card__play-label f-display", play);
+            play.Add(new UiIcon(UiIcon.Glyph.Play, ArcadeTheme.Ink, 2f) { name = "PlayIcon" });
+            UiKit.El("shine", play).name = "Shine";
+        }
+
+        /// <summary>Makes <paramref name="index"/> the gold card of <paramref name="cards"/>.</summary>
+        private static void Highlight(List<VisualElement> cards, int index)
+        {
+            for (int i = 0; i < cards.Count; i++)
+            {
+                bool on = i == index;
+                cards[i].EnableInClassList("is-selected", on);
+                var icon = cards[i].Q<UiIcon>("PlayIcon");
+                if (icon != null) icon.Color = on ? ArcadeTheme.OnGold : ArcadeTheme.Ink;
+            }
+        }
+
+        // ---------- build: bottom bar ----------
+
+        private void BuildBottomBar()
+        {
+            // Centred by a full-width wrapper rather than by a translate, so the entrance animation
+            // (which uses translate) can run on the bar itself.
+            var wrap = UiKit.El("nav-wrap", root);
+            wrap.pickingMode = PickingMode.Ignore;
+            nav = UiKit.El("nav", wrap);
+            NavItem(UiIcon.Glyph.Person, "FRIENDS", () => OnOpenFriends?.Invoke());
+            NavItem(UiIcon.Glyph.Sliders, "SETTINGS", () => OnOpenSettings?.Invoke());
+            NavItem(UiIcon.Glyph.Store, "STORE", () => OnOpenStore?.Invoke());
+            pathPip = NavItem(UiIcon.Glyph.Levels, "LEVELS", () => OnOpenLevelPath?.Invoke(), withPip: true);
+            questPip = NavItem(UiIcon.Glyph.Quests, "QUESTS", () => OnOpenQuests?.Invoke(), withPip: true);
+        }
+
+        private Label NavItem(UiIcon.Glyph glyph, string label, Action onTap, bool withPip = false)
+        {
+            var item = UiKit.El("nav__item", nav);
+            UiKit.OnTap(item, onTap);
+            item.Add(new UiIcon(glyph, ArcadeTheme.InkMuted, 2f));
+            UiKit.Text(label, "nav__label f-display-semi", item);
+            if (!withPip) return null;
+
+            // "Something is waiting behind this icon" — rewards on the path, cleared quests unseen.
+            var pip = UiKit.Text(string.Empty, "nav__pip f-display", item);
+            UiKit.Show(pip, false);
+            return pip;
+        }
+
+        // ---------- build: invite banner ----------
+
+        /// <summary>
+        /// An invitation from a friend, top right under the header. Here rather than only in the
+        /// friends list because it is the one thing in this game with somebody waiting on the other
+        /// end of it, and the person invited is standing on this screen.
+        /// </summary>
+        private void BuildInviteBanner()
+        {
+            inviteBanner = UiKit.El("invite", root);
+            inviteText = UiKit.Text(string.Empty, "invite__text f-body-semi grow", inviteBanner);
+            UiKit.Button("PLAY", "gold", AcceptInvite, inviteBanner, "invite__btn");
+            UiKit.Button("LATER", "ghost", DeclineInvite, inviteBanner, "invite__btn");
+            UiKit.Show(inviteBanner, false);
+        }
+
+        // ---------- behaviour ----------
+
+        private void ChooseMode(Mode mode)
+        {
+            PlayerPrefs.SetInt(LastModeKey, (int)mode);
+            Highlight(modeCards, (int)mode);
+
+            switch (mode)
+            {
+                case Mode.PlayerVsPlayer: OnStartLocal?.Invoke(false); break;
+                case Mode.PlayerVsAi: ShowDifficulty(); break;
+                case Mode.Online: OnOpenOnline?.Invoke(); break;
             }
         }
 
         /// <summary>
-        /// Records the chosen level, then starts the match.
-        ///
-        /// Writing to GameAudio.Difficulty is what actually applies it: its setter persists the
-        /// choice and pushes it into every TeamAI already in the scene. Doing it before the match
-        /// starts means the AI is at the right strength from the first touch, and the Settings
-        /// panel opens on whatever was picked here.
+        /// Records the chosen level, then starts the match. Writing GameAudio.Difficulty is what
+        /// applies it: its setter persists the choice and pushes it into every TeamAI in the scene.
         /// </summary>
         private void StartAi(AiLevel level)
         {
@@ -220,405 +311,74 @@ namespace TableFootball.UI
             OnStartLocal?.Invoke(true);
         }
 
-        private static GameObject BuildRow(Transform parent, string name)
+        private void ShowModes()
         {
-            var row = UIFactory.Child(parent, name);
-            UIFactory.Stretch(UIFactory.Rt(row));
-
-            var layout = row.AddComponent<HorizontalLayoutGroup>();
-            // Wider than a single spacing step (Xl3 = 48) — three equal-weight cards at that gap read
-            // as one boxy wall rather than three separate, tactile choices. More air between them is
-            // what makes each card its own object.
-            layout.spacing = ArcadeTheme.Xl3 + ArcadeTheme.Md;
-            layout.childAlignment = TextAnchor.MiddleCenter;
-            layout.childForceExpandWidth = false;
-            layout.childForceExpandHeight = false;
-            layout.childControlWidth = true;
-            layout.childControlHeight = true;
-
-            return row;
+            UiKit.Show(modeRow, true);
+            UiKit.Show(difficultyRow, false);
+            UiKit.Show(backButton, false);
+            UiKit.Show(caption, false);
+            Highlight(modeCards, Mathf.Clamp(PlayerPrefs.GetInt(LastModeKey, (int)Mode.PlayerVsAi), 0, 2));
+            if (IsOpen) EnterCards(modeCards);
         }
 
-        /// <summary>
-        /// One header row spanning the top edge, height-locked so nothing below it has to guess where
-        /// it ends. The identity chip and the ranked pill sit on the same horizontal plane, on the
-        /// same row, sharing the same reserved height — which is what "same plane" actually requires:
-        /// two elements anchored independently can never guarantee that on their own, however carefully
-        /// their numbers are tuned, because neither one knows the other's height.
-        ///
-        /// The pause button used to live here too (GameMenu's own top-right icon, positioned
-        /// independently again). It is dropped from this screen entirely rather than squeezed in as a
-        /// third card: before a match exists there is nothing to pause, "Resume" and "Main Menu" made
-        /// no sense on the front door, and Settings already has its own icon in the bottom bar. See
-        /// <see cref="TableFootball.UI.GameMenu.SetPauseButtonVisible"/> — GameFlow shows it only once
-        /// a match is actually live.
-        /// </summary>
-        private void BuildHeader()
+        private void ShowDifficulty()
         {
-            const float headerHeight = 92f;
-            const float margin = 24f;
-
-            var header = UIFactory.Child(root.transform, "HeaderBar");
-            var hrt = UIFactory.Rt(header);
-            hrt.anchorMin = new Vector2(0f, 1f);
-            hrt.anchorMax = new Vector2(1f, 1f);
-            hrt.pivot = new Vector2(0.5f, 1f);
-            hrt.offsetMin = new Vector2(margin, -(margin + headerHeight));
-            hrt.offsetMax = new Vector2(-margin, -margin);
-
-            var h = header.AddComponent<HorizontalLayoutGroup>();
-            h.spacing = ArcadeTheme.Md;
-            h.childAlignment = TextAnchor.MiddleLeft;
-            h.childForceExpandWidth = false;
-            // Height IS force-expanded: both cells fill the row exactly, which is the mechanism that
-            // guarantees "same plane" rather than merely aiming for it.
-            h.childForceExpandHeight = true;
-            h.childControlWidth = true;
-            h.childControlHeight = true;
-
-            var chipCell = UIFactory.Child(header.transform, "ChipCell");
-            // 400, not 340 — at 340 the name column was left ~70px after the avatar, badge and level
-            // pill took their share, so any real name truncated to "Sh…". The header has ~700px of
-            // spacer to give back, so widening the chip costs nothing else on the row.
-            // 480 now: a generated name like "ShadyDeterminedOnion" still cut to "ShadyDe…" at 400.
-            chipCell.AddComponent<LayoutElement>().preferredWidth = 480f;
-            BuildProfileChip(chipCell.transform);
-
-            // The purse, immediately beside the chip and on the same plane by the same mechanism: a
-            // cell in this row, height-expanded like the others. Next to the player rather than off in
-            // a corner because a balance is part of who you are in a game with a shop — and putting it
-            // anywhere else would leave the player checking two places before opening the store.
-            var coinCell = UIFactory.Child(header.transform, "CoinCell");
-            var cle = coinCell.AddComponent<LayoutElement>();
-            cle.preferredWidth = 200f;
-            cle.minWidth = 200f;
-
-            // The pill is a fixed-height slab centred in the cell rather than something that fills it.
-            // The row force-expands its children to the full header height, and a purse stretched to
-            // the chip's 92 units would be a mostly-empty box with a small coin adrift in it — the
-            // chip is that tall because it holds four things; this holds one.
-            var pillHolder = UIFactory.Child(coinCell.transform, "PillHolder");
-            var hrt2 = UIFactory.Rt(pillHolder);
-            hrt2.anchorMin = new Vector2(0f, 0.5f);
-            hrt2.anchorMax = new Vector2(1f, 0.5f);
-            hrt2.pivot = new Vector2(0.5f, 0.5f);
-            hrt2.sizeDelta = new Vector2(0f, 54f);
-            hrt2.anchoredPosition = Vector2.zero;
-
-            // The component goes on a child of the holder, not on the holder itself — Build reparents
-            // its own GameObject to what it is handed, and a transform cannot be its own parent. Same
-            // shape as BuildProfileChip below.
-            var pillGo = UIFactory.Child(pillHolder.transform, "Pill");
-            pillGo.AddComponent<CoinPill>().Build(pillHolder.transform);
-
-            var spacer = UIFactory.Child(header.transform, "Spacer");
-            spacer.AddComponent<LayoutElement>().flexibleWidth = 1f;
-
-            var rankedCell = UIFactory.Child(header.transform, "RankedCell");
-            rankedCell.AddComponent<LayoutElement>().preferredWidth = 168f;
-            BuildRankedButton(rankedCell.transform);
+            UiKit.Show(modeRow, false);
+            UiKit.Show(difficultyRow, true);
+            UiKit.Show(backButton, true);
+            UiKit.Show(caption, true);
+            // Gold on the level the player last chose — the one they are most likely to want again.
+            Highlight(difficultyCards, (int)GameAudio.Difficulty);
+            EnterCards(difficultyCards);
+            UiKit.Enter(backButton, 0.1f);
         }
 
-        /// <summary>
-        /// The player-identity chip: avatar, name, level and an XP bar, and the profile screen's front
-        /// door. Fills whatever cell <see cref="BuildHeader"/> hands it.
-        ///
-        /// The lone avatar button this replaced said only "you"; the chip says who, what level and how
-        /// far to the next — the compact identity a sports game leads with. Level and XP are visual
-        /// placeholders (<see cref="PlayerProgress"/>); the name is real. The chip keeps itself in
-        /// step with the account, so a rename on the screen it opens is reflected without wiring here.
-        /// </summary>
-        private void BuildProfileChip(Transform cell)
+        private static void EnterCards(List<VisualElement> cards)
         {
-            var chipGo = UIFactory.Child(cell, "Chip");
-            chipGo.AddComponent<ProfileChip>().Build(cell);
-
-            // A transparent sheet over the whole chip opens the profile. Cheaper and steadier than
-            // making the chip itself a button — the chip is a layout of several parts, and a tap
-            // target that is one flat rectangle over all of them never fights the layout.
-            var tap = UIFactory.Child(cell, "Tap");
-            var img = tap.AddComponent<Image>();
-            img.color = Color.clear;
-            img.raycastTarget = true;
-            UIFactory.Stretch(UIFactory.Rt(tap), 0);
-            var btn = tap.AddComponent<Button>();
-            btn.transition = Selectable.Transition.None;
-            btn.targetGraphic = img;
-            btn.onClick.AddListener(() => OnOpenProfile?.Invoke());
+            for (int i = 0; i < cards.Count; i++) UiKit.Enter(cards[i], i * 0.06f);
         }
 
-        /// <summary>
-        /// The ranked pill beside the chip — a compact stat, not a second identity card, that opens the
-        /// league screen directly rather than making the player go by way of the online menu. Fills
-        /// whatever cell <see cref="BuildHeader"/> hands it, so it is always exactly the chip's height.
-        ///
-        /// It reads its own score from <see cref="Ladder"/> exactly as the league screen does: cached
-        /// and synchronous, redrawing off <see cref="Ladder.OnChanged"/>, so this button never fetches
-        /// anything of its own — it only ever shows what the ladder already has.
-        /// </summary>
-        private void BuildRankedButton(Transform cell)
+        // ---------- data ----------
+
+        private void RefreshProfile()
         {
-            var btn = UIFactory.Button(cell, string.Empty, MenuButton.Variant.IconGold,
-                                       () => OnOpenRanked?.Invoke(), 0f);
-            UIFactory.Stretch(UIFactory.Rt(btn.gameObject), 0);
-
-            // The label built by Button is centred and empty; the cup and the score are laid out over
-            // it instead, so the button keeps its usual hover/press visuals underneath.
-            var row = UIFactory.Child(btn.transform, "Row");
-            UIFactory.Stretch(UIFactory.Rt(row), 14f, 0f, 14f, 0f);
-            var h = row.AddComponent<HorizontalLayoutGroup>();
-            h.spacing = ArcadeTheme.Sm;
-            h.childAlignment = TextAnchor.MiddleCenter;
-            h.childForceExpandWidth = false;
-            h.childForceExpandHeight = true;
-            h.childControlWidth = true;
-            h.childControlHeight = true;
-
-            var cupHolder = UIFactory.Child(row.transform, "Cup");
-            var cle = cupHolder.AddComponent<LayoutElement>();
-            cle.preferredWidth = 34f;
-            cle.minWidth = 34f;
-            UIFactory.TrophyGlyph(cupHolder.transform, ArcadeTheme.Gold, ArcadeTheme.BgRaised, 1.15f);
-
-            rankedPoints = UIFactory.Text(row.transform, "—", ArcadeTheme.FsBody, ArcadeTheme.Gold,
-                                          display: true, bold: true, upper: false, tracking: 1f);
-            rankedPoints.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
-
-            // Draws whatever the ladder cache already holds. The live subscription is owned by
-            // Open()/Close(), matching FriendsHub below — subscribing here once at build time would be
-            // torn down by the first Close() and never renewed.
-            RefreshRanked();
+            string name = PlayerAccount.DisplayName;
+            nameLabel.text = string.IsNullOrWhiteSpace(name) ? "—" : name;
+            avatarInitial.text = string.IsNullOrWhiteSpace(name) ? "?" : name.Substring(0, 1).ToUpperInvariant();
+            levelLabel.text = $"LV {PlayerProgress.Level}";
+            xpLabel.text = PlayerProgress.XpLabel;
+            xpFill.style.width = Length.Percent(Mathf.Clamp01(PlayerProgress.XpFraction) * 100f);
         }
+
+        private void RefreshCoins() => coinLabel.text = Wallet.Coins.ToString("N0");
 
         private void RefreshRanked()
         {
-            if (rankedPoints == null)
-            {
-                return;
-            }
-
             LadderStanding s = Ladder.Standing;
-            rankedPoints.text = s.Valid ? s.WeeklyPoints.ToString() : "—";
+            rankedLabel.text = s.Valid ? s.WeeklyPoints.ToString() : "—";
         }
 
-        /// <summary>Redraws the "rewards waiting" count on the path button.</summary>
-        private void RefreshPathPip() => UIFactory.SetCountPip(pathPip, LevelPath.UnclaimedCount);
+        private void RefreshPathPip() => SetPip(pathPip, LevelPath.UnclaimedCount);
+        private void RefreshQuestPip() => SetPip(questPip, DailyQuests.UnseenCount);
 
-        private void OnDestroy()
+        private static void SetPip(Label pip, int count)
         {
-            FriendsHub.OnChanged -= MarkInviteDirty;
-            Ladder.OnChanged -= RefreshRanked;
-            LevelPath.OnChanged -= RefreshPathPip;
-            PlayerProgress.OnChanged -= RefreshPathPip;
-            DailyQuests.OnChanged -= RefreshQuestPip;
+            if (pip == null) return;
+            UiKit.Show(pip, count > 0);
+            pip.text = count > 9 ? "9+" : count.ToString();
         }
 
-        /// <summary>
-        /// One bottom-anchored row for every "your things" action: Friends, Settings, and — only while
-        /// the difficulty step is up — Back. There is no Quit here any more: the app is left the way a
-        /// mobile game normally is, through the OS (home / task-switch / back gesture), rather than a
-        /// button competing with Play for the player's attention on the one action nobody opened the
-        /// menu to take. Friends/Settings used to sit bottom-left while Quit floated bottom-centre,
-        /// unrelated systems sharing the bottom edge — one row fixes that structurally, the same way
-        /// <see cref="BuildHeader"/> fixes the top.
-        ///
-        /// Back keeps its own cell (the same <see cref="backHolder"/> field
-        /// <see cref="ShowRoot"/>/<see cref="ShowDifficulty"/> already toggle) sitting last in the row,
-        /// so it can appear and disappear without shifting Friends/Settings.
-        /// </summary>
-        private void BuildBottomBar()
+        private void RefreshAll()
         {
-            const float barHeight = 64f;
-            const float margin = 32f;
-
-            var bar = UIFactory.Child(root.transform, "BottomBar");
-            var rt = UIFactory.Rt(bar);
-            rt.anchorMin = new Vector2(0f, 0f);
-            rt.anchorMax = new Vector2(1f, 0f);
-            rt.pivot = new Vector2(0.5f, 0f);
-            rt.offsetMin = new Vector2(margin, margin);
-            rt.offsetMax = new Vector2(-margin, margin + barHeight);
-
-            var h = bar.AddComponent<HorizontalLayoutGroup>();
-            h.spacing = ArcadeTheme.Md;
-            h.childAlignment = TextAnchor.MiddleLeft;
-            h.childForceExpandWidth = false;
-            h.childForceExpandHeight = true;
-            h.childControlWidth = true;
-            h.childControlHeight = true;
-
-            // A visible resting border on all three plain nav icons — the shared Neutral default (a
-            // faint Line-grey border) reads fine on a panel but got lost against the darkened table
-            // backdrop these sit on, leaving them hard to pick out at rest. A light, even glow gives
-            // them a constant presence without borrowing Store's gold, which has to stay the one
-            // accent that says "something new lives here."
-            Color navAccent = ArcadeTheme.Ink.WithAlpha(0.4f);
-            // No resting halo: five glowing icons in a row is five highlights, which is none.
-            const float navGlow = 0f;
-
-            var friends = UIFactory.IconButton(bar.transform, "Friends", UIFactory.Icon.Person,
-                                               MenuButton.Variant.Neutral,
-                                               () => OnOpenFriends?.Invoke(), barHeight);
-            friends.SetAccent(navAccent, navGlow);
-            SquareCell(friends.gameObject, barHeight);
-            NavLabel(friends.transform, "Friends", ArcadeTheme.InkMuted);
-
-            var settings = UIFactory.IconButton(bar.transform, "Settings", UIFactory.Icon.Sliders,
-                                                MenuButton.Variant.Neutral,
-                                                () => OnOpenSettings?.Invoke(), barHeight);
-            settings.SetAccent(navAccent, navGlow);
-            SquareCell(settings.gameObject, barHeight);
-            NavLabel(settings.transform, "Settings", ArcadeTheme.InkMuted);
-
-            // Gold, alone among the four. The shop is the one button here that leads somewhere new
-            // rather than to a list the player has already seen, and the accent is what stops it being
-            // read as a third settings icon. IconGold is the same treatment the ranked pill gets, and
-            // for the same reason.
-            var store = UIFactory.IconButton(bar.transform, "Store", UIFactory.Icon.Store,
-                                             MenuButton.Variant.IconGold,
-                                             () => OnOpenStore?.Invoke(), barHeight);
-            SquareCell(store.gameObject, barHeight);
-            NavLabel(store.transform, "Store", ArcadeTheme.Gold);
-
-            var path = UIFactory.IconButton(bar.transform, "LevelPath", UIFactory.Icon.Path,
-                                            MenuButton.Variant.Neutral,
-                                            () => OnOpenLevelPath?.Invoke(), barHeight);
-            path.SetAccent(navAccent, navGlow);
-            SquareCell(path.gameObject, barHeight);
-            NavLabel(path.transform, "Levels", ArcadeTheme.InkMuted);
-
-            // The count of rewards waiting on the path, pinned to its button. The path is behind an
-            // icon, and an icon cannot say "there are three things here for you" — which is the only
-            // thing that would make a player open it on a day they levelled up without noticing.
-            pathPip = UIFactory.CountPip(path.transform, 0);
-
-            // Quests sits beside Path rather than beside Friends/Settings: Store, Path and Quests are
-            // the rewards cluster — one to spend, one to track, one to earn from — where Friends and
-            // Settings are plain navigation. The same pip idiom as Path, for the same reason: an icon
-            // alone cannot say a quest was cleared since the player last looked.
-            var quests = UIFactory.IconButton(bar.transform, "Quests", UIFactory.Icon.Quest,
-                                              MenuButton.Variant.Neutral,
-                                              () => OnOpenQuests?.Invoke(), barHeight);
-            quests.SetAccent(navAccent, navGlow);
-            SquareCell(quests.gameObject, barHeight);
-            NavLabel(quests.transform, "Quests", ArcadeTheme.InkMuted);
-            questPip = UIFactory.CountPip(quests.transform, 0);
-
-            var spacer = UIFactory.Child(bar.transform, "Spacer");
-            spacer.AddComponent<LayoutElement>().flexibleWidth = 1f;
-
-            // Back sits directly in the bar with an explicit fixed width, exactly like the icon
-            // buttons above (SquareCell) — the previous BottomCell wrapper reported a preferred width
-            // the row did not honour, so the Ghost button stretched into a wide dark bar across the
-            // right half of the screen. A plainly-sized button at the icons' own height reads as one
-            // more control in the row instead.
-            var back = UIFactory.Button(bar.transform, "Back", MenuButton.Variant.Ghost, GoBack, barHeight);
-            var ble = back.gameObject.GetComponent<LayoutElement>();
-            ble.preferredWidth = 200f;
-            ble.minWidth = 200f;
-            ble.flexibleWidth = 0f;
-            backHolder = back.gameObject;
+            RefreshProfile();
+            RefreshCoins();
+            RefreshRanked();
+            RefreshPathPip();
+            RefreshQuestPip();
+            RefreshInvite();
         }
 
-        /// <summary>Locks an icon button to a fixed square so the row's layout group cannot stretch it
-        /// to the row's own (taller, if ever changed) height independently of its width.</summary>
-        /// <summary>
-        /// A small caption under a bottom-bar icon. Five round icons alone left players guessing which
-        /// was which; a word under each settles it without making the bar any taller — the caption
-        /// hangs into the bar's bottom margin.
-        /// </summary>
-        private static void NavLabel(Transform button, string text, Color color)
-        {
-            var t = UIFactory.Text(button, text, ArcadeTheme.FsCaption * 0.72f, color,
-                                   display: false, bold: true, upper: true, tracking: 3f);
-            var rt = UIFactory.Rt(t.gameObject);
-            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0f);
-            rt.pivot = new Vector2(0.5f, 1f);
-            rt.sizeDelta = new Vector2(110f, 18f);
-            rt.anchoredPosition = new Vector2(0f, -ArcadeTheme.Xs);
-        }
-
-        private static void SquareCell(GameObject go, float size)
-        {
-            var le = go.AddComponent<LayoutElement>();
-            le.preferredWidth = size;
-            le.minWidth = size;
-        }
-
-        /// <summary>
-        /// Redraws the "cleared but not yet seen" count on the quests button — the same idiom as
-        /// <see cref="RefreshPathPip"/>, and for the same reason: the payoff happens on the result
-        /// screen, which a player can leave without reading, so the icon has to say so on their
-        /// behalf the next time they are looking at it.
-        /// </summary>
-        private void RefreshQuestPip() => UIFactory.SetCountPip(questPip, DailyQuests.UnseenCount);
-
-        /// <summary>
-        /// An invitation from a friend, across the top of the front screen.
-        ///
-        /// Here rather than only in the friends list because an invitation is the one thing in this
-        /// game with somebody waiting on the other end of it. Buried behind the friends icon it was
-        /// found by players who happened to go looking, which is not who it is for — a friend opens a
-        /// table and sits at it, and the person they asked is standing on this screen.
-        ///
-        /// Top right, as a notice rather than a row in the layout. There is no empty band across this
-        /// screen to push into — the header bar spans the top edge and the cards sit below the logo —
-        /// so a full-width bar would have to sit on top of one of them. The right-hand corner is the
-        /// one part of the menu genuinely holding nothing: the chip and ranked pill occupy the header's
-        /// left and right, the bottom bar holds Friends/Settings/Quit, and the logo's text is centred.
-        /// </summary>
-        private void BuildInviteBanner()
-        {
-            var panel = UIFactory.Panel(root.transform, "InviteBanner");
-            inviteBanner = panel;
-
-            var rt = UIFactory.Rt(panel);
-            rt.anchorMin = new Vector2(1f, 1f);
-            rt.anchorMax = new Vector2(1f, 1f);
-            rt.pivot = new Vector2(1f, 1f);
-            rt.sizeDelta = new Vector2(560f, 84f);
-            // Y is pinned below HeaderBar's own reserved band (24 margin + 92 tall = 116, plus an 8
-            // gap) rather than an independently guessed -32. The header now spans the FULL width —
-            // including the ranked pill sitting at its own right edge — so anything positioned here by
-            // guesswork risks landing on top of it; anchoring off the header's known height cannot.
-            rt.anchoredPosition = new Vector2(-32f, -124f);
-
-            // Gold edge, like the friends list's copy of this banner. The two are the same event and
-            // should be recognisable as such from either screen.
-            var border = panel.transform.Find("Border");
-            if (border != null) border.GetComponent<Image>().color = ArcadeTheme.Gold;
-
-            var fill = panel.transform.Find("Fill");
-            var row = UIFactory.Child(fill, "Row");
-            UIFactory.Stretch(UIFactory.Rt(row), 18f, 14f, 18f, 14f);
-
-            var h = row.AddComponent<HorizontalLayoutGroup>();
-            h.spacing = ArcadeTheme.Sm;
-            h.childAlignment = TextAnchor.MiddleLeft;
-            h.childForceExpandWidth = false;
-            h.childForceExpandHeight = true;
-            h.childControlWidth = true;
-            h.childControlHeight = true;
-
-            // Carries a friend's chosen name, so it is drawn as text and not as markup.
-            inviteText = UIFactory.Text(row.transform, string.Empty, ArcadeTheme.FsCaption,
-                                        ArcadeTheme.Gold, display: false, bold: true, upper: true,
-                                        tracking: 3f, align: TMPro.TextAlignmentOptions.Left,
-                                        richText: false);
-            inviteText.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
-
-            // Narrower than the friends list's pair: this banner is 560 rather than the full width of
-            // that screen, and the name has to fit beside them.
-            var play = UIFactory.Button(row.transform, "Play", MenuButton.Variant.Primary,
-                                        AcceptInvite, 48f);
-            play.gameObject.GetComponent<LayoutElement>().preferredWidth = 118f;
-
-            var later = UIFactory.Button(row.transform, "Later", MenuButton.Variant.Ghost,
-                                         DeclineInvite, 48f);
-            later.gameObject.GetComponent<LayoutElement>().preferredWidth = 104f;
-
-            inviteBanner.SetActive(false);
-        }
+        // ---------- invites ----------
 
         private void MarkInviteDirty() => inviteDirty = true;
 
@@ -637,27 +397,19 @@ namespace TableFootball.UI
 
         private void RefreshInvite()
         {
-            if (inviteBanner == null)
-            {
-                return;
-            }
+            if (inviteBanner == null) return;
 
             FriendsHub.Invite? invite = FriendsHub.PendingInvite;
-            inviteBanner.SetActive(invite.HasValue);
-
-            if (invite.HasValue && inviteText != null)
-            {
-                inviteText.text = $"{invite.Value.FromName} wants to play";
-            }
+            bool show = invite.HasValue;
+            if (show && !UiKit.IsShown(inviteBanner)) UiKit.Enter(inviteBanner);
+            UiKit.Show(inviteBanner, show);
+            if (show) inviteText.text = $"{invite.Value.FromName} wants to play";
         }
 
         private void AcceptInvite()
         {
             FriendsHub.Invite? invite = FriendsHub.PendingInvite;
-            if (!invite.HasValue)
-            {
-                return;
-            }
+            if (!invite.HasValue) return;
 
             // Cleared before joining, not after. Whether the join succeeds or the table has since
             // filled, the invitation has been answered and should stop asking.
@@ -674,163 +426,161 @@ namespace TableFootball.UI
             RefreshInvite();
         }
 
-        // ---------- state ----------
+        // ---------- open / close ----------
 
         public void Open()
         {
-            if (root == null)
-            {
-                return;
-            }
+            if (root == null) return;
 
-            ShowRoot();
-            // The profile chip keeps its own avatar and name current off PlayerAccount.OnChanged, so
-            // there is nothing to refresh here by hand.
+            ShowModes();
 
-            // Removed first, so reopening cannot stack a second handler onto a static event that
-            // outlives this panel.
+            // Each removed first, so reopening cannot stack a second handler onto a static event
+            // that outlives this screen.
+            PlayerAccount.OnChanged -= RefreshProfile;
+            PlayerAccount.OnChanged += RefreshProfile;
+            PlayerProgress.OnChanged -= OnProgressChanged;
+            PlayerProgress.OnChanged += OnProgressChanged;
+            Wallet.OnChanged -= RefreshCoins;
+            Wallet.OnChanged += RefreshCoins;
             FriendsHub.OnChanged -= MarkInviteDirty;
             FriendsHub.OnChanged += MarkInviteDirty;
-            RefreshInvite();
-
             Ladder.OnChanged -= RefreshRanked;
             Ladder.OnChanged += RefreshRanked;
-            // Asked for here rather than only by the league screen, so the trophy button already has a
-            // real number the first time this menu is seen — a player who never opens Ranked would
-            // otherwise stare at "—" forever.
-            Ladder.Refresh();
-
             LevelPath.OnChanged -= RefreshPathPip;
             LevelPath.OnChanged += RefreshPathPip;
-            // Levelling up is what CREATES an unclaimed reward, and it happens on the results screen
-            // rather than here — so the pip follows progression as well as the path itself, or a player
-            // who levelled in their last match would return to a menu that had nothing to say about it.
-            PlayerProgress.OnChanged -= RefreshPathPip;
-            PlayerProgress.OnChanged += RefreshPathPip;
-            RefreshPathPip();
-
             DailyQuests.EnsureToday();
             DailyQuests.OnChanged -= RefreshQuestPip;
             DailyQuests.OnChanged += RefreshQuestPip;
-            RefreshQuestPip();
 
-            root.SetActive(true);
-            root.transform.SetAsLastSibling();
-            group.blocksRaycasts = true;
+            // Asked for here rather than only by the league screen, so the trophy chip already has a
+            // real number the first time this menu is seen.
+            Ladder.Refresh();
+            RefreshAll();
 
-            if (anim != null)
-            {
-                StopCoroutine(anim);
-            }
+            UiKit.Show(root, true);
+            root.BringToFront();
+            root.style.opacity = 0f;
+            UiKit.Fade(root, 1f, ArcadeTheme.TFast);
 
-            anim = StartCoroutine(OpenAnim());
+            // The menu assembles rather than appears: logo, then the cards one after another, then
+            // the bar — so three cards read as three choices rather than as one image.
+            UiKit.Enter(logo);
+            EnterCards(modeCards);
+            UiKit.Enter(nav, 0.22f);
+
+            StartLoops();
         }
 
         public void Close()
         {
+            PlayerAccount.OnChanged -= RefreshProfile;
+            PlayerProgress.OnChanged -= OnProgressChanged;
+            Wallet.OnChanged -= RefreshCoins;
             FriendsHub.OnChanged -= MarkInviteDirty;
             Ladder.OnChanged -= RefreshRanked;
             LevelPath.OnChanged -= RefreshPathPip;
-            PlayerProgress.OnChanged -= RefreshPathPip;
             DailyQuests.OnChanged -= RefreshQuestPip;
 
-            if (anim != null)
-            {
-                StopCoroutine(anim);
-                anim = null;
-            }
-
-            if (root != null)
-            {
-                group.blocksRaycasts = false;
-                root.SetActive(false);
-            }
+            StopLoops();
+            if (root != null) UiKit.Show(root, false);
         }
+
+        private void OnDestroy() => Close();
+
+        /// <summary>Levelling up is what creates an unclaimed path reward, so the path pip follows
+        /// progression as well as the path itself.</summary>
+        private void OnProgressChanged()
+        {
+            RefreshProfile();
+            RefreshPathPip();
+        }
+
+        // ---------- ambient motion ----------
 
         /// <summary>
-        /// The menu assembles rather than appears: the screen fades up, then the logo, the active
-        /// card row and the footer pop in one after another.
-        ///
-        /// The rows are staggered by their own children, so the two cards land separately — which is
-        /// what makes the pair read as two choices rather than as one image.
+        /// The two things that move while the menu sits still: the shine sweeping the gold card's PLAY
+        /// strip every few seconds, and the waiting pips breathing. Paused while the menu is closed,
+        /// and off under reduced motion.
         /// </summary>
-        private IEnumerator OpenAnim()
+        private void StartLoops()
         {
-            group.alpha = 0f;
-            yield return UITween.Fade(group, 0f, 1f, ArcadeTheme.TFast, ArcadeTheme.EaseOut);
+            StopLoops();
+            if (ArcadeTheme.ReducedMotion) return;
 
-            var logo = root.transform.Find("Logo");
-            if (logo != null) StartCoroutine(UITween.PopIn(logo, ArcadeTheme.TSlow));
-
-            yield return new WaitForSecondsRealtime(ArcadeTheme.Stagger * 2f);
-
-            var activeRow = rootGroup != null && rootGroup.activeSelf ? rootGroup : difficultyGroup;
-            if (activeRow != null)
+            float cycle = ArcadeTheme.TShine + ArcadeTheme.ShineRest;
+            loops.Add(UiKit.Loop(root, now =>
             {
-                yield return UITween.Stagger(this, activeRow.transform, ArcadeTheme.Stagger * 2f,
-                                             ArcadeTheme.TSlow);
-            }
+                float t = Mathf.Repeat(now, cycle);
+                float p = t < ArcadeTheme.TShine ? t / ArcadeTheme.TShine : 1f;
+                float k = p * p * (3f - 2f * p);
+                SweepShine(modeCards, k);
+                SweepShine(difficultyCards, k);
 
-            // Nothing pops in for the root state any more — Friends/Settings are permanent fixtures of
-            // the bottom bar now rather than a toggled footer, and Back (the one thing that still
-            // toggles) is inactive here by definition.
-            if (backHolder != null && backHolder.activeSelf)
-            {
-                StartCoroutine(UITween.PopIn(backHolder.transform, ArcadeTheme.TNormal));
-            }
-
-            anim = null;
+                float breath = 1f + 0.12f * (0.5f + 0.5f * Mathf.Sin(now * Mathf.PI * 2f / 1.4f));
+                if (pathPip != null) pathPip.style.scale = new Scale(new Vector3(breath, breath, 1f));
+                if (questPip != null) questPip.style.scale = new Scale(new Vector3(breath, breath, 1f));
+            }));
         }
 
-        private void ShowRoot()
+        private static void SweepShine(List<VisualElement> cards, float k)
         {
-            if (rootGroup == null)
+            foreach (var card in cards)
             {
-                return;
+                var shine = card.Q("Shine");
+                if (shine == null) continue;
+                bool on = card.ClassListContains("is-selected");
+                shine.style.display = on ? DisplayStyle.Flex : DisplayStyle.None;
+                if (!on) continue;
+                float width = card.Q(className: "card__play")?.resolvedStyle.width ?? 300f;
+                shine.style.left = Mathf.Lerp(-100f, width + 60f, k);
             }
-
-            rootGroup.SetActive(true);
-            if (difficultyGroup != null) difficultyGroup.SetActive(false);
-            if (backHolder != null) backHolder.SetActive(false);
-            RestageOnSwap(rootGroup, null);
         }
 
-        private void ShowDifficulty()
+        private void StopLoops()
         {
-            rootGroup.SetActive(false);
-            if (difficultyGroup != null) difficultyGroup.SetActive(true);
-            if (backHolder != null) backHolder.SetActive(true);
-            RestageOnSwap(difficultyGroup, backHolder);
+            foreach (var l in loops) l.Pause();
+            loops.Clear();
         }
+
+        // ---------- textures ----------
+
+        private static Texture2D topGlow;
 
         /// <summary>
-        /// Back from the difficulty step returns to the three cards. It is the only step-in the menu
-        /// has left now that the modes are all top-level, so there is only ever the one place to go.
+        /// A soft blue light falling from the top centre of the screen — the one gradient the design
+        /// has, which USS cannot draw. Baked once, small, and stretched to fill.
         /// </summary>
-        private void GoBack()
+        private static Texture2D TopGlow()
         {
-            ShowRoot();
-        }
+            if (topGlow != null) return topGlow;
 
-        /// <summary>
-        /// Re-runs the card entrance when the groups swap, so stepping into the difficulty step and
-        /// back out feels like the same menu rebuilding rather than a hard cut between two screens.
-        ///
-        /// Skipped while the menu is closed: Build and Open both call ShowRoot before anything is on
-        /// screen, and animating there would be a tween nobody sees, racing the one Open starts.
-        /// </summary>
-        private void RestageOnSwap(GameObject row, GameObject footer)
-        {
-            if (root == null || !root.activeSelf || anim != null) return;
+            const int w = 64, h = 64;
+            topGlow = new Texture2D(w, h, TextureFormat.RGBA32, false)
+            {
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear,
+                name = "MenuTopGlow"
+            };
 
-            if (row != null) StartCoroutine(UITween.Stagger(this, row.transform, ArcadeTheme.Stagger, ArcadeTheme.TNormal));
-            if (footer != null) StartCoroutine(UITween.PopIn(footer.transform, ArcadeTheme.TNormal));
-        }
+            Color c = ArcadeTheme.BlueFill;
+            var px = new Color32[w * h];
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    // Texture rows run bottom-up; the light sits at the top edge.
+                    float dx = (x + 0.5f) / w - 0.5f;
+                    float dy = 1f - (y + 0.5f) / h;
+                    float d = Mathf.Sqrt(dx * dx * 1.4f + dy * dy * 2.2f);
+                    float a = Mathf.Clamp01(1f - d / 0.75f);
+                    a = a * a * 0.55f;
+                    px[y * w + x] = new Color(c.r, c.g, c.b, a);
+                }
+            }
 
-        /// <summary>Not named Start: Unity reserves that, and an overload here invites confusion.</summary>
-        private void Choose(bool aiOpponent)
-        {
-            OnStartLocal?.Invoke(aiOpponent);
+            topGlow.SetPixels32(px);
+            topGlow.Apply(false, false);
+            return topGlow;
         }
     }
 }
