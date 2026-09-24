@@ -173,6 +173,40 @@ namespace TableFootball.Net
         }
 
         /// <summary>
+        /// Adds XP that did not come from a match — today, daily quests (through
+        /// <see cref="Progression.PlayerXp.Award"/>). Returns the number of levels gained, so the
+        /// result screen knows whether it has a level-up to show.
+        ///
+        /// Quests and matches pay into this ONE total. They used to keep two: quests had their own
+        /// store and curve, so the quests and account screens showed one level and the header chip
+        /// another, and quest XP never reached the level path.
+        /// </summary>
+        public static int AddXp(int amount)
+        {
+            if (amount <= 0)
+            {
+                return 0;
+            }
+
+            int before = Level;
+            PlayerPrefs.SetInt(XpKey, Xp + amount);
+            PlayerPrefs.Save();
+            CloudSync.MarkDirty();
+            _onChanged?.Invoke();
+            return Mathf.Max(0, Level - before);
+        }
+
+        /// <summary>The level an XP total buys — for a total that is not the current one, such as
+        /// the result screen's "before the quests paid out".</summary>
+        public static int LevelOf(int xp) => LevelForXp(Mathf.Max(0, xp));
+
+        /// <summary>0..1 through its level for an XP total that is not the current one.</summary>
+        public static float FractionOf(int xp) => FractionForXp(Mathf.Max(0, xp));
+
+        /// <summary>Cumulative XP that reaches <paramref name="level"/>.</summary>
+        public static int XpForLevel(int level) => CumulativeXpForLevel(level);
+
+        /// <summary>
         /// Credits one goal to the local player. Called by <see cref="UI.GameFlow"/> when the team it
         /// is crediting scores; local player-vs-player credits nothing, since there is no single owner
         /// to credit — the same gate <see cref="RecordMatch"/> lives behind.

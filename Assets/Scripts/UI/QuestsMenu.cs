@@ -431,7 +431,9 @@ namespace TableFootball.UI
             if (levelCaption != null)
             {
                 int left = PlayerXp.LevelSpan - PlayerXp.IntoLevel;
-                levelCaption.text = $"{left} XP to level {PlayerXp.Level + 1}";
+                levelCaption.text = PlayerXp.AtMaxLevel
+                    ? "max level"
+                    : $"{left} XP to level {PlayerXp.Level + 1}";
             }
 
             if (streakLabel != null)
