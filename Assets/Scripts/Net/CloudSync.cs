@@ -33,6 +33,17 @@ namespace TableFootball.Net
     /// Nothing here throws outward, matching <see cref="GameServices"/>: a phone with no signal plays
     /// exactly like one with a dead UGS project. A failed load leaves the local save standing; a
     /// failed flush keeps the dirty flag so the next good connection carries it up.
+    ///
+    /// SERVER-AUTHORITATIVE WRITE. <see cref="CloudSaveBackend"/> does not write Unity Cloud Save's
+    /// player data directly — that is client-writable by design, and this class's own monotonic merge
+    /// ("every counter takes the larger value") would keep a forged flush forever if it did. Both
+    /// calls instead go through the <c>progress</c> Cloud Code script, which stores the document
+    /// where the client SDK cannot write it at all and bounds coins/newly-owned cosmetics before
+    /// persisting — see <c>cloudcode/progress.js</c> and <c>cloudcode/README.md</c>. This class's own
+    /// <see cref="Merge"/> still runs client-side in <see cref="LoadAsync"/>, purely to give the UI an
+    /// immediate, optimistic value to redraw with before the network answers; what actually persists
+    /// and reaches other devices is decided by the server's own merge, applied back locally from
+    /// whatever <see cref="FlushAsync"/> gets handed back.
     /// </summary>
     public static class CloudSync
     {
@@ -188,10 +199,14 @@ namespace TableFootball.Net
         // ── Flush ──────────────────────────────────────────────────────────────────────────────
 
         /// <summary>
-        /// Uploads the local save, reconciled against whatever the cloud now holds. Re-reads before
-        /// writing so a second device's progress is merged in rather than clobbered, and applies the
-        /// merge back locally so this device picks up anything the other one added (a skin bought
-        /// elsewhere appears here without a reload).
+        /// Uploads the local save. The server (<c>cloudcode/progress.js</c>, via
+        /// <see cref="CloudSaveBackend"/>) does its own load-merge-bound-save against whatever it
+        /// actually has stored and hands back what it accepted — which is applied back locally rather
+        /// than trusted because it was what was sent. That is what makes a second device's progress
+        /// merge in rather than get clobbered (a skin bought elsewhere appears here without a reload),
+        /// AND what stops a tampered local save from persisting: if this device's export claims more
+        /// than the server's bounds allow, what comes back is the server's clamped figure, not this
+        /// device's.
         ///
         /// Clears the dirty flag up front and restores it on failure, so a write that arrives mid-flush
         /// is not lost and a failed upload is retried.
@@ -209,21 +224,15 @@ namespace TableFootball.Net
             {
                 SaveDoc local = ExportLocal();
 
-                SaveDoc remote = null;
-                string json = await CloudSaveBackend.LoadAsync(Key);
-                if (!string.IsNullOrEmpty(json))
-                {
-                    remote = JsonUtility.FromJson<SaveDoc>(json);
-                }
+                string json = await CloudSaveBackend.SaveAsync(Key, JsonUtility.ToJson(local));
+                SaveDoc accepted = string.IsNullOrEmpty(json) ? local : JsonUtility.FromJson<SaveDoc>(json);
 
-                SaveDoc merged = remote == null ? local : Merge(local, remote);
-                await CloudSaveBackend.SaveAsync(Key, JsonUtility.ToJson(merged));
-
-                // Reflect anything the merge pulled in from the other device, without looping: Apply
-                // writes PlayerPrefs and raises OnChanged but never calls MarkDirty.
-                if (JsonUtility.ToJson(local) != JsonUtility.ToJson(merged))
+                // Reflect anything the server pulled in from another device, or clamped away from
+                // this one, without looping: Apply writes PlayerPrefs and raises OnChanged but never
+                // calls MarkDirty.
+                if (JsonUtility.ToJson(local) != JsonUtility.ToJson(accepted))
                 {
-                    ApplyLocal(merged);
+                    ApplyLocal(accepted);
                 }
             }
             catch (Exception e)

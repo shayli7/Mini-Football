@@ -64,8 +64,11 @@ namespace TableFootball
             return Task.FromResult<IReadOnlyList<LadderEntry>>(BuildPod());
         }
 
-        public Task SubmitResultAsync(int opponentRating, bool won)
+        public Task SubmitResultAsync(int opponentRating, bool won, string matchId, string opponentId)
         {
+            // No second player to corroborate with in a solo simulation — credit on the spot, as
+            // this always has. matchId/opponentId exist for the real backend's anti-cheat check
+            // (see ILadderService.SubmitResultAsync); the mock has nothing to check them against.
             Sync();
 
             var s = state;

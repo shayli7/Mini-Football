@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TableFootball.Net;
 
 namespace TableFootball
 {
@@ -68,12 +69,23 @@ namespace TableFootball
             OnChanged?.Invoke();
         }
 
-        /// <summary>Records a ranked result, then refreshes the cache.</summary>
+        /// <summary>
+        /// Records a ranked result, then refreshes the cache.
+        ///
+        /// The match id and opponent id are read from <see cref="OnlineSession"/> here rather than
+        /// asked of the caller, so GameFlow's call site needed no change when the real backend grew
+        /// an anti-cheat check that needs them (see ILadderService.SubmitResultAsync). Read at call
+        /// time, not cached earlier: this fires from the same MatchWon handler that reports the
+        /// result, while the session that played the match is still the current one.
+        /// </summary>
         public static async void SubmitResult(int opponentRating, bool won)
         {
+            string matchId = OnlineSession.Current?.Id ?? string.Empty;
+            string opponentId = OnlineSession.OpponentId;
+
             try
             {
-                await Service.SubmitResultAsync(opponentRating, won);
+                await Service.SubmitResultAsync(opponentRating, won, matchId, opponentId);
             }
             catch
             {

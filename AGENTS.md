@@ -113,9 +113,23 @@ that is a write loop. The merge is **monotonic**: owned skins union, claim masks
 takes the max, so a stale device can never take something away. The one field max is not strictly
 right for is **coins** — a spend can be refunded by a staler device — accepted because coins are
 earned, never bought; the fix, if ever needed, is a lifetime-earned/spent pair. **All SDK calls live
-in `CloudSaveBackend` and nowhere else** — it is the only file that depends on
-`com.unity.services.cloudsave`, so it is also the only one that will not compile until that package is
-imported. Keep it that way: the compile-check harness stubs its two signatures.
+in `CloudSaveBackend` and nowhere else**, and nothing above it changes when the SDK does.
+
+**The Cloud Save document is written where the client SDK cannot reach it.** `CloudSaveBackend` calls
+the `progress` Cloud Code script (`cloudcode/progress.js`) rather than Unity Cloud Save's player data
+directly — player data is client-writable by any signed-in player by design, and this class's own
+monotonic merge above ("every counter takes the max") would keep a single forged flush (`coins:
+999999999`, or an `owned` list holding every cosmetic) forever once written that way. The script
+stores the document as game-scoped **custom** data instead (`progress:<playerId>`), which the client
+SDK has no write path to at all — the same storage class `ladder.js` already used for `pod:` — and
+bounds the two fields with real value (coins, and how many new cosmetics appear) before persisting;
+see the constants at the top of `progress.js` for the actual numbers and where they come from.
+`CloudSaveBackend.SaveAsync` returns what the server actually accepted, not `void`, and `CloudSync`
+applies that back over the local doc it sent — a tampered client is corrected on its next flush, not
+believed on it. This does not, and cannot, stop a rooted device from showing itself an inflated number
+locally between flushes; it stops that number from ever being persisted or reaching another device.
+Depends on `com.unity.services.cloudcode` (already in `Packages/manifest.json`), not
+`com.unity.services.cloudsave` — the client no longer talks to Cloud Save at all.
 
 **Events, not polling.** `MatchManager` exposes `GoalScored`, `ScoreChanged`, `MatchWon`,
 `MatchRestarted`, `KickedOff`, `TimeChanged`, `FullTime` and `SuddenDeathStarted`, plus a `PlayLive`
@@ -216,6 +230,35 @@ rather than negotiated, because a message can be lost or arrive late and `IsHost
 `NetworkedRod` sends two floats — slide and spin angle — rather than a `NetworkTransform`, which
 would cost three times the bandwidth and whose interpolation would fight `RodController`'s own
 `ApplyPose` for the same transform every frame.
+
+**A remote peer's reported spin speed is untrusted input and is clamped to the rod's physical
+ceiling.** `NetworkedRod` sends a third float — `MeasuredSpinSpeed` — and the host feeds the guest's
+copy of it straight into the ball's strike impulse for both power and direction. It is the only
+network input that is not otherwise bounded: slide arrives through `SetSlide01Immediate` (Clamp01'd)
+and the angle through `SetSpinAngle` (wrapped), but spin speed goes through `RodController.SetMeasuredSpin`,
+which now clamps to `[-maxSpinSpeed, maxSpinSpeed]`. A locally driven rod can never exceed that ceiling,
+so a larger value is not a hard shot — it is a modified guest claiming a swing no rod can make. Clamp
+there, on the method, not at the call site: it is the one place the rule can be relied on for every
+caller, present and future (the same reason `PlayerAccount` validates names on the method rather than
+only in the input field). **This bounds the magnitude; it does not prove a genuine swing occurred.**
+A peer that reports a constant spin just above `strikeMinSpin` can still trigger full-power strikes at
+will, because the host deliberately does NOT reconstruct spin from the wrapped angle it receives —
+doing so got the SIGN wrong on the hardest shots and sent them backwards (see `SetMeasuredSpin`). Fully
+authoritative shot validation would need a server that re-simulates the swing, which this relay-hosted,
+host-authoritative design does not have; that residual is an accepted limit, not a bug to patch here.
+
+**A ranked result is credited only once BOTH players report it, matching.** `cloudcode/ladder.js`'s
+`submitResult` holds each report as a claim under a shared `matchId` — the Multiplayer Sessions id
+(`OnlineSession.Current.Id`), not something either client chooses — until the id named as the
+opponent (`OnlineSession.OpponentId`) reports the complementary outcome (exactly one winner) within
+the claim window; only then are both credited, in that one call. Before this, a bare `{ won: true }`
+was credited on the spot, so a modified client could call the endpoint directly with no opponent and
+no match at all. `Ladder.SubmitResult` reads both ids from `OnlineSession` itself at call time (not
+from the caller), so `GameFlow`'s call sites needed no change. **This is corroboration, not proof**:
+two colluding, authenticated accounts can still fabricate a `matchId` and agree with each other —
+closing that needs a match server issuing a token neither client can forge, which this relay-hosted
+topology does not have. Same accepted-residual shape as the spin-speed clamp above; see
+`cloudcode/README.md`'s Anti-cheat note.
 
 **The ladder never announces its own rollover, so ranked rewards are DETECTED, not received.**
 `ILadderService` has no "the week ended" event and cannot have a useful one: the mock rolls over
@@ -344,22 +387,6 @@ wears its own published value rather than reading its inventory directly, which 
 screens drifting apart. `OnNetworkDespawn` clears the override, or the next local match keeps wearing
 a skin the player may not own. `BallSkinner` is deliberately input-agnostic in the manner of
 `RodController`: new sources of a skin are new callers, not new branches inside it.
-
-**A remote peer's reported spin speed is untrusted input and is clamped to the rod's physical
-ceiling.** `NetworkedRod` sends a third float — `MeasuredSpinSpeed` — and the host feeds the guest's
-copy of it straight into the ball's strike impulse for both power and direction. It is the only
-network input that is not otherwise bounded: slide arrives through `SetSlide01Immediate` (Clamp01'd)
-and the angle through `SetSpinAngle` (wrapped), but spin speed goes through `RodController.SetMeasuredSpin`,
-which now clamps to `[-maxSpinSpeed, maxSpinSpeed]`. A locally driven rod can never exceed that ceiling,
-so a larger value is not a hard shot — it is a modified guest claiming a swing no rod can make. Clamp
-there, on the method, not at the call site: it is the one place the rule can be relied on for every
-caller, present and future (the same reason `PlayerAccount` validates names on the method rather than
-only in the input field). **This bounds the magnitude; it does not prove a genuine swing occurred.**
-A peer that reports a constant spin just above `strikeMinSpin` can still trigger full-power strikes at
-will, because the host deliberately does NOT reconstruct spin from the wrapped angle it receives —
-doing so got the SIGN wrong on the hardest shots and sent them backwards (see `SetMeasuredSpin`). Fully
-authoritative shot validation would need a server that re-simulates the swing, which this relay-hosted,
-host-authoritative design does not have; that residual is an accepted limit, not a bug to patch here.
 
 ## Working style in this repo
 
