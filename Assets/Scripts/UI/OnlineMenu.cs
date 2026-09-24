@@ -80,15 +80,9 @@ namespace TableFootball.UI
             // Shared translucent dim, matching every other secondary screen. See UIFactory.ScrimDim.
             UIFactory.ScrimDim(root.transform);
 
-            var title = UIFactory.Text(root.transform, "ONLINE", ArcadeTheme.FsTitle, ArcadeTheme.Ink,
-                                       display: true, bold: true, upper: true, tracking: 8f);
-            var trt = UIFactory.Rt(title.gameObject);
-            trt.anchorMin = new Vector2(0f, 1f);
-            trt.anchorMax = new Vector2(1f, 1f);
-            trt.pivot = new Vector2(0.5f, 1f);
-            trt.offsetMin = new Vector2(0f, -170f);
-            trt.offsetMax = new Vector2(0f, -70f);
+            UIFactory.ScreenHeader(root.transform, "Online", Back);
 
+            // The host's code, framed on its own in the middle of the screen while they wait.
             var panel = UIFactory.Panel(root.transform, "OnlinePanel");
             panelRoot = panel;
             var prt = UIFactory.Rt(panel);
@@ -98,11 +92,10 @@ namespace TableFootball.UI
             prt.sizeDelta = new Vector2(560f, 460f);
             prt.anchoredPosition = new Vector2(0f, -10f);
 
-            BuildChoose(panel.transform);
+            BuildChoose(root.transform);
             BuildWaiting(panel.transform);
             BuildSearching(root.transform);
             BuildStatus(root.transform);
-            BuildBack(root.transform);
 
             Show(Screen.Choose);
             root.SetActive(false);
@@ -124,62 +117,100 @@ namespace TableFootball.UI
             return column;
         }
 
+        /// <summary>Space kept clear under the choices for the status line.</summary>
+        private const float ChooseBottom = 110f;
+
+        /// <summary>Width of the join panel on the right.</summary>
+        private const float JoinWidth = 440f;
+
+        /// <summary>
+        /// The ways in, laid out by weight: Ranked as the large card with the screen's one gold call
+        /// to action, the two casual ways to play as cards under it, and joining a friend's table in
+        /// its own panel on the right — it is a different kind of thing (you need a code from
+        /// someone), and a divider in a column of buttons did not say so strongly enough.
+        /// </summary>
         private void BuildChoose(Transform parent)
         {
-            chooseGroup = BuildColumn(parent, "ChooseGroup");
+            chooseGroup = UIFactory.Child(parent, "ChooseGroup");
+            float top = ArcadeTheme.Xl + ArcadeTheme.HeaderHeight + ArcadeTheme.Xl2;
+            UIFactory.Stretch(UIFactory.Rt(chooseGroup), ArcadeTheme.Xl3, ChooseBottom, ArcadeTheme.Xl3, top);
 
-            // Ranked is the headline, so it carries the screen's one resting glow; the casual ways to
-            // play (host, quick match, join) sit below it as neutral choices.
-            rankedButton = UIFactory.Button(chooseGroup.transform, "Ranked",
-                                            MenuButton.Variant.Primary, Ranked);
-            UIShine.AddTo(rankedButton);
+            var h = chooseGroup.AddComponent<HorizontalLayoutGroup>();
+            h.spacing = ArcadeTheme.Xl;
+            h.childAlignment = TextAnchor.UpperCenter;
+            h.childForceExpandWidth = false;
+            h.childForceExpandHeight = true;
+            h.childControlWidth = true;
+            h.childControlHeight = true;
 
-            hostButton = UIFactory.Button(chooseGroup.transform, "Host Table",
-                                          MenuButton.Variant.Blue, Host);
+            var play = UIFactory.Child(chooseGroup.transform, "Play");
+            play.AddComponent<LayoutElement>().flexibleWidth = 1f;
+            var v = play.AddComponent<VerticalLayoutGroup>();
+            v.spacing = ArcadeTheme.Xl;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
 
-            quickButton = UIFactory.Button(chooseGroup.transform, "Quick Match",
-                                           MenuButton.Variant.Blue, QuickMatch);
+            rankedButton = UIFactory.ActionCard(play.transform, "Ranked",
+                                                "Play for your rank against another player online.",
+                                                UIFactory.Icon.Trophy, Ranked, "Find Match");
+            var rle = rankedButton.GetComponent<LayoutElement>();
+            rle.preferredHeight = 300f;
+            rle.flexibleHeight = 1f;
 
-            // A rule with the label sitting in it, rather than a line of muted text drifting between
-            // two buttons. Everything below it is one thing — join a table someone else opened — and
-            // the divider is what says so.
-            BuildDivider(chooseGroup.transform, "or join with a code");
+            var casual = UIFactory.Child(play.transform, "Casual");
+            var cle = casual.AddComponent<LayoutElement>();
+            cle.preferredHeight = 230f;
+            cle.flexibleHeight = 1f;
+            var ch = casual.AddComponent<HorizontalLayoutGroup>();
+            ch.spacing = ArcadeTheme.Xl;
+            ch.childForceExpandWidth = true;
+            ch.childForceExpandHeight = true;
+            ch.childControlWidth = true;
+            ch.childControlHeight = true;
 
-            codeField = UIFactory.CodeInput(chooseGroup.transform, "code", CodeLength);
-            joinButton = UIFactory.Button(chooseGroup.transform, "Join", MenuButton.Variant.Blue, Join);
+            quickButton = UIFactory.ActionCard(casual.transform, "Quick Match",
+                                               "Play whoever is searching right now.",
+                                               UIFactory.Icon.Dice, QuickMatch);
+            hostButton = UIFactory.ActionCard(casual.transform, "Host Table",
+                                              "Open a private table and share its code.",
+                                              UIFactory.Icon.Table, Host);
+
+            BuildJoin(chooseGroup.transform);
         }
 
-        /// <summary>A horizontal rule broken by a caption, separating the two ways in.</summary>
-        private static void BuildDivider(Transform parent, string caption)
+        private void BuildJoin(Transform parent)
         {
-            var row = UIFactory.Child(parent, "Divider");
-            row.AddComponent<LayoutElement>().preferredHeight = 28f;
+            var panel = UIFactory.Panel(parent, "JoinPanel");
+            var le = panel.AddComponent<LayoutElement>();
+            le.preferredWidth = JoinWidth;
+            le.flexibleWidth = 0f;
 
-            var h = row.AddComponent<HorizontalLayoutGroup>();
-            h.childAlignment = TextAnchor.MiddleCenter;
-            h.spacing = ArcadeTheme.Md;
-            h.childForceExpandWidth = false; h.childForceExpandHeight = false;
-            h.childControlWidth = true; h.childControlHeight = true;
+            var fill = panel.transform.Find("Fill");
+            var v = fill.gameObject.AddComponent<VerticalLayoutGroup>();
+            int pad = (int)ArcadeTheme.Xl2;
+            v.padding = new RectOffset(pad, pad, pad, pad);
+            v.spacing = ArcadeTheme.Lg;
+            v.childAlignment = TextAnchor.UpperCenter;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
 
-            Rule(row.transform);
+            var title = UIFactory.Text(fill, "Join a table", ArcadeTheme.FsButton * 1.1f, ArcadeTheme.Ink,
+                                       display: true, bold: true, upper: true, tracking: 4f,
+                                       align: TextAlignmentOptions.Left);
+            title.gameObject.AddComponent<LayoutElement>().preferredHeight = ArcadeTheme.FsButton * 1.5f;
 
-            var t = UIFactory.Text(row.transform, caption, ArcadeTheme.FsCaption, ArcadeTheme.InkMuted,
-                                   display: false, bold: true, upper: true, tracking: 4f);
-            var tle = t.gameObject.AddComponent<LayoutElement>();
-            tle.preferredWidth = 210f;
-            tle.preferredHeight = 20f;
+            var hint = UIFactory.Text(fill, "Got a code from a friend who is hosting? Enter it here.",
+                                      ArcadeTheme.FsBody * 0.9f, ArcadeTheme.InkMuted, display: false,
+                                      bold: false, align: TextAlignmentOptions.TopLeft);
+            hint.textWrappingMode = TextWrappingModes.Normal;
+            hint.gameObject.AddComponent<LayoutElement>().preferredHeight = ArcadeTheme.FsBody * 2.6f;
 
-            Rule(row.transform);
-        }
-
-        private static void Rule(Transform parent)
-        {
-            var go = UIFactory.Child(parent, "Rule");
-            UIFactory.RoundedImage(go, ArcadeTheme.RadSm, ArcadeTheme.Line, false);
-            var le = go.AddComponent<LayoutElement>();
-            le.preferredWidth = 120f;
-            le.flexibleWidth = 1f;
-            le.preferredHeight = 2f;
+            codeField = UIFactory.CodeInput(fill, "code", CodeLength);
+            joinButton = UIFactory.Button(fill, "Join", MenuButton.Variant.Blue, Join);
         }
 
         private void BuildWaiting(Transform parent)
@@ -235,26 +266,7 @@ namespace TableFootball.UI
             rt.anchorMax = new Vector2(0.5f, 0f);
             rt.pivot = new Vector2(0.5f, 0f);
             rt.sizeDelta = new Vector2(700f, 40f);
-            rt.anchoredPosition = new Vector2(0f, 190f);
-        }
-
-        private void BuildBack(Transform parent)
-        {
-            var holder = UIFactory.Child(parent, "BackHolder");
-            var rt = UIFactory.Rt(holder);
-            rt.anchorMin = new Vector2(0.5f, 0f);
-            rt.anchorMax = new Vector2(0.5f, 0f);
-            rt.pivot = new Vector2(0.5f, 0f);
-            rt.sizeDelta = new Vector2(260f, 62f);
-            rt.anchoredPosition = new Vector2(0f, 110f);
-
-            var layout = holder.AddComponent<VerticalLayoutGroup>();
-            layout.childForceExpandWidth = true;
-            layout.childForceExpandHeight = false;
-            layout.childControlWidth = true;
-            layout.childControlHeight = true;
-
-            UIFactory.Button(holder.transform, "Back", MenuButton.Variant.Ghost, Back);
+            rt.anchoredPosition = new Vector2(0f, (ChooseBottom - 40f) * 0.5f);
         }
 
         // ---------- state ----------
@@ -308,16 +320,16 @@ namespace TableFootball.UI
             bool choosing = next == Screen.Choose;
             bool searching = next == Screen.Searching;
 
-            if (chooseGroup != null) chooseGroup.SetActive(choosing);
+            // Working keeps the choices on screen, switched off, so the player can still see what they
+            // asked for while it happens.
+            if (chooseGroup != null) chooseGroup.SetActive(choosing || next == Screen.Working);
             if (waitingGroup != null) waitingGroup.SetActive(next == Screen.Waiting);
             if (searchingGroup != null) searchingGroup.SetActive(searching);
 
-            // The panel steps aside for the loader entirely — an empty framed box behind a spinner
-            // is the "black box" this screen used to be.
-            if (panelRoot != null) panelRoot.SetActive(!searching);
+            // The code panel only frames the host's code. Everything else happens on the cards, or,
+            // for quick match, around the loader with no panel behind it.
+            if (panelRoot != null) panelRoot.SetActive(next == Screen.Waiting);
 
-            // Working is the Choose screen with everything switched off, rather than a fourth panel:
-            // the player can still see what they asked for while it happens.
             bool usable = choosing;
             if (rankedButton != null) rankedButton.interactable = usable;
             if (hostButton != null) hostButton.interactable = usable;

@@ -69,14 +69,7 @@ namespace TableFootball.UI
             // the whole front end reads as one place. See UIFactory.ScrimDim.
             UIFactory.ScrimDim(root.transform);
 
-            var title = UIFactory.Text(root.transform, "FRIENDS", ArcadeTheme.FsTitle, ArcadeTheme.Ink,
-                                       display: true, bold: true, upper: true, tracking: 8f);
-            var trt = UIFactory.Rt(title.gameObject);
-            trt.anchorMin = new Vector2(0f, 1f);
-            trt.anchorMax = new Vector2(1f, 1f);
-            trt.pivot = new Vector2(0.5f, 1f);
-            trt.offsetMin = new Vector2(0f, -118f);
-            trt.offsetMax = new Vector2(0f, -46f);
+            UIFactory.ScreenHeader(root.transform, "Friends", Back);
 
             // One column holding everything, so the banner appearing pushes the rest down instead of
             // covering it — the old fixed-position panels had nowhere for a banner to go.
@@ -92,8 +85,9 @@ namespace TableFootball.UI
             crt.anchorMin = new Vector2(0f, 0f);
             crt.anchorMax = new Vector2(1f, 1f);
             crt.pivot = new Vector2(0.5f, 1f);
-            crt.offsetMin = new Vector2(220f, 148f);
-            crt.offsetMax = new Vector2(-220f, -128f);
+            // Bottom margin only for the status line now Back lives in the header.
+            crt.offsetMin = new Vector2(220f, 90f);
+            crt.offsetMax = new Vector2(-220f, -(ArcadeTheme.Xl + ArcadeTheme.HeaderHeight + ArcadeTheme.Xl));
 
             var v = column.AddComponent<VerticalLayoutGroup>();
             v.spacing = ArcadeTheme.Sm;
@@ -108,7 +102,6 @@ namespace TableFootball.UI
             BuildList(column.transform);
 
             BuildStatus(root.transform);
-            BuildBack(root.transform);
 
             root.SetActive(false);
         }
@@ -293,25 +286,7 @@ namespace TableFootball.UI
             rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0f);
             rt.pivot = new Vector2(0.5f, 0f);
             rt.sizeDelta = new Vector2(760f, 36f);
-            rt.anchoredPosition = new Vector2(0f, 108f);
-        }
-
-        private void BuildBack(Transform parent)
-        {
-            var holder = UIFactory.Child(parent, "BackHolder");
-            var rt = UIFactory.Rt(holder);
-            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0f);
-            rt.pivot = new Vector2(0.5f, 0f);
-            rt.sizeDelta = new Vector2(260f, 54f);
             rt.anchoredPosition = new Vector2(0f, 44f);
-
-            var layout = holder.AddComponent<VerticalLayoutGroup>();
-            layout.childForceExpandWidth = true;
-            layout.childForceExpandHeight = false;
-            layout.childControlWidth = true;
-            layout.childControlHeight = true;
-
-            UIFactory.Button(holder.transform, "Back", MenuButton.Variant.Ghost, Back, 54f);
         }
 
         // ---------- state ----------

@@ -34,9 +34,19 @@ namespace TableFootball.UI
         /// </summary>
         public static UIShine AddTo(MenuButton button)
         {
-            if (button == null || button.fill == null) return null;
+            if (button == null) return null;
+            return AddTo(button.fill, button);
+        }
 
-            var fill = button.fill;
+        /// <summary>
+        /// Adds a shine clipped to <paramref name="fill"/> — a surface inside a larger control, such as
+        /// the gold pill on an action card — that rests while <paramref name="owner"/> is not
+        /// interactable.
+        /// </summary>
+        public static UIShine AddTo(Image fill, Selectable owner)
+        {
+            if (fill == null) return null;
+
             if (fill.GetComponent<Mask>() == null)
             {
                 var mask = fill.gameObject.AddComponent<Mask>();
@@ -45,7 +55,7 @@ namespace TableFootball.UI
 
             var shine = fill.gameObject.GetComponent<UIShine>();
             if (shine == null) shine = fill.gameObject.AddComponent<UIShine>();
-            shine.owner = button;
+            shine.owner = owner;
             shine.Build(fill.rectTransform);
             return shine;
         }

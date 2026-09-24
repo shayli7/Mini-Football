@@ -59,6 +59,7 @@ namespace TableFootball.UI
 
             // Shared translucent dim, matching every other secondary screen. See UIFactory.ScrimDim.
             UIFactory.ScrimDim(root.transform);
+            UIFactory.ScreenHeader(root.transform, "Friend", Back);
 
             var panel = UIFactory.Panel(root.transform, "FriendPanel");
             var prt = UIFactory.Rt(panel);
@@ -87,7 +88,6 @@ namespace TableFootball.UI
             BuildActions(column.transform);
 
             BuildStatus(root.transform);
-            BuildBack(root.transform);
 
             root.SetActive(false);
         }
@@ -167,25 +167,8 @@ namespace TableFootball.UI
             rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0f);
             rt.pivot = new Vector2(0.5f, 0f);
             rt.sizeDelta = new Vector2(760f, 40f);
-            rt.anchoredPosition = new Vector2(0f, 142f);
-        }
-
-        private void BuildBack(Transform parent)
-        {
-            var holder = UIFactory.Child(parent, "BackHolder");
-            var rt = UIFactory.Rt(holder);
-            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0f);
-            rt.pivot = new Vector2(0.5f, 0f);
-            rt.sizeDelta = new Vector2(260f, 58f);
-            rt.anchoredPosition = new Vector2(0f, 72f);
-
-            var layout = holder.AddComponent<VerticalLayoutGroup>();
-            layout.childForceExpandWidth = true;
-            layout.childForceExpandHeight = false;
-            layout.childControlWidth = true;
-            layout.childControlHeight = true;
-
-            UIFactory.Button(holder.transform, "Back", MenuButton.Variant.Ghost, Back, 58f);
+            // Under the panel, clear of it even on a 20:9 phone.
+            rt.anchoredPosition = new Vector2(0f, 40f);
         }
 
         // ---------- state ----------

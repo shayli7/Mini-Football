@@ -86,22 +86,15 @@ namespace TableFootball.UI
             group = root.AddComponent<CanvasGroup>();
             UIFactory.ScrimDim(root.transform);
 
-            var title = UIFactory.Text(root.transform, "LEVEL PATH", ArcadeTheme.FsTitle,
-                                       ArcadeTheme.Ink, display: true, bold: true, upper: true,
-                                       tracking: 8f);
-            var trt = UIFactory.Rt(title.gameObject);
-            trt.anchorMin = new Vector2(0f, 1f);
-            trt.anchorMax = new Vector2(1f, 1f);
-            trt.pivot = new Vector2(0.5f, 1f);
-            trt.offsetMin = new Vector2(0f, -150f);
-            trt.offsetMax = new Vector2(0f, -60f);
+            UIFactory.ScreenHeader(root.transform, "Level Path", Back);
 
             var panel = UIFactory.Panel(root.transform, "PathPanel");
             var prt = UIFactory.Rt(panel);
             prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
             prt.pivot = new Vector2(0.5f, 0.5f);
-            prt.sizeDelta = new Vector2(880f, 720f);
-            prt.anchoredPosition = new Vector2(0f, -30f);
+            // Short enough to clear the header on a 20:9 phone, where the canvas is only ~805 tall.
+            prt.sizeDelta = new Vector2(880f, 680f);
+            prt.anchoredPosition = new Vector2(0f, -40f);
 
             var content = UIFactory.Child(panel.transform, "Content");
             UIFactory.Stretch(UIFactory.Rt(content), 0f);
@@ -209,7 +202,6 @@ namespace TableFootball.UI
             claimAllButton = UIFactory.Button(row.transform, "Claim All Coins",
                                               MenuButton.Variant.Primary, ClaimAllCoins);
             UIShine.AddTo(claimAllButton);
-            UIFactory.Button(row.transform, "Back", MenuButton.Variant.Ghost, Back);
         }
 
         // ---------- rows ----------

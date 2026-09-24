@@ -48,21 +48,15 @@ namespace TableFootball.UI
             group = root.AddComponent<CanvasGroup>();
             UIFactory.ScrimDim(root.transform);
 
-            var title = UIFactory.Text(root.transform, "RANKED", ArcadeTheme.FsTitle, ArcadeTheme.Ink,
-                                       display: true, bold: true, upper: true, tracking: 8f);
-            var trt = UIFactory.Rt(title.gameObject);
-            trt.anchorMin = new Vector2(0f, 1f);
-            trt.anchorMax = new Vector2(1f, 1f);
-            trt.pivot = new Vector2(0.5f, 1f);
-            trt.offsetMin = new Vector2(0f, -150f);
-            trt.offsetMax = new Vector2(0f, -60f);
+            UIFactory.ScreenHeader(root.transform, "Ranked", Back);
 
             var panel = UIFactory.Panel(root.transform, "LeaguePanel");
             var prt = UIFactory.Rt(panel);
             prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
             prt.pivot = new Vector2(0.5f, 0.5f);
             prt.sizeDelta = new Vector2(660f, 680f);
-            prt.anchoredPosition = new Vector2(0f, -20f);
+            // Clears the shared header even on a 20:9 phone, where the canvas is only ~805 tall.
+            prt.anchoredPosition = new Vector2(0f, -40f);
 
             // The panel's own children are its background (shadow/border/fill); the laid-out content
             // goes in a separate stretched column on top, so a layout group never touches the frame.
@@ -84,7 +78,6 @@ namespace TableFootball.UI
             BuildList(content.transform);
             BuildPlay(content.transform);
             BuildDebug(content.transform);
-            BuildBack(content.transform);
 
             root.SetActive(false);
         }
@@ -314,25 +307,6 @@ namespace TableFootball.UI
         /// same VerticalLayoutGroup, Back can never land on its neighbours: the layout group resizes
         /// the scrollable list above it to make room instead.
         /// </summary>
-        private void BuildBack(Transform parent)
-        {
-            var holder = UIFactory.Child(parent, "BackRow");
-            holder.AddComponent<LayoutElement>().preferredHeight = 62f;
-
-            var layout = holder.AddComponent<VerticalLayoutGroup>();
-            // Fixed-width and centred, not stretched to the panel's full width — the same fix as
-            // StoreMenu's identical Back button, and the same reason: full-bleed made it read as a
-            // dim background bar rather than a control with its own focus.
-            layout.childAlignment = TextAnchor.MiddleCenter;
-            layout.childForceExpandWidth = false;
-            layout.childForceExpandHeight = true;
-            layout.childControlWidth = true;
-            layout.childControlHeight = true;
-
-            var back = UIFactory.Button(holder.transform, "Back", MenuButton.Variant.Ghost, Back);
-            back.gameObject.GetComponent<LayoutElement>().preferredWidth = 260f;
-        }
-
         public void Open()
         {
             if (root == null) return;

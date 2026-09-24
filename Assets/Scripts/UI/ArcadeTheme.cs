@@ -112,6 +112,16 @@ namespace TableFootball.UI
         /// </summary>
         public const float Bleed = 200f;
 
+        // ---- Screen furniture ----
+        // The shared header row (UIFactory.ScreenHeader): its height, and the Back button's width.
+        public const float HeaderHeight = 60f;
+        public const float BackWidth = 170f;
+        // Action cards (UIFactory.ActionCard): the icon tile, and the gold call-to-action pill.
+        public const float CardIcon = 56f;
+        public const float CallToActionWidth = 260f;
+        // A stat on its own tile (UIFactory.StatTile).
+        public const float StatTileHeight = 92f;
+
         // ---- Radii ----
         public const int RadSm = 8, RadMd = 14, RadLg = 20;
 

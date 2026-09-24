@@ -325,7 +325,7 @@ namespace TableFootball.UI
             var prt = UIFactory.Rt(panel);
             prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
             prt.pivot = new Vector2(0.5f, 0.5f);
-            prt.sizeDelta = new Vector2(400f, 500f);
+            prt.sizeDelta = new Vector2(480f, 540f);
 
             var fill = panel.transform.Find("Fill");
             var vlg = fill.gameObject.AddComponent<VerticalLayoutGroup>();
@@ -404,24 +404,63 @@ namespace TableFootball.UI
             var group = Group(parent, "SettingsGroup");
             settingsGroup = group.gameObject;
 
-            var title = UIFactory.Text(group.transform, "SETTINGS", ArcadeTheme.FsTitle * 0.6f, ArcadeTheme.Ink,
-                                       display: true, bold: true, upper: true, tracking: 6f);
-            title.gameObject.AddComponent<LayoutElement>().preferredHeight = 44f;
+            // Title with a close button beside it, so the way out of a pop-up is where pop-ups keep
+            // it rather than only at the bottom of the panel.
+            var head = UIFactory.Child(group.transform, "Head");
+            head.AddComponent<LayoutElement>().preferredHeight = 52f;
+            var title = UIFactory.Text(head.transform, "SETTINGS", ArcadeTheme.FsTitle * 0.6f, ArcadeTheme.Ink,
+                                       display: true, bold: true, upper: true, tracking: 6f,
+                                       align: TextAlignmentOptions.Left);
+            UIFactory.Stretch(UIFactory.Rt(title.gameObject), 0);
+            var close = UIFactory.IconButton(head.transform, "Close", UIFactory.Icon.Close,
+                                             MenuButton.Variant.Ghost, HideSettings, 48f);
+            var crt = UIFactory.Rt(close.gameObject);
+            crt.anchorMin = crt.anchorMax = new Vector2(1f, 0.5f);
+            crt.pivot = new Vector2(1f, 0.5f);
+            crt.anchoredPosition = Vector2.zero;
             Spacer(group.transform, 4f);
 
-            SettingLabel(group.transform, "MUSIC VOLUME");
-            UIFactory.Slider(group.transform, GameAudio.Music, v => GameAudio.Music = v);
+            var music = SettingRow(group.transform, "MUSIC", GameAudio.Music);
+            UIFactory.Slider(group.transform, GameAudio.Music, v =>
+            {
+                GameAudio.Music = v;
+                music.text = Percent(v);
+            });
 
-            SettingLabel(group.transform, "SFX VOLUME");
-            UIFactory.Slider(group.transform, GameAudio.Sfx, v => GameAudio.Sfx = v);
+            var sfx = SettingRow(group.transform, "SOUND EFFECTS", GameAudio.Sfx);
+            UIFactory.Slider(group.transform, GameAudio.Sfx, v =>
+            {
+                GameAudio.Sfx = v;
+                sfx.text = Percent(v);
+            });
 
+            Spacer(group.transform, 4f);
             SettingLabel(group.transform, "AI DIFFICULTY");
             UIFactory.Segmented(group.transform, new[] { "EASY", "NORMAL", "HARD" }, (int)GameAudio.Difficulty,
                                 i => GameAudio.Difficulty = (AiLevel)i);
 
             Spacer(group.transform, 12f);
-            backButton = UIFactory.Button(group.transform, "Back", MenuButton.Variant.Ghost, HideSettings, 54f);
+            backButton = UIFactory.Button(group.transform, "Done", MenuButton.Variant.Blue, HideSettings, 54f);
         }
+
+        /// <summary>A setting's name on the left and its current value, as a percentage, on the right.</summary>
+        private TextMeshProUGUI SettingRow(Transform parent, string text, float value)
+        {
+            var row = UIFactory.Child(parent, "Row_" + text);
+            row.AddComponent<LayoutElement>().preferredHeight = 24f;
+
+            var label = UIFactory.Text(row.transform, text, ArcadeTheme.FsCaption, ArcadeTheme.InkMuted,
+                                       display: false, bold: true, upper: true, tracking: 8f,
+                                       align: TextAlignmentOptions.Left);
+            UIFactory.Stretch(UIFactory.Rt(label.gameObject), 0);
+
+            var readout = UIFactory.Text(row.transform, Percent(value), ArcadeTheme.FsCaption, ArcadeTheme.Ink,
+                                         display: true, bold: true, align: TextAlignmentOptions.Right);
+            UIFactory.Stretch(UIFactory.Rt(readout.gameObject), 0);
+            return readout;
+        }
+
+        private static string Percent(float v) => Mathf.RoundToInt(Mathf.Clamp01(v) * 100f) + "%";
 
         private void SettingLabel(Transform parent, string text)
         {

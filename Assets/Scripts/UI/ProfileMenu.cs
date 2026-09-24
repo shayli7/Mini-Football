@@ -52,6 +52,7 @@ namespace TableFootball.UI
         private TMP_InputField signInPass;
 
         private MenuButton createButton;
+        private GameObject accountNotice;
         private MenuButton signInButton;
 
         /// <summary>Raised when the player backs out.</summary>
@@ -70,14 +71,7 @@ namespace TableFootball.UI
             // same lit table rather than two different screens.
             UIFactory.ScrimDim(root.transform);
 
-            var title = UIFactory.Text(root.transform, "ACCOUNT", ArcadeTheme.FsTitle, ArcadeTheme.Ink,
-                                       display: true, bold: true, upper: true, tracking: 8f);
-            var trt = UIFactory.Rt(title.gameObject);
-            trt.anchorMin = new Vector2(0f, 1f);
-            trt.anchorMax = new Vector2(1f, 1f);
-            trt.pivot = new Vector2(0.5f, 1f);
-            trt.offsetMin = new Vector2(0f, -130f);
-            trt.offsetMax = new Vector2(0f, -46f);
+            UIFactory.ScreenHeader(root.transform, "Account", Back);
 
             var panel = UIFactory.Panel(root.transform, "ProfilePanel");
             var prt = UIFactory.Rt(panel);
@@ -88,8 +82,8 @@ namespace TableFootball.UI
             // the title and Back button take a fifth of the height between them — so a tall panel
             // runs out of room while the sides sit empty. The overview answers that by using two
             // columns; the other groups fit in one and simply leave the right side clear.
-            prt.sizeDelta = new Vector2(1080f, 430f);
-            prt.anchoredPosition = new Vector2(0f, -18f);
+            prt.sizeDelta = new Vector2(1180f, 540f);
+            prt.anchoredPosition = new Vector2(0f, -24f);
 
             var fill = panel.transform.Find("Fill");
             BuildOverview(fill);
@@ -98,7 +92,6 @@ namespace TableFootball.UI
             BuildDelete(fill);
 
             BuildStatus(root.transform);
-            BuildBack(root.transform);
 
             Show(Screen.Overview);
             root.SetActive(false);
@@ -197,12 +190,25 @@ namespace TableFootball.UI
             BuildRecord(left);
             BuildRecord2(left);
 
-            accountState = UIFactory.Text(left, string.Empty, ArcadeTheme.FsCaption,
-                                          ArcadeTheme.InkMuted, display: false, bold: true,
-                                          upper: true, tracking: 3f);
-            accountState.gameObject.AddComponent<LayoutElement>().preferredHeight = 40f;
+            // The device-only warning sits over the button that fixes it, as a notice rather than a
+            // line of gold capitals under the stats — it is advice about Create Account, so it belongs
+            // beside Create Account.
+            accountNotice = UIFactory.Child(right, "AccountNotice");
+            accountNotice.AddComponent<LayoutElement>().preferredHeight = 78f;
+            UIFactory.RoundedImage(accountNotice, ArcadeTheme.RadMd, ArcadeTheme.Gold.WithAlpha(0.10f), false);
+            accountState = UIFactory.Text(accountNotice.transform, string.Empty, ArcadeTheme.FsCaption,
+                                          ArcadeTheme.Ink, display: false, bold: true,
+                                          align: TextAlignmentOptions.Left);
+            UIFactory.Stretch(UIFactory.Rt(accountState.gameObject), ArcadeTheme.Lg, ArcadeTheme.Sm,
+                              ArcadeTheme.Lg, ArcadeTheme.Sm);
             accountState.textWrappingMode = TextWrappingModes.Normal;
 
+            createButton = UIFactory.Button(right, "Create Account",
+                                            MenuButton.Variant.Primary, () => Show(Screen.Create), 50f);
+            signInButton = UIFactory.Button(right, "Sign In",
+                                            MenuButton.Variant.Blue, () => Show(Screen.SignIn), 50f);
+
+            UIFactory.Spacer(right, ArcadeTheme.Md);
             UIFactory.SectionRule(right, "change your name");
             // Unfiltered on purpose. The rule about what a name may contain lives in
             // PlayerAccount.ValidateName, which is where it can actually be relied on — a keystroke
@@ -214,10 +220,8 @@ namespace TableFootball.UI
                                             height: 50f);
             UIFactory.Button(right, "Rename", MenuButton.Variant.Blue, Rename, 50f);
 
-            createButton = UIFactory.Button(right, "Create Account",
-                                            MenuButton.Variant.Primary, () => Show(Screen.Create), 50f);
-            signInButton = UIFactory.Button(right, "Sign In",
-                                            MenuButton.Variant.Blue, () => Show(Screen.SignIn), 50f);
+            // Set apart at the foot of the column, away from the everyday controls.
+            UIFactory.Spacer(right, ArcadeTheme.Lg);
 
             // Offered to anonymous players too, not only to those with a username: the player and
             // their friends list exist either way, and erasing them is the player's call either way.
@@ -238,7 +242,7 @@ namespace TableFootball.UI
         private void BuildRecord(Transform parent)
         {
             var row = UIFactory.Child(parent, "RecordRow");
-            row.AddComponent<LayoutElement>().preferredHeight = 76f;
+            row.AddComponent<LayoutElement>().preferredHeight = ArcadeTheme.StatTileHeight;
 
             var h = row.AddComponent<HorizontalLayoutGroup>();
             h.childAlignment = TextAnchor.MiddleCenter;
@@ -250,10 +254,10 @@ namespace TableFootball.UI
 
             // One colour for the record, with gold kept for the win rate — the figure the rest add
             // up to. Seven stats in five colours read as a chart legend rather than a record.
-            winsValue = UIFactory.StatBlock(row.transform, "won", ArcadeTheme.Ink);
-            lossesValue = UIFactory.StatBlock(row.transform, "lost", ArcadeTheme.Ink);
-            rateValue = UIFactory.StatBlock(row.transform, "win rate", ArcadeTheme.Gold);
-            levelValue = UIFactory.StatBlock(row.transform, "level", ArcadeTheme.Ink);
+            winsValue = UIFactory.StatTile(row.transform, "won", ArcadeTheme.Ink);
+            lossesValue = UIFactory.StatTile(row.transform, "lost", ArcadeTheme.Ink);
+            rateValue = UIFactory.StatTile(row.transform, "win rate", ArcadeTheme.Gold);
+            levelValue = UIFactory.StatTile(row.transform, "level", ArcadeTheme.Ink);
         }
 
         /// <summary>
@@ -265,7 +269,7 @@ namespace TableFootball.UI
         private void BuildRecord2(Transform parent)
         {
             var row = UIFactory.Child(parent, "RecordRow2");
-            row.AddComponent<LayoutElement>().preferredHeight = 76f;
+            row.AddComponent<LayoutElement>().preferredHeight = ArcadeTheme.StatTileHeight;
 
             var h = row.AddComponent<HorizontalLayoutGroup>();
             h.childAlignment = TextAnchor.MiddleCenter;
@@ -275,9 +279,9 @@ namespace TableFootball.UI
             h.childControlWidth = true;
             h.childControlHeight = true;
 
-            playedValue = UIFactory.StatBlock(row.transform, "played", ArcadeTheme.Ink);
-            goalsValue = UIFactory.StatBlock(row.transform, "goals", ArcadeTheme.Ink);
-            timeValue = UIFactory.StatBlock(row.transform, "time played", ArcadeTheme.Ink);
+            playedValue = UIFactory.StatTile(row.transform, "played", ArcadeTheme.Ink);
+            goalsValue = UIFactory.StatTile(row.transform, "goals", ArcadeTheme.Ink);
+            timeValue = UIFactory.StatTile(row.transform, "time played", ArcadeTheme.Ink);
         }
 
         private void BuildDelete(Transform parent)
@@ -370,27 +374,7 @@ namespace TableFootball.UI
             rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0f);
             rt.pivot = new Vector2(0.5f, 0f);
             rt.sizeDelta = new Vector2(900f, 36f);
-            rt.anchoredPosition = new Vector2(0f, 112f);
-        }
-
-        private void BuildBack(Transform parent)
-        {
-            var holder = UIFactory.Child(parent, "BackHolder");
-            var rt = UIFactory.Rt(holder);
-            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0f);
-            rt.pivot = new Vector2(0.5f, 0f);
-            rt.sizeDelta = new Vector2(260f, 54f);
-            // Matches the friends list exactly — the two screens sit back to back, and a Back button
-            // that shifted between them would read as the whole page moving.
-            rt.anchoredPosition = new Vector2(0f, 44f);
-
-            var layout = holder.AddComponent<VerticalLayoutGroup>();
-            layout.childForceExpandWidth = true;
-            layout.childForceExpandHeight = false;
-            layout.childControlWidth = true;
-            layout.childControlHeight = true;
-
-            UIFactory.Button(holder.transform, "Back", MenuButton.Variant.Ghost, Back, 54f);
+            rt.anchoredPosition = new Vector2(0f, 56f);
         }
 
         // ---------- state ----------
@@ -471,13 +455,13 @@ namespace TableFootball.UI
             // consequence worth stating before they spend an evening adding friends.
             if (PlayerAccount.HasAccount)
             {
-                accountState.gameObject.SetActive(false);
+                if (accountNotice != null) accountNotice.SetActive(false);
             }
             else
             {
-                accountState.gameObject.SetActive(true);
-                accountState.text = "this player exists on this device only — friends are lost if you reinstall";
-                accountState.color = ArcadeTheme.Gold;
+                if (accountNotice != null) accountNotice.SetActive(true);
+                accountState.text = "This player lives on this device only. Create an account so your " +
+                                    "friends and progress survive a reinstall.";
             }
 
             // Both are meaningless once an account exists: there is nothing left to create, and

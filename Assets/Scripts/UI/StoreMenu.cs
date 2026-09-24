@@ -60,21 +60,15 @@ namespace TableFootball.UI
             group = root.AddComponent<CanvasGroup>();
             UIFactory.ScrimDim(root.transform);
 
-            var title = UIFactory.Text(root.transform, "STORE", ArcadeTheme.FsTitle, ArcadeTheme.Ink,
-                                       display: true, bold: true, upper: true, tracking: 8f);
-            var trt = UIFactory.Rt(title.gameObject);
-            trt.anchorMin = new Vector2(0f, 1f);
-            trt.anchorMax = new Vector2(1f, 1f);
-            trt.pivot = new Vector2(0.5f, 1f);
-            trt.offsetMin = new Vector2(0f, -150f);
-            trt.offsetMax = new Vector2(0f, -60f);
+            UIFactory.ScreenHeader(root.transform, "Store", Back);
 
             var panel = UIFactory.Panel(root.transform, "StorePanel");
             var prt = UIFactory.Rt(panel);
             prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
             prt.pivot = new Vector2(0.5f, 0.5f);
-            prt.sizeDelta = new Vector2(1050f, 720f);
-            prt.anchoredPosition = new Vector2(0f, -30f);
+            // Clears the shared header even on a 20:9 phone, where the canvas is only ~805 tall.
+            prt.sizeDelta = new Vector2(1050f, 680f);
+            prt.anchoredPosition = new Vector2(0f, -40f);
 
             // The panel's own children are its frame; laid-out content goes in a stretched column on
             // top, so a layout group never touches the shadow, border or fill. Same split as
@@ -95,7 +89,6 @@ namespace TableFootball.UI
             BuildTabs(content.transform);
             BuildStatus(content.transform);
             BuildGrid(content.transform);
-            BuildBack(content.transform);
 
             // Last inside the ROOT, not the column: it covers the whole screen and must draw over the
             // panel it is asking about.
@@ -179,27 +172,6 @@ namespace TableFootball.UI
             le.minHeight = 160f;
 
             gridContent = UIFactory.ScrollList(holder.transform, CardGap);
-        }
-
-        private void BuildBack(Transform parent)
-        {
-            var holder = UIFactory.Child(parent, "BackRow");
-            holder.AddComponent<LayoutElement>().preferredHeight = 62f;
-
-            var v = holder.AddComponent<VerticalLayoutGroup>();
-            // Fixed-width and centred, not stretched to the panel's full ~1000px — a full-bleed Ghost
-            // button spanning nearly the whole screen read as a dim background bar rather than a
-            // control with a focus of its own, and its own dark fill is what made it look "too dark":
-            // the same fill every other secondary button in the game already wears, just spread far
-            // wider than a button.
-            v.childAlignment = TextAnchor.MiddleCenter;
-            v.childForceExpandWidth = false;
-            v.childForceExpandHeight = true;
-            v.childControlWidth = true;
-            v.childControlHeight = true;
-
-            var back = UIFactory.Button(holder.transform, "Back", MenuButton.Variant.Ghost, Back);
-            back.gameObject.GetComponent<LayoutElement>().preferredWidth = 260f;
         }
 
         // ---------- the grid ----------

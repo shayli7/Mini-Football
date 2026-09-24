@@ -117,6 +117,11 @@ Layout primitives: `Child(parent, name)`, `Rt(go)`, `Stretch(rt, inset)` / `Stre
 Surfaces: `Panel` (shadow + border + `Fill` child — put content under `transform.Find("Fill")`),
 `Backdrop` (opaque radial floor), `StageScrim` (translucent floor over the live 3D table),
 `RoundedImage`, `GlowImage`.
+Screen furniture: `ScreenHeader(root, title, onBack)` — the shared top row, title centred and Back in
+the top-left corner, on every full-screen menu. `ActionCard(parent, title, subtitle, icon, onClick,
+callToAction)` — a large tappable card with an icon tile; give exactly one per screen a
+`callToAction` and it becomes the gold headline with the shine. `StatTile(caption, color)` — a
+`StatBlock` on a raised tile, for stat grids.
 Content: `Text`, `Button`, `IconButton`, `Tile` (image mode card), `StatBlock(caption, color)`
 (returns the value label), `SectionRule(caption)`, `XpBar(parent, fraction, label, height)`,
 `AvatarDisc`, `AvatarButton`, `RowIdentity`, `OnlinePip(parent, online, size)` (presence dot — pulsing
@@ -147,7 +152,9 @@ Every screen is a `MonoBehaviour` following the same shape (see `MainMenu`, `Pro
 1. Fields: `GameObject root; CanvasGroup group; public bool IsOpen => root != null && root.activeSelf;`
 2. `Build(Transform canvasRoot, …)`: `root = UIFactory.Child(canvasRoot, "Name");
    UIFactory.Stretch(Rt(root)); group = root.AddComponent<CanvasGroup>();` → a `Backdrop`/`StageScrim`,
-   a title, one or more `Panel`s populated via `Find("Fill")`, a Back button; end with
+   `UIFactory.ScreenHeader` (title + Back top-left — never a Back button of the screen's own), one or
+   more `Panel`s populated via `Find("Fill")`, kept clear of the header on a 20:9 canvas (~805 tall);
+   end with
    `root.SetActive(false)`.
 3. `Open()`: `SetActive(true)`, `transform.SetAsLastSibling()`, `group.blocksRaycasts = true`, then a
    `UITween.Fade`/`PopIn`/`Stagger` entrance; refresh data here.
