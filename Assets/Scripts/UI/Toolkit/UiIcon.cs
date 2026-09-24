@@ -124,10 +124,11 @@ namespace TableFootball.UI.Toolkit
                     break;
 
                 case Glyph.TwoPlayers:
-                    Circle(8f, 8f, 3f); Circle(16f, 8f, 3f);
-                    Path(2f, 20f); Curve(2f, 16.7f, 4.7f, 14f, 8f, 14f); p.Stroke();
-                    Path(22f, 20f); Curve(22f, 16.7f, 19.3f, 14f, 16f, 14f); p.Stroke();
-                    Path(8f, 14f); Curve(9.5f, 14f, 10.9f, 14.6f, 12f, 15.5f); Curve(13.1f, 14.6f, 14.5f, 14f, 16f, 14f); p.Stroke();
+                    // Two players side by side, each a head over their own shoulders with a clear gap
+                    // between them. An earlier version joined the two sets of shoulders with one curve
+                    // in the middle, which read as a single body with two heads.
+                    Bust(6.5f);
+                    Bust(17.5f);
                     break;
 
                 case Glyph.Robot:
@@ -220,6 +221,18 @@ namespace TableFootball.UI.Toolkit
                     Path(16.5f, 8.5f); Curve(18.5f, 10.5f, 18.5f, 13.5f, 16.5f, 15.5f); p.Stroke();
                     break;
             }
+        }
+
+        /// <summary>One player: a head, and closed rounded shoulders beneath it, centred on
+        /// <paramref name="cx"/>. 9 units wide, so two fit side by side with a gap.</summary>
+        private void Bust(float cx)
+        {
+            Circle(cx, 8f, 3f);
+            Path(cx - 4.5f, 20f);
+            Curve(cx - 4.5f, 16.3f, cx - 2.5f, 13.5f, cx, 13.5f);
+            Curve(cx + 2.5f, 13.5f, cx + 4.5f, 16.3f, cx + 4.5f, 20f);
+            p.ClosePath();
+            p.Stroke();
         }
 
         private void Path(float x, float y)
