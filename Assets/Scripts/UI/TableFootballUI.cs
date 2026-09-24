@@ -64,6 +64,7 @@ namespace TableFootball.UI
             if (signInAtBoot)
             {
                 _ = GameServices.EnsureSignedInAsync();
+                _ = PlayerAccount.RefreshWithRetryAsync();
                 _ = FriendsHub.EnsureReadyAsync();
 
                 // Pulls this player's cloud save into the local progression stores. Fire-and-forget
