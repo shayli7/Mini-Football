@@ -26,6 +26,9 @@ namespace TableFootball
         [SerializeField] private AudioClip kickOffWhistleClip;
         [SerializeField] private AudioClip fullTimeWhistleClip;
         [SerializeField] private AudioClip uiClickClip;
+        [SerializeField] private AudioClip countdownTickClip;
+        [SerializeField] private AudioClip countdownGoClip;
+        [SerializeField] private AudioClip questClip;
 
         [Header("Menu music (placeholder — silent until a clip is assigned)")]
         [Tooltip("Looping music for the main menu. Drop a clip here or place one at Resources/Audio/MenuMusic. " +
@@ -43,6 +46,8 @@ namespace TableFootball
         private const string StartWhistle = "StartWhistle";
         private const string EndWhistle = "EndWhistle";
         private const string MenuMusic = "MenuMusic";
+        private const string CountdownTickName = "CountdownTick";
+        private const string CountdownGoName = "CountdownGo";
 
         [Header("Mix")]
         [Tooltip("Kick loudness. Allowed above 1 to amplify: the recording's own level sets the " +
@@ -55,6 +60,9 @@ namespace TableFootball
         [Range(0f, 1f)] [SerializeField] private float goalVolume = 0.7f;
         [Range(0f, 1f)] [SerializeField] private float whistleVolume = 0.45f;
         [Range(0f, 1f)] [SerializeField] private float uiVolume = 0.35f;
+        [Tooltip("Loudness of the pre-match countdown beeps and the GO.")]
+        [Range(0f, 1f)] [SerializeField] private float countdownVolume = 0.55f;
+        [Range(0f, 1f)] [SerializeField] private float questVolume = 0.5f;
 
         [Header("Voices")]
         [Tooltip("How many sounds may overlap. A busy rally can start several impacts at once.")]
@@ -219,10 +227,43 @@ namespace TableFootball
                           instance.whistleVolume, 1f);
         }
 
+        /// <summary>
+        /// A quest clearing on the result screen.
+        ///
+        /// <paramref name="step"/> is the row's place in the ledger, and raises the pitch a tone each
+        /// time. Three rows then climb, and that climb is most of what makes clearing the set feel
+        /// like more than clearing one quest — the same trick the score count-up uses, spread over
+        /// the whole list instead of one number.
+        /// </summary>
+        public static void PlayQuestComplete(int step)
+        {
+            if (instance == null) return;
+            instance.Play(instance.questClip ?? SfxLibrary.Reward,
+                          instance.questVolume,
+                          // A whole tone is 2^(2/12). Capped, or a four-row ledger ends up shrill.
+                          Mathf.Pow(1.122462f, Mathf.Clamp(step, 0, 3)));
+        }
+
         public static void PlayUiClick()
         {
             if (instance == null) return;
             instance.Play(instance.uiClickClip ?? SfxLibrary.UiClick, instance.uiVolume, 1f);
+        }
+
+        /// <summary>One "3", "2" or "1" of the pre-match countdown.</summary>
+        public static void PlayCountdownTick()
+        {
+            if (instance == null) return;
+            instance.Play(Resolve(instance.countdownTickClip, CountdownTickName, SfxLibrary.CountdownTick),
+                          instance.countdownVolume, 1f);
+        }
+
+        /// <summary>The "GO!" that starts play.</summary>
+        public static void PlayCountdownGo()
+        {
+            if (instance == null) return;
+            instance.Play(Resolve(instance.countdownGoClip, CountdownGoName, SfxLibrary.CountdownGo),
+                          instance.countdownVolume, 1f);
         }
 
         /// <summary>

@@ -1,4 +1,5 @@
 using System;
+using TableFootball.Net;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -113,6 +114,109 @@ namespace TableFootball.UI
             return img;
         }
 
+        /// <summary>
+        /// The shared dim behind a menu that floats over the game: a translucent <see cref="ArcadeTheme.BgDeep"/>
+        /// sheet, full-bleed and raycast-blocking. The lit table (or the frozen match) shows through it
+        /// darkened, and nothing behind is clickable.
+        ///
+        /// One definition, used by the pause/settings overlay AND the account, friends and online
+        /// screens, so they all wear the exact same background rather than each inventing its own — the
+        /// single design language the front end reads in. It replaced the opaque <see cref="Backdrop"/>
+        /// on those screens, which sealed the table off and made each one look like a different app
+        /// from the menu it was opened from.
+        /// </summary>
+        public static Image ScrimDim(Transform parent, float alpha = 0.72f)
+        {
+            var go = Child(parent, "ScrimDim");
+            var img = go.AddComponent<Image>();
+            img.color = ArcadeTheme.BgDeep.WithAlpha(alpha);
+            img.raycastTarget = true;
+            Stretch(Rt(go), -ArcadeTheme.Bleed);
+            return img;
+        }
+
+        /// <summary>
+        /// The main menu's floor when the live 3D table is showing behind it: a translucent scrim
+        /// instead of the opaque <see cref="Backdrop"/>, so the table reads through while the UI stays
+        /// legible.
+        ///
+        /// Three layers: a flat dark tint over the whole screen for baseline contrast, then a stronger
+        /// gradient banked into the top (behind the logo) and the bottom (behind the cards and footer)
+        /// where the text actually sits — the middle, where the table is the hero, stays clearest.
+        /// A pair of faint coloured glows read as stadium lights.
+        ///
+        /// Raycast-blocking on the base layer: it is still the floor of a menu, and the table behind
+        /// it must not be clickable.
+        /// </summary>
+        public static Image StageScrim(Transform parent, string name = "StageScrim")
+        {
+            var go = Child(parent, name);
+            var tint = go.AddComponent<Image>();
+            tint.sprite = ArcadeTheme.RoundedSolid(ArcadeTheme.RadSm);
+            tint.type = Image.Type.Sliced;
+            tint.pixelsPerUnitMultiplier = 1f;
+            // The top/bottom gradients below and the flat wash here were both tuned to fade OUT by
+            // mid-screen, so the live table showed through most strongly in exactly the band the mode
+            // cards sit in — a bright, busy pitch felt fighting the dark panels for attention rather
+            // than sitting behind them. The flat wash now carries real weight on its own; the gradients
+            // and stadium lights below layer accents on top of it rather than being the only thing
+            // darkening the middle of the screen.
+            tint.color = ArcadeTheme.BgDeep.WithAlpha(0.58f);
+            tint.raycastTarget = true;
+            Stretch(Rt(go), -ArcadeTheme.Bleed);
+
+            // Bottom gradient: darkest at the very bottom, fading out by mid-screen. Behind the cards
+            // and the footer.
+            var bottom = Child(go.transform, "Bottom");
+            var bimg = bottom.AddComponent<Image>();
+            bimg.sprite = ArcadeTheme.Scrim();
+            bimg.color = Color.white.WithAlpha(0.75f);
+            bimg.raycastTarget = false;
+            var brt = Rt(bottom);
+            brt.anchorMin = new Vector2(0f, 0f);
+            brt.anchorMax = new Vector2(1f, 0.5f);
+            brt.offsetMin = new Vector2(-ArcadeTheme.Bleed, -ArcadeTheme.Bleed);
+            brt.offsetMax = new Vector2(ArcadeTheme.Bleed, 0f);
+
+            // Top gradient: the same ramp flipped, behind the logo.
+            var top = Child(go.transform, "Top");
+            var timg = top.AddComponent<Image>();
+            timg.sprite = ArcadeTheme.Scrim();
+            timg.color = Color.white.WithAlpha(0.7f);
+            timg.raycastTarget = false;
+            var trt = Rt(top);
+            trt.anchorMin = new Vector2(0f, 0.5f);
+            trt.anchorMax = new Vector2(1f, 1f);
+            trt.offsetMin = new Vector2(-ArcadeTheme.Bleed, 0f);
+            trt.offsetMax = new Vector2(ArcadeTheme.Bleed, ArcadeTheme.Bleed);
+            trt.localRotation = Quaternion.Euler(0f, 0f, 180f);
+
+            // Stadium lights across the top, drifting so the light is never quite still: one broad
+            // blue key light over the centre, two fainter ones either side. All blue — gold is the
+            // highlight colour, and a gold wash behind everything would spend it on the background.
+            StageGlow(go.transform, ArcadeTheme.Blue, new Vector2(0.5f, 1.02f), 0.22f, 1040f);
+            StageGlow(go.transform, ArcadeTheme.BlueSoft, new Vector2(0.2f, 0.9f), 0.08f);
+            StageGlow(go.transform, ArcadeTheme.BlueSoft, new Vector2(0.8f, 0.92f), 0.08f);
+
+            return tint;
+        }
+
+        private static void StageGlow(Transform parent, Color color, Vector2 anchor,
+                                      float alpha = 0.14f, float size = 760f)
+        {
+            var go = Child(parent, "StadiumLight");
+            var img = go.AddComponent<Image>();
+            img.sprite = ArcadeTheme.DiscGlow(40f);
+            img.type = Image.Type.Simple;
+            img.color = color.WithAlpha(alpha);
+            img.raycastTarget = false;
+            var rt = Rt(go);
+            rt.anchorMin = rt.anchorMax = anchor;
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(size, size);
+            go.AddComponent<UIAmbientDrift>().Configure(20f, 34f);
+        }
+
         // ---------- logo ----------
 
         /// <summary>
@@ -144,6 +248,19 @@ namespace TableFootball.UI
                 // what the player actually grabs on the table.
                 Bar(mark.transform, ArcadeTheme.Red, -markSize * 0.62f, markSize, scale);
                 Bar(mark.transform, ArcadeTheme.Blue, markSize * 0.62f, markSize, scale);
+
+                // A soft halo behind the ball, so the mark reads as lit rather than pasted flat onto
+                // the scrim. Faint — it is identity, not a highlight.
+                var halo = Child(mark.transform, "Halo");
+                var haloImg = halo.AddComponent<Image>();
+                haloImg.sprite = ArcadeTheme.DiscGlow(40f);
+                haloImg.color = ArcadeTheme.Gold.WithAlpha(0.28f);
+                haloImg.raycastTarget = false;
+                var hrt = Rt(halo);
+                hrt.anchorMin = hrt.anchorMax = new Vector2(0.5f, 0.5f);
+                hrt.pivot = new Vector2(0.5f, 0.5f);
+                hrt.sizeDelta = new Vector2(markSize * 1.5f, markSize * 1.5f);
+                hrt.anchoredPosition = Vector2.zero;
 
                 var ball = Child(mark.transform, "Ball");
                 var ballImg = ball.AddComponent<Image>();
@@ -208,7 +325,7 @@ namespace TableFootball.UI
             var shadow = Child(root.transform, "Shadow");
             GlowImage(shadow, ArcadeTheme.RadLg, ArcadeTheme.ShadowFeather,
                       Color.black.WithAlpha(ArcadeTheme.ShadowAlpha));
-            Stretch(Rt(shadow), -12, -16, -12, -8);
+            Stretch(Rt(shadow), -24, -30, -24, -16);
 
             // border
             var border = Child(root.transform, "Border");
@@ -309,7 +426,7 @@ namespace TableFootball.UI
         // ---------- round icon buttons ----------
 
         /// <summary>Which glyph a round icon button draws.</summary>
-        public enum Icon { Door, Person, Sliders }
+        public enum Icon { Door, Person, Sliders, Eye, Dice, Trophy, Store, Path, Quest }
 
         private static Image CircleImage(GameObject go, Color color, bool raycast)
         {
@@ -450,6 +567,18 @@ namespace TableFootball.UI
                     Dot(clip.transform, ArcadeTheme.Ink, new Vector2(0f, -17f), 28f);
                     break;
 
+                case Icon.Quest:
+                    // A checklist part-way through: three lines, the done ones ticked gold. The
+                    // screen behind this button is a list with things to clear off it, and the
+                    // glyph says that and also says there is something waiting.
+                    Rod(g, ArcadeTheme.Ink.WithAlpha(0.75f), new Vector2(4f, 10f), 20f, 3f, 0f);
+                    Rod(g, ArcadeTheme.Ink.WithAlpha(0.75f), new Vector2(4f, 0f), 20f, 3f, 0f);
+                    Rod(g, ArcadeTheme.Ink.WithAlpha(0.45f), new Vector2(4f, -10f), 20f, 3f, 0f);
+                    Dot(g, ArcadeTheme.Gold, new Vector2(-11f, 10f), 8f);
+                    Dot(g, ArcadeTheme.Gold, new Vector2(-11f, 0f), 8f);
+                    Dot(g, ArcadeTheme.Ink.WithAlpha(0.3f), new Vector2(-11f, -10f), 8f);
+                    break;
+
                 case Icon.Sliders:
                     // Three sliders, because that is literally what the settings panel contains:
                     // music volume, sfx volume, difficulty. A gear would say "options" in the
@@ -457,6 +586,91 @@ namespace TableFootball.UI
                     Bar3(g, 10f, -6f);
                     Bar3(g, 0f, 5f);
                     Bar3(g, -10f, -2f);
+                    break;
+
+                case Icon.Eye:
+                    // A lens with a pupil — the show/hide-password toggle every text app uses. Drawn
+                    // as an outer Ink lens, a lighter inner, and a dark pupil, so it reads as an eye at
+                    // this size where a single outline would just be a blob.
+                    var lens = Child(g, "Lens");
+                    RoundedImage(lens, ArcadeTheme.RadLg, ArcadeTheme.Ink, false);
+                    var lrt = Rt(lens);
+                    lrt.anchorMin = lrt.anchorMax = new Vector2(0.5f, 0.5f);
+                    lrt.pivot = new Vector2(0.5f, 0.5f);
+                    lrt.sizeDelta = new Vector2(30f, 18f);
+                    lrt.anchoredPosition = Vector2.zero;
+
+                    var lensInner = Child(g, "LensInner");
+                    RoundedImage(lensInner, ArcadeTheme.RadLg, ArcadeTheme.BgRaised, false);
+                    var irt = Rt(lensInner);
+                    irt.anchorMin = irt.anchorMax = new Vector2(0.5f, 0.5f);
+                    irt.pivot = new Vector2(0.5f, 0.5f);
+                    irt.sizeDelta = new Vector2(24f, 12f);
+                    irt.anchoredPosition = Vector2.zero;
+
+                    Dot(g, ArcadeTheme.Ink, Vector2.zero, 9f);
+                    break;
+
+                case Icon.Trophy:
+                    // A cup: bowl, two handles, stem and base. The ranked mark — a league badge would
+                    // have to change with the tier, and this button means "ranked" whatever tier you
+                    // are in. Drawn in Gold by TrophyGlyph's caller tint.
+                    TrophyGlyph(g, ArcadeTheme.Gold, ArcadeTheme.BgRaised);
+                    break;
+
+                case Icon.Dice:
+                    // A five-pip die — "roll me a random one". The dots are the panel colour punched
+                    // out of an Ink body, the same figure-and-ground trick the other glyphs use.
+                    var die = Child(g, "Die");
+                    RoundedImage(die, ArcadeTheme.RadSm, ArcadeTheme.Ink, false);
+                    var drt2 = Rt(die);
+                    drt2.anchorMin = drt2.anchorMax = new Vector2(0.5f, 0.5f);
+                    drt2.pivot = new Vector2(0.5f, 0.5f);
+                    drt2.sizeDelta = new Vector2(30f, 30f);
+                    drt2.anchoredPosition = Vector2.zero;
+                    Dot(die.transform, ArcadeTheme.BgRaised, new Vector2(-7f, 7f), 6f);
+                    Dot(die.transform, ArcadeTheme.BgRaised, new Vector2(7f, 7f), 6f);
+                    Dot(die.transform, ArcadeTheme.BgRaised, new Vector2(0f, 0f), 6f);
+                    Dot(die.transform, ArcadeTheme.BgRaised, new Vector2(-7f, -7f), 6f);
+                    Dot(die.transform, ArcadeTheme.BgRaised, new Vector2(7f, -7f), 6f);
+                    break;
+
+                case Icon.Store:
+                    // A shop awning over a counter: three coloured stripes on a bar, with the shop
+                    // front under it. A shopping trolley or a bag would be the wrong promise — nothing
+                    // here is bought with money, and a till reads as a real-currency store. An awning
+                    // says "a place with things on display", which is exactly what it is.
+                    Rod(g, ArcadeTheme.Coin, new Vector2(0f, 9f), 32f, 10f, 0f);
+                    Rod(g, ArcadeTheme.CoinDark, new Vector2(-8f, 9f), 8f, 10f, 0f);
+                    Rod(g, ArcadeTheme.CoinDark, new Vector2(8f, 9f), 8f, 10f, 0f);
+
+                    var front = Child(g, "Front");
+                    RoundedImage(front, ArcadeTheme.RadSm, ArcadeTheme.Ink, false);
+                    var frt = Rt(front);
+                    frt.anchorMin = frt.anchorMax = new Vector2(0.5f, 0.5f);
+                    frt.pivot = new Vector2(0.5f, 0.5f);
+                    frt.sizeDelta = new Vector2(26f, 18f);
+                    frt.anchoredPosition = new Vector2(0f, -6f);
+
+                    // The doorway, punched out of the shop front in the button's own fill colour.
+                    var doorway = Child(front.transform, "Doorway");
+                    RoundedImage(doorway, 2, ArcadeTheme.BgRaised, false);
+                    var wrt = Rt(doorway);
+                    wrt.anchorMin = new Vector2(0.5f, 0f);
+                    wrt.anchorMax = new Vector2(0.5f, 0f);
+                    wrt.pivot = new Vector2(0.5f, 0f);
+                    wrt.sizeDelta = new Vector2(10f, 12f);
+                    wrt.anchoredPosition = Vector2.zero;
+                    break;
+
+                case Icon.Path:
+                    // Three rungs climbing to the right, the shape of the level path itself seen from
+                    // the side — and the top one gold, because the thing worth walking it for is the
+                    // reward at the end. A star or a chest would say "reward" without saying "path",
+                    // and the button is the way IN to the path, not the prize.
+                    Rod(g, ArcadeTheme.InkMuted, new Vector2(-10f, -10f), 14f, 7f, 0f);
+                    Rod(g, ArcadeTheme.Ink, new Vector2(0f, 0f), 14f, 7f, 0f);
+                    Rod(g, ArcadeTheme.Coin, new Vector2(10f, 10f), 14f, 7f, 0f);
                     break;
             }
         }
@@ -473,6 +687,95 @@ namespace TableFootball.UI
             lrt.anchoredPosition = new Vector2(0f, y);
 
             Dot(parent, ArcadeTheme.Ink, new Vector2(knobX, y), 9f);
+        }
+
+        /// <summary>
+        /// The trophy cup — handles, bowl, stem and base — sized from <paramref name="scale"/> (1 being
+        /// the ~32-unit glyph an <see cref="IconButton"/> holds).
+        ///
+        /// Public so the ranked chip can draw the same cup, larger, beside its score. A second trophy
+        /// hand-drawn at the other size would be a subtly different trophy, and the two sit two
+        /// centimetres apart on the same screen.
+        ///
+        /// <paramref name="holeColor"/> is punched through the handles, so it must match whatever the
+        /// cup is sitting on or the loops fill in solid.
+        /// </summary>
+        public static void TrophyGlyph(Transform parent, Color color, Color holeColor, float scale = 1f)
+        {
+            // Handles first, so the bowl draws over their inner edge and they read as attached to the
+            // cup rather than as two rings parked beside it.
+            TrophyHandle(parent, color, holeColor, -13f * scale, scale);
+            TrophyHandle(parent, color, holeColor, 13f * scale, scale);
+
+            var bowl = Child(parent, "Bowl");
+            RoundedImage(bowl, ArcadeTheme.RadSm, color, false);
+            var brt = Rt(bowl);
+            brt.anchorMin = brt.anchorMax = new Vector2(0.5f, 0.5f);
+            brt.pivot = new Vector2(0.5f, 0.5f);
+            brt.sizeDelta = new Vector2(24f * scale, 21f * scale);
+            brt.anchoredPosition = new Vector2(0f, 7f * scale);
+
+            Rod(parent, color, new Vector2(0f, -6f * scale), 9f * scale, 5f * scale, 90f);  // stem
+            Rod(parent, color, new Vector2(0f, -12f * scale), 20f * scale, 5f * scale, 0f); // base
+        }
+
+        /// <summary>One looped handle on the side of the cup.</summary>
+        private static void TrophyHandle(Transform parent, Color color, Color holeColor,
+                                         float x, float scale)
+        {
+            var ring = Child(parent, "Handle");
+            var img = ring.AddComponent<Image>();
+            img.sprite = ArcadeTheme.Disc();
+            img.color = color;
+            img.raycastTarget = false;
+            var rt = Rt(ring);
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(16f * scale, 16f * scale);
+            rt.anchoredPosition = new Vector2(x, 8f * scale);
+
+            // Punched out, so the handle reads as a loop rather than a blob on the side of the cup.
+            var hole = Child(ring.transform, "Hole");
+            var himg = hole.AddComponent<Image>();
+            himg.sprite = ArcadeTheme.Disc();
+            himg.color = holeColor;
+            himg.raycastTarget = false;
+            Stretch(Rt(hole), 4.5f * scale);
+        }
+
+        /// <summary>
+        /// A pulsing green "online" pip, as a fixed-width layout cell. The dot pulses inside a cell the
+        /// layout has already sized, so the throb never makes the row re-measure and jitter.
+        /// </summary>
+        /// <summary>
+        /// A presence dot, always drawn — green and pulsing when online, a static muted grey when not.
+        /// Used to be built only for the online case, which left an offline row with no status marker
+        /// at all (just its own text drawn muted) rather than a consistent slot every row carries; a
+        /// list of friends reads at a glance when every row has the same dot in the same place, lit
+        /// differently, rather than some rows growing a dot and others not.
+        /// </summary>
+        public static GameObject OnlinePip(Transform parent, bool online, float size = 18f)
+        {
+            var cell = Child(parent, "OnlinePip");
+            var le = cell.AddComponent<LayoutElement>();
+            le.preferredWidth = size;
+            le.minWidth = size;
+            le.preferredHeight = size;
+
+            var dot = Child(cell.transform, "Dot");
+            var img = dot.AddComponent<Image>();
+            img.sprite = ArcadeTheme.Disc();
+            img.color = online ? ArcadeTheme.Go : ArcadeTheme.InkMuted.WithAlpha(0.55f);
+            img.raycastTarget = false;
+            var rt = Rt(dot);
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(size, size);
+
+            // Pulsing only when online — a "live" animation on someone who is NOT online would claim
+            // an activity that is not happening.
+            if (online) dot.AddComponent<UIPulse>();
+            return cell;
         }
 
         // ---------- tile badges ----------
@@ -572,6 +875,138 @@ namespace TableFootball.UI
             rt.localRotation = Quaternion.Euler(0f, 0f, angle);
         }
 
+        /// <summary>
+        /// A small green disc with a check mark, pinned to a corner to say "this is what you have
+        /// equipped" — unambiguous at a glance, rather than the footer's own small "EQUIPPED" word
+        /// being the only signal a card is worn versus merely owned.
+        /// </summary>
+        public static GameObject EquippedCheck(Transform parent, float size = 28f)
+        {
+            var badge = Child(parent, "EquippedCheck");
+            var rt = Rt(badge);
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(size, size);
+
+            // A dark ring behind the green disc, so the badge reads as its own chip against whatever
+            // colour the card happens to be behind it, rather than blending into the card fill.
+            var ring = Child(badge.transform, "Ring");
+            var ringImg = ring.AddComponent<Image>();
+            ringImg.sprite = ArcadeTheme.Disc();
+            ringImg.color = ArcadeTheme.BgDeep;
+            ringImg.raycastTarget = false;
+            var ringRt = Rt(ring);
+            ringRt.anchorMin = ringRt.anchorMax = new Vector2(0.5f, 0.5f);
+            ringRt.pivot = new Vector2(0.5f, 0.5f);
+            ringRt.sizeDelta = new Vector2(size * 1.18f, size * 1.18f);
+
+            var disc = Child(badge.transform, "Disc");
+            var discImg = disc.AddComponent<Image>();
+            discImg.sprite = ArcadeTheme.Disc();
+            discImg.color = ArcadeTheme.Go;
+            discImg.raycastTarget = false;
+            Stretch(Rt(disc), 0);
+
+            // The check: two short bars meeting at an elbow, derived from three points at build time
+            // rather than hand-tuned numbers, so it stays a correct check mark at any size passed in.
+            Vector2 a = new Vector2(-0.30f, -0.02f) * size;
+            Vector2 b = new Vector2(-0.06f, -0.24f) * size;
+            Vector2 c = new Vector2(0.32f, 0.22f) * size;
+            float thickness = Mathf.Max(2.4f, size * 0.14f);
+            CheckSegment(disc.transform, a, b, thickness);
+            CheckSegment(disc.transform, b, c, thickness);
+
+            return badge;
+        }
+
+        private static void CheckSegment(Transform parent, Vector2 from, Vector2 to, float thickness)
+        {
+            Vector2 delta = to - from;
+            // A hair longer than the raw distance so the two segments' rounded ends overlap cleanly
+            // at the elbow instead of leaving a visible notch.
+            float length = delta.magnitude + thickness * 0.5f;
+            float angle = Mathf.Atan2(delta.y, delta.x) * Mathf.Rad2Deg;
+            Vector2 mid = (from + to) * 0.5f;
+            Rod(parent, Color.white, mid, length, thickness, angle);
+        }
+
+        // ---------- pitch illustration ----------
+
+        /// <summary>
+        /// A stylised top-down pitch, drawn into a mode card that has no photo. It replaces the flat
+        /// "ARTWORK" placeholder, which read as an empty frame waiting for a picture — the very thing
+        /// that made the cards look like images pasted onto the menu. Chalk on turf, from the same
+        /// primitives as the badges, so the whole set stays art-free and consistent.
+        /// </summary>
+        private static void PitchArt(Transform picture)
+        {
+            Color chalk = Color.white.WithAlpha(0.30f);
+
+            // The halfway line, across the middle.
+            var line = Child(picture, "Halfway");
+            var limg = line.AddComponent<Image>();
+            limg.sprite = ArcadeTheme.RoundedSolid(2);
+            limg.type = Image.Type.Sliced;
+            limg.pixelsPerUnitMultiplier = 1f;
+            limg.color = chalk;
+            limg.raycastTarget = false;
+            var lrt = Rt(line);
+            lrt.anchorMin = new Vector2(0.08f, 0.5f);
+            lrt.anchorMax = new Vector2(0.92f, 0.5f);
+            lrt.offsetMin = new Vector2(0f, -1.5f);
+            lrt.offsetMax = new Vector2(0f, 1.5f);
+
+            // The centre circle — a ring left by punching turf out of a white disc, the same
+            // figure-and-ground trick the eye glyph uses.
+            var ring = Child(picture, "CentreRing");
+            var rimg = ring.AddComponent<Image>();
+            rimg.sprite = ArcadeTheme.Disc();
+            rimg.color = chalk;
+            rimg.raycastTarget = false;
+            var rrt = Rt(ring);
+            rrt.anchorMin = rrt.anchorMax = new Vector2(0.5f, 0.5f);
+            rrt.pivot = new Vector2(0.5f, 0.5f);
+            rrt.sizeDelta = new Vector2(92f, 92f);
+            var ringTurf = Child(ring.transform, "Turf");
+            var rtimg = ringTurf.AddComponent<Image>();
+            rtimg.sprite = ArcadeTheme.Disc();
+            rtimg.color = ArcadeTheme.Pitch;
+            rtimg.raycastTarget = false;
+            Stretch(Rt(ringTurf), 3f);
+
+            GoalArea(picture, chalk, true);
+            GoalArea(picture, chalk, false);
+
+            // The ball on the centre spot — the one warm point among the chalk.
+            Dot(picture, ArcadeTheme.Gold, Vector2.zero, 14f);
+        }
+
+        /// <summary>One penalty box, a white outline near the top or bottom edge of the pitch.</summary>
+        private static void GoalArea(Transform picture, Color chalk, bool top)
+        {
+            var box = Child(picture, "GoalArea");
+            var bimg = box.AddComponent<Image>();
+            bimg.sprite = ArcadeTheme.RoundedSolid(ArcadeTheme.RadSm);
+            bimg.type = Image.Type.Sliced;
+            bimg.pixelsPerUnitMultiplier = 1f;
+            bimg.color = chalk;
+            bimg.raycastTarget = false;
+            var brt = Rt(box);
+            brt.anchorMin = new Vector2(0.30f, top ? 0.80f : 0.04f);
+            brt.anchorMax = new Vector2(0.70f, top ? 0.96f : 0.20f);
+            brt.offsetMin = Vector2.zero;
+            brt.offsetMax = Vector2.zero;
+
+            var turf = Child(box.transform, "Turf");
+            var timg = turf.AddComponent<Image>();
+            timg.sprite = ArcadeTheme.RoundedSolid(ArcadeTheme.RadSm);
+            timg.type = Image.Type.Sliced;
+            timg.pixelsPerUnitMultiplier = 1f;
+            timg.color = ArcadeTheme.Pitch;
+            timg.raycastTarget = false;
+            Stretch(Rt(turf), 2.5f);
+        }
+
         // ---------- tile ----------
 
         /// <summary>
@@ -596,6 +1031,17 @@ namespace TableFootball.UI
             le.minWidth = width;
             le.preferredHeight = height;
             le.minHeight = height;
+
+            // A real drop shadow, always on — separate from the Gold interactive glow right below it,
+            // which sits at alpha 0 until hovered/pressed and so gives the card no lift at rest at
+            // all. Every other panel in the game (Panel itself, the store's cards) casts a shadow
+            // whether or not anything is touching it; the mode cards were the one surface that
+            // floated flush with the background until something interacted with them, which is what
+            // let a busy backdrop behind them compete for attention instead of sitting visibly behind.
+            var shadowGo = Child(root.transform, "Shadow");
+            GlowImage(shadowGo, ArcadeTheme.RadLg, ArcadeTheme.ShadowFeather,
+                      Color.black.WithAlpha(ArcadeTheme.ShadowAlpha));
+            Stretch(Rt(shadowGo), -10, -14, -10, -6);
 
             var glowGo = Child(root.transform, "Glow");
             var glow = GlowImage(glowGo, ArcadeTheme.RadLg, 30f, ArcadeTheme.Gold.WithAlpha(0f));
@@ -622,10 +1068,12 @@ namespace TableFootball.UI
             }
             else
             {
+                // Turf, not a flat panel: with no photo the card draws a pitch instead of an empty
+                // frame (see PitchArt below), and the green is that pitch's grass.
                 picture.sprite = ArcadeTheme.RoundedSolid(ArcadeTheme.RadMd);
                 picture.type = Image.Type.Sliced;
                 picture.pixelsPerUnitMultiplier = 1f;
-                picture.color = ArcadeTheme.BgPanel;
+                picture.color = ArcadeTheme.Pitch;
             }
 
             // The picture takes everything above the caption strip, so a bigger card is mostly a
@@ -633,15 +1081,15 @@ namespace TableFootball.UI
             var prt = Rt(pictureGo);
             prt.anchorMin = Vector2.zero;
             prt.anchorMax = Vector2.one;
-            prt.offsetMin = new Vector2(16f, note != null ? 78f : 62f);
+            prt.offsetMin = new Vector2(16f, note != null ? 92f : 66f);
             prt.offsetMax = new Vector2(-16f, -16f);
 
             if (art == null)
             {
-                var hint = Text(pictureGo.transform, "ARTWORK", ArcadeTheme.FsCaption,
-                                ArcadeTheme.InkMuted.WithAlpha(0.5f), bold: true, upper: true,
-                                tracking: 6f);
-                Stretch(Rt(hint.gameObject), 0);
+                // A drawn pitch instead of the old "ARTWORK" word. The placeholder used to announce
+                // that the card was unfinished; this makes the card look designed on its own terms,
+                // with the badge below still saying which mode it is.
+                PitchArt(pictureGo.transform);
             }
 
             // Scrim over the lower third of the photo. Added even on the placeholder so the card's
@@ -664,8 +1112,10 @@ namespace TableFootball.UI
             var lrt = Rt(label.gameObject);
             lrt.anchorMin = Vector2.zero;
             lrt.anchorMax = new Vector2(1f, 0f);
-            lrt.offsetMin = new Vector2(8f, note != null ? 26f : 12f);
-            lrt.offsetMax = new Vector2(-8f, note != null ? 52f : 46f);
+            // Clear of the card's bottom edge with room to breathe — the note used to sit right on
+            // the border, and the caption was crowded down onto it.
+            lrt.offsetMin = new Vector2(8f, note != null ? 40f : 14f);
+            lrt.offsetMax = new Vector2(-8f, note != null ? 70f : 50f);
 
             if (note != null)
             {
@@ -674,15 +1124,19 @@ namespace TableFootball.UI
                 var srt = Rt(sub.gameObject);
                 srt.anchorMin = Vector2.zero;
                 srt.anchorMax = new Vector2(1f, 0f);
-                srt.offsetMin = new Vector2(8f, 8f);
-                srt.offsetMax = new Vector2(-8f, 26f);
+                srt.offsetMin = new Vector2(8f, 16f);
+                srt.offsetMax = new Vector2(-8f, 38f);
             }
 
             var btn = root.AddComponent<MenuButton>();
             btn.fill = fill; btn.border = border; btn.glow = glow; btn.label = label;
             btn.targetGraphic = fill;
             btn.Configure(MenuButton.Variant.Neutral);
-            if (primary) btn.SetAccent(ArcadeTheme.Gold, 0.3f);
+            if (primary)
+            {
+                btn.SetAccent(ArcadeTheme.Gold, 0.3f);
+                UIShine.AddTo(btn);
+            }
             if (onClick != null) btn.onClick.AddListener(() => onClick());
 
             btn.interactable = interactable;
@@ -783,6 +1237,140 @@ namespace TableFootball.UI
             return input;
         }
 
+        // ---------- fields with a trailing icon button ----------
+
+        /// <summary>
+        /// A password field with a show/hide eye button beside it — the toggle every text app has. The
+        /// eye flips the field between masked and plain and lifts a slash off its lens to say which
+        /// state it is in; masked by default, so the slash starts on.
+        ///
+        /// Returns the <see cref="TMP_InputField"/> itself, exactly like <see cref="TextInput"/>, so a
+        /// caller swaps one for the other without changing anything downstream.
+        /// </summary>
+        public static TMP_InputField PasswordField(Transform parent, string placeholder,
+                                                   int characterLimit, float height = 54f)
+        {
+            var row = FieldRow(parent, height);
+
+            var input = TextInput(row.transform, placeholder, characterLimit,
+                                  TMP_InputField.CharacterValidation.None, password: true, height: height);
+            input.GetComponent<LayoutElement>().flexibleWidth = 1f;
+
+            var eye = IconButton(row.transform, "Eye", Icon.Eye, MenuButton.Variant.Neutral,
+                                 null, size: height);
+            PinSquare(eye, height);
+
+            var slash = EyeSlash(eye.transform.Find("Glyph"));
+            bool shown = false;
+            eye.onClick.AddListener(() =>
+            {
+                shown = !shown;
+                input.contentType = shown
+                    ? TMP_InputField.ContentType.Standard
+                    : TMP_InputField.ContentType.Password;
+                // The field only re-masks/unmasks on the next redraw; force it so the toggle is felt on
+                // the text already typed, not only on the next character entered.
+                input.ForceLabelUpdate();
+                if (slash != null) slash.SetActive(!shown);
+            });
+
+            return input;
+        }
+
+        /// <summary>
+        /// A username field with a dice beside it that fills a valid random name in one tap. It writes
+        /// straight into the field, so the name stays the player's to edit or clear.
+        /// </summary>
+        public static TMP_InputField UsernameField(Transform parent, string placeholder,
+                                                   int characterLimit, float height = 54f)
+        {
+            var row = FieldRow(parent, height);
+
+            var input = TextInput(row.transform, placeholder, characterLimit,
+                                  TMP_InputField.CharacterValidation.None, height: height);
+            input.GetComponent<LayoutElement>().flexibleWidth = 1f;
+
+            var dice = IconButton(row.transform, "Random", Icon.Dice, MenuButton.Variant.Neutral,
+                                  () => input.text = RandomUsername(), size: height);
+            PinSquare(dice, height);
+
+            return input;
+        }
+
+        /// <summary>
+        /// The row a field-plus-button pair sits in: the field flexes to take the width the button
+        /// leaves, and the button is pinned square to the row height by <see cref="PinSquare"/> so it
+        /// lines up with the field rather than being stretched by the layout group.
+        /// </summary>
+        private static GameObject FieldRow(Transform parent, float height)
+        {
+            var row = Child(parent, "FieldRow");
+            var le = row.AddComponent<LayoutElement>();
+            le.preferredHeight = height;
+            le.minHeight = height;
+
+            var h = row.AddComponent<HorizontalLayoutGroup>();
+            h.spacing = ArcadeTheme.Sm;
+            h.childAlignment = TextAnchor.MiddleCenter;
+            h.childForceExpandWidth = false;
+            h.childForceExpandHeight = true;
+            h.childControlWidth = true;
+            h.childControlHeight = true;
+            return row;
+        }
+
+        /// <summary>Pins an icon button to a fixed square so the row's layout group cannot stretch it.</summary>
+        private static void PinSquare(MenuButton button, float size)
+        {
+            var le = button.gameObject.AddComponent<LayoutElement>();
+            le.preferredWidth = size;
+            le.minWidth = size;
+            le.preferredHeight = size;
+            le.minHeight = size;
+            le.flexibleWidth = 0f;
+        }
+
+        /// <summary>The diagonal bar drawn over the eye's lens to mark the masked state.</summary>
+        private static GameObject EyeSlash(Transform glyph)
+        {
+            if (glyph == null)
+            {
+                return null;
+            }
+
+            var go = Child(glyph, "Slash");
+            RoundedImage(go, ArcadeTheme.RadSm, ArcadeTheme.Ink, false);
+            var rt = Rt(go);
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(36f, 3.5f);
+            rt.localRotation = Quaternion.Euler(0f, 0f, 45f);
+            return go;
+        }
+
+        // ---------- random username ----------
+
+        private static readonly string[] NameAdjectives =
+            { "Swift", "Turbo", "Mega", "Neon", "Iron", "Wild", "Rapid", "Cosmic", "Golden", "Silent",
+              "Fierce", "Lucky", "Rogue", "Blazing" };
+
+        private static readonly string[] NameNouns =
+            { "Striker", "Keeper", "Baller", "Rocket", "Comet", "Falcon", "Tiger", "Viper", "Maverick",
+              "Blitz", "Champ", "Bolt" };
+
+        /// <summary>
+        /// A readable random username within the service's rules (3-20 of letters, digits and a few
+        /// symbols — this uses only letters and digits, which are always allowed). Trimmed to 20 as a
+        /// belt-and-braces cap; the word pairs above never reach it.
+        /// </summary>
+        public static string RandomUsername()
+        {
+            string a = NameAdjectives[UnityEngine.Random.Range(0, NameAdjectives.Length)];
+            string n = NameNouns[UnityEngine.Random.Range(0, NameNouns.Length)];
+            string candidate = a + n + UnityEngine.Random.Range(1, 100);
+            return candidate.Length > 20 ? candidate.Substring(0, 20) : candidate;
+        }
+
         /// <summary>Blank vertical space inside a layout group, for separating one run of controls
         /// from the next without a divider.</summary>
         public static GameObject Spacer(Transform parent, float height)
@@ -816,6 +1404,96 @@ namespace TableFootball.UI
         }
 
         // ---------- profile pieces ----------
+
+        /// <summary>
+        /// An XP / progress bar: a deep well with a gold fill that sweeps in when shown, and an
+        /// optional "740 / 1000 XP" caption riding on top of it.
+        ///
+        /// The fill is a <see cref="Image.Type.Filled"/> so a <see cref="UIFillBar"/> can animate its
+        /// <c>fillAmount</c> rather than resizing a rect every frame. Returns the bar root; call
+        /// <see cref="UIFillBar.SetFraction"/> on the returned <see cref="UIFillBar"/> (fetched via
+        /// GetComponentInChildren) to change the value later.
+        ///
+        /// Visual only. Whatever fraction it is handed is a picture of progress, not a claim that any
+        /// progression system computed it — see <see cref="TableFootball.Net.PlayerProgress"/>.
+        /// </summary>
+        public static GameObject XpBar(Transform parent, float fraction, string label = null,
+                                       float height = 22f)
+        {
+            var root = Child(parent, "XpBar");
+            var le = root.AddComponent<LayoutElement>();
+            le.preferredHeight = height;
+            le.minHeight = height;
+            le.flexibleWidth = 1f;
+
+            // Everything below is sized FROM the height rather than from constants tuned for one bar.
+            // The radius, the fill inset and the caption all scale together, so the same bar at 16 and
+            // at 30 is the same design twice and not a small one and a stretched one — which is what
+            // made an enlarged chip's bar look wrong.
+            int radius = Mathf.Max(4, Mathf.RoundToInt(height * 0.42f));
+
+            // The track: a well sunk into the panel, like the input fields, so the fill reads as
+            // sitting inside something rather than floating on the surface.
+            //
+            // It is also the MASK for the fill. A Filled image ignores 9-slicing and stretches its
+            // whole sprite across the rect, so a rounded fill drew its corners smeared the length of
+            // the bar. Clipping a square-ended fill to the track's rounded shape instead gives clean
+            // ends at any width, and the wider the bar the more that mattered.
+            var track = Child(root.transform, "Track");
+            RoundedImage(track, radius, ArcadeTheme.BgDeep, false);
+            Stretch(Rt(track), 0);
+            var mask = track.AddComponent<Mask>();
+            mask.showMaskGraphic = true;
+
+            // A rect with zero baked-in rounding, not the outer radius. Image.Type.Filled ignores
+            // 9-slice border data entirely — it stretch-crops the raw sprite texture rather than
+            // preserving corner size — so a sprite baked with the real radius got its corner-rounding
+            // "ramp" stretched across the bar's full width, dragging the left edge into a squashed,
+            // proportionally-smaller-looking chunk of the bar. Radius 0 bakes a plain rectangle with
+            // no curvature to distort, so stretching it is invisible — flat colour is flat colour at
+            // any width.
+            //
+            // It still needs to be a REAL sprite, though — Filled with `sprite == null` isn't merely
+            // "a rounder rectangle", it silently skips ALL of Image's type-specific rendering (Simple,
+            // Sliced, Filled alike) and falls back to Graphic's own OnPopulateMesh, which draws a
+            // plain, full, un-clipped quad. fillAmount is then simply never read: the bar renders
+            // permanently full and SetFraction's sweep has nothing left to animate.
+            var fillGo = Child(track.transform, "Fill");
+            var fill = RoundedImage(fillGo, 0, ArcadeTheme.Gold, false);
+            fill.type = Image.Type.Filled;
+            fill.fillMethod = Image.FillMethod.Horizontal;
+            fill.fillOrigin = (int)Image.OriginHorizontal.Left;
+            fill.fillAmount = Mathf.Clamp01(fraction);
+            // Inset a hair top and bottom so a sliver of the well still shows around the fill, but
+            // flush left and right where the mask is what shapes the ends.
+            Stretch(Rt(fillGo), 0f, 1.5f, 0f, 1.5f);
+
+            var bar = fillGo.AddComponent<UIFillBar>();
+            bar.SetFraction(fraction);
+
+            if (label != null)
+            {
+                // Scaled to the bar it rides on, and capped so a tall bar does not grow a caption
+                // bigger than the name above it.
+                float size = Mathf.Min(height * 0.62f, ArcadeTheme.FsCaption);
+                var t = Text(root.transform, label, size, ArcadeTheme.Ink,
+                             display: false, bold: true, upper: true, tracking: 3f);
+                Stretch(Rt(t.gameObject), 8f, 0f, 8f, 0f);
+
+                // A hard dark shadow rather than nothing: the label rides on top of TWO different
+                // colours at once — dark track on one side of the fill edge, bright gold on the other
+                // — and plain Ink text has almost no contrast against gold specifically (a light label
+                // on a light-ish fill). The shadow gives every character a dark edge regardless of
+                // which side of the fill it happens to fall on, so it reads correctly whatever the
+                // fraction is doing underneath it.
+                var shadow = t.gameObject.AddComponent<Shadow>();
+                shadow.effectColor = Color.black.WithAlpha(0.85f);
+                shadow.effectDistance = new Vector2(0f, -1f);
+                shadow.useGraphicAlpha = true;
+            }
+
+            return root;
+        }
 
         /// <summary>
         /// One big number with a word under it, for a record: 12 WON, 3 LOST, 80% WIN RATE.
@@ -987,7 +1665,9 @@ namespace TableFootball.UI
             tle.preferredWidth = 0f;
             tle.flexibleWidth = 1f;
             var v = textCol.AddComponent<VerticalLayoutGroup>();
-            v.spacing = 0f;
+            // Was 0 — the name and its subtitle sat jammed together with no gap, reading as cramped
+            // against the taller avatar disc beside them.
+            v.spacing = ArcadeTheme.Xs;
             v.childAlignment = TextAnchor.MiddleLeft;
             v.childForceExpandWidth = true;
             v.childForceExpandHeight = false;
@@ -1180,6 +1860,425 @@ namespace TableFootball.UI
 
             Refresh();
             return root;
+        }
+
+        // ---------- rewards: coins, rarity, chests, badges ----------
+
+        /// <summary>
+        /// The colour that stands for a rarity, everywhere it appears — a card edge, a glow, a label,
+        /// a chest. Here rather than in <see cref="ArcadeTheme"/>'s raw palette because this is the
+        /// MAPPING, and a mapping that lived in two files would be two files to keep in step.
+        /// </summary>
+        public static Color RarityColor(Rarity rarity)
+        {
+            switch (rarity)
+            {
+                case Rarity.Rare: return ArcadeTheme.RarityRare;
+                case Rarity.Epic: return ArcadeTheme.RarityEpic;
+                case Rarity.Legendary: return ArcadeTheme.RarityLegendary;
+                default: return ArcadeTheme.RarityCommon;
+            }
+        }
+
+        /// <summary>The tier accent for a league. The one place Net's <see cref="League"/> becomes a
+        /// colour — see <see cref="ArcadeTheme"/>, which holds the metals but not this mapping.</summary>
+        public static Color LeagueColor(League league)
+        {
+            switch (league)
+            {
+                case League.Bronze: return ArcadeTheme.Bronze;
+                case League.Silver: return ArcadeTheme.Silver;
+                case League.Gold: return ArcadeTheme.Gold;
+                case League.Diamond: return ArcadeTheme.Diamond;
+                default: return ArcadeTheme.Gold;
+            }
+        }
+
+        /// <summary>A chest's colour is its tier's rarity colour — the same four steps, so a Rare chest
+        /// and a Rare skin read as the same promise.</summary>
+        public static Color ChestColor(ChestTier tier) => RarityColor((Rarity)(int)tier);
+
+        /// <summary>
+        /// The gold coin, drawn from three discs: a dark rim, a bright face, and a punched emblem.
+        ///
+        /// Every coin in the game comes from here — the header pill, a reward chip, a price tag — so
+        /// the currency is one object the player learns once. Non-raycast throughout: a coin is
+        /// decoration on top of whatever it is labelling, and it must never eat that thing's tap.
+        /// </summary>
+        public static GameObject CoinGlyph(Transform parent, float size = 26f)
+        {
+            var root = Child(parent, "Coin");
+            var rrt = Rt(root);
+            rrt.anchorMin = rrt.anchorMax = new Vector2(0.5f, 0.5f);
+            rrt.pivot = new Vector2(0.5f, 0.5f);
+            rrt.sizeDelta = new Vector2(size, size);
+
+            var rim = Child(root.transform, "Rim");
+            var rimImg = rim.AddComponent<Image>();
+            rimImg.sprite = ArcadeTheme.Disc();
+            rimImg.color = ArcadeTheme.CoinDark;
+            rimImg.raycastTarget = false;
+            Stretch(Rt(rim), 0);
+
+            var face = Child(root.transform, "Face");
+            var faceImg = face.AddComponent<Image>();
+            faceImg.sprite = ArcadeTheme.Disc();
+            faceImg.color = ArcadeTheme.Coin;
+            faceImg.raycastTarget = false;
+            Stretch(Rt(face), size * 0.10f);
+
+            // The mark stamped into the face. A plain dot rather than a letter or a symbol: at the
+            // 18px this is usually drawn at, anything with strokes in it turns to mush, and a coin
+            // with a mark on it is already unmistakably a coin.
+            Dot(face.transform, ArcadeTheme.CoinDark, Vector2.zero, size * 0.30f);
+
+            return root;
+        }
+
+        /// <summary>
+        /// A coin followed by a number — a balance, a price, a reward. Returns the root; fetch the
+        /// number with <c>GetComponentInChildren&lt;TextMeshProUGUI&gt;()</c> to rewrite it later,
+        /// the same way <see cref="XpBar"/> hands back its fill.
+        ///
+        /// Laid out as a row so the number can grow from "0" to "12,400" without the coin drifting or
+        /// the pair needing to be re-centred by hand.
+        /// </summary>
+        public static GameObject CoinAmount(Transform parent, string amount, float height = 30f,
+                                            Color? textColor = null)
+        {
+            var root = Child(parent, "CoinAmount");
+            var le = root.AddComponent<LayoutElement>();
+            le.preferredHeight = height;
+            le.minHeight = height;
+
+            var h = root.AddComponent<HorizontalLayoutGroup>();
+            h.spacing = ArcadeTheme.Xs + 2f;
+            h.childAlignment = TextAnchor.MiddleCenter;
+            h.childForceExpandWidth = false;
+            h.childForceExpandHeight = false;
+            h.childControlWidth = true;
+            h.childControlHeight = true;
+
+            float coin = height * 0.78f;
+            var coinCell = Child(root.transform, "CoinCell");
+            var cle = coinCell.AddComponent<LayoutElement>();
+            cle.preferredWidth = coin;
+            cle.minWidth = coin;
+            cle.preferredHeight = coin;
+            CoinGlyph(coinCell.transform, coin);
+
+            // Not rich text and never upper-cased: it is a number, and both would only give a stray
+            // character somewhere to do damage.
+            var text = Text(root.transform, amount, Mathf.Min(height * 0.62f, ArcadeTheme.FsBody),
+                            textColor ?? ArcadeTheme.Coin, display: true, bold: true, upper: false,
+                            tracking: 1f, align: TextAlignmentOptions.Left, richText: false);
+            text.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
+
+            return root;
+        }
+
+        /// <summary>
+        /// A treasure chest in its tier's colour: body, lid, a band down the front and a coin-gold
+        /// clasp. Drawn rather than imported like everything else here, and sized entirely from
+        /// <paramref name="size"/> so the same chest works as a 40px reward chip and a 140px reveal.
+        /// </summary>
+        public static GameObject ChestGlyph(Transform parent, ChestTier tier, float size = 64f)
+        {
+            Color tint = ChestColor(tier);
+            Color dark = Color.Lerp(tint, ArcadeTheme.BgDeep, 0.45f);
+
+            var root = Child(parent, "Chest");
+            var rrt = Rt(root);
+            rrt.anchorMin = rrt.anchorMax = new Vector2(0.5f, 0.5f);
+            rrt.pivot = new Vector2(0.5f, 0.5f);
+            rrt.sizeDelta = new Vector2(size, size);
+
+            // Body: the lower box.
+            var body = Child(root.transform, "Body");
+            RoundedImage(body, Mathf.Max(3, Mathf.RoundToInt(size * 0.09f)), dark, false);
+            var brt = Rt(body);
+            brt.anchorMin = brt.anchorMax = new Vector2(0.5f, 0.5f);
+            brt.pivot = new Vector2(0.5f, 0.5f);
+            brt.sizeDelta = new Vector2(size * 0.80f, size * 0.44f);
+            brt.anchoredPosition = new Vector2(0f, -size * 0.16f);
+
+            // Lid: brighter, and wider than the body so it overhangs — the one detail that stops a
+            // chest reading as a plain box with a line across it.
+            var lid = Child(root.transform, "Lid");
+            RoundedImage(lid, Mathf.Max(3, Mathf.RoundToInt(size * 0.11f)), tint, false);
+            var lrt = Rt(lid);
+            lrt.anchorMin = lrt.anchorMax = new Vector2(0.5f, 0.5f);
+            lrt.pivot = new Vector2(0.5f, 0.5f);
+            lrt.sizeDelta = new Vector2(size * 0.88f, size * 0.34f);
+            lrt.anchoredPosition = new Vector2(0f, size * 0.14f);
+
+            // The band down the front, and the clasp where it meets the lid. Coin gold on every tier:
+            // the fittings are the same on all four chests, only the wood changes.
+            Rod(root.transform, ArcadeTheme.Coin, new Vector2(0f, -size * 0.10f),
+                size * 0.62f, size * 0.11f, 90f);
+            var clasp = Child(root.transform, "Clasp");
+            RoundedImage(clasp, 3, ArcadeTheme.Coin, false);
+            var crt = Rt(clasp);
+            crt.anchorMin = crt.anchorMax = new Vector2(0.5f, 0.5f);
+            crt.pivot = new Vector2(0.5f, 0.5f);
+            crt.sizeDelta = new Vector2(size * 0.20f, size * 0.16f);
+            crt.anchoredPosition = new Vector2(0f, -size * 0.02f);
+            Dot(clasp.transform, ArcadeTheme.CoinDark, Vector2.zero, size * 0.07f);
+
+            return root;
+        }
+
+        /// <summary>
+        /// A league badge: a ring in the tier's metal with the ranked cup inside it.
+        ///
+        /// The same <see cref="TrophyGlyph"/> the ranked pill and the results banner draw, so a badge
+        /// is recognisably the ranked system's own mark rather than a fifth unrelated trophy. Only the
+        /// metal changes between tiers, which is exactly what a tier IS here.
+        ///
+        /// <paramref name="holeColor"/> fills the badge's face and is punched through the cup's
+        /// handles, so it must match nothing but itself — the face is opaque, so the caller never has
+        /// to know what the badge is sitting on.
+        /// </summary>
+        public static GameObject LeagueBadgeGlyph(Transform parent, League league, float size = 34f)
+        {
+            Color metal = LeagueColor(league);
+
+            var root = Child(parent, "Badge_" + Leagues.Name(league));
+            var rrt = Rt(root);
+            rrt.anchorMin = rrt.anchorMax = new Vector2(0.5f, 0.5f);
+            rrt.pivot = new Vector2(0.5f, 0.5f);
+            rrt.sizeDelta = new Vector2(size, size);
+
+            var ring = Child(root.transform, "Ring");
+            var ringImg = ring.AddComponent<Image>();
+            ringImg.sprite = ArcadeTheme.Disc();
+            ringImg.color = metal;
+            ringImg.raycastTarget = false;
+            Stretch(Rt(ring), 0);
+
+            var face = Child(root.transform, "Face");
+            var faceImg = face.AddComponent<Image>();
+            faceImg.sprite = ArcadeTheme.Disc();
+            faceImg.color = ArcadeTheme.BgDeep;
+            faceImg.raycastTarget = false;
+            Stretch(Rt(face), size * 0.13f);
+
+            // The cup must be scaled against its TRUE width — 42 units, because the two handles splay
+            // out to ±21 — not the ~32 its body suggests. The old `size/32 * 0.62` treated it as 32
+            // wide, so the handles overran the face circle and read as a cup cut off by the rim. And
+            // the cup's bounding box sits 1.5 units high of its own origin (bowl reaches higher than
+            // the base drops), so a holder centred on the face still left the cup riding high; the
+            // nudge drops it back to true centre.
+            float faceDiameter = size * 0.74f;                 // matches the Stretch inset above
+            float scale = faceDiameter * 0.82f / 42f;          // 0.82 leaves a rim of face around the cup
+
+            var cup = Child(face.transform, "Cup");
+            var crt = Rt(cup);
+            crt.anchorMin = crt.anchorMax = new Vector2(0.5f, 0.5f);
+            crt.pivot = new Vector2(0.5f, 0.5f);
+            crt.sizeDelta = new Vector2(size, size);
+            crt.anchoredPosition = new Vector2(0f, -1.5f * scale);
+            TrophyGlyph(cup.transform, metal, ArcadeTheme.BgDeep, scale);
+
+            return root;
+        }
+
+        /// <summary>
+        /// Placeholder artwork for a cosmetic: a rarity-tinted field with the kind's own glyph on it.
+        ///
+        /// EXPLICITLY A PLACEHOLDER, and shaped like one on purpose. It says what KIND of thing the
+        /// item is and how rare it is — the two facts a player needs to shop — without pretending to
+        /// be the skin. When real art arrives, this is the one function that changes and every card,
+        /// reward chip and reveal in the game picks it up.
+        ///
+        /// Fills whatever rect it is given, so the caller sizes the card and this fills it.
+        /// </summary>
+        public static GameObject CosmeticSwatch(Transform parent, CosmeticItem item)
+        {
+            Color tint = RarityColor(item.Rarity);
+
+            var root = Child(parent, "Swatch");
+            Stretch(Rt(root), 0);
+            RoundedImage(root, ArcadeTheme.RadMd, Color.Lerp(ArcadeTheme.BgDeep, tint, 0.14f), false);
+
+            // Clipped, so the diagonals below can run past the edges and be cut square by the card
+            // rather than having to be measured to fit it.
+            var clip = Child(root.transform, "Clip");
+            Stretch(Rt(clip), 1.5f);
+            clip.AddComponent<RectMask2D>();
+
+            // Three diagonal bands, offset by a hash of the id so two items of the same rarity are not
+            // the same picture. Cosmetic only — nothing reads this back.
+            int seed = StableHash(item.Id);
+            for (int i = 0; i < 3; i++)
+            {
+                float offset = -70f + i * 62f + (seed % 26);
+                Rod(clip.transform, tint.WithAlpha(0.13f), new Vector2(offset, 0f), 300f, 22f, 58f);
+            }
+
+            // A real render of the real thing when one exists, and the drawn placeholder when it does
+            // not. The rarity backdrop and its diagonals stay either way: the tint is how a wall of
+            // cards is scanned, and the thumbnails are transparent so it still shows through.
+            Sprite thumb = CosmeticThumbnails.For(item.Id);
+            if (thumb != null)
+            {
+                var art = Child(clip.transform, "Art");
+                var img = art.AddComponent<Image>();
+                img.sprite = thumb;
+                img.raycastTarget = false;
+                // The thumbnails are 2:1 but this is drawn into square reward chips as well as the
+                // store's wide cards, so it letterboxes rather than stretching the ball into an egg.
+                img.preserveAspect = true;
+                Stretch(Rt(art), 2f);
+            }
+            else
+            {
+                KindGlyph(clip.transform, item.Kind, tint);
+            }
+
+            return root;
+        }
+
+        /// <summary>
+        /// The silhouette that says which part of the table a cosmetic dresses — a pitch, a ball, a
+        /// player, a table. Centred in whatever it is dropped into, at a fixed ~64 units, because it
+        /// is a symbol rather than a picture and scaling it with the card would make the small cards
+        /// illegible before the big ones looked any better.
+        /// </summary>
+        private static void KindGlyph(Transform parent, CosmeticKind kind, Color tint)
+        {
+            var holder = Child(parent, "KindGlyph");
+            var grt = Rt(holder);
+            grt.anchorMin = grt.anchorMax = new Vector2(0.5f, 0.5f);
+            grt.pivot = new Vector2(0.5f, 0.5f);
+            grt.sizeDelta = new Vector2(64f, 64f);
+            Transform g = holder.transform;
+
+            switch (kind)
+            {
+                case CosmeticKind.FieldSkin:
+                {
+                    // A pitch seen from above: outline, halfway line, centre spot.
+                    var pitch = Child(g, "Pitch");
+                    RoundedImage(pitch, ArcadeTheme.RadSm, tint.WithAlpha(0.30f), false);
+                    Stretch(Rt(pitch), 6f, 2f, 6f, 2f);
+                    Rod(pitch.transform, tint, Vector2.zero, 42f, 3f, 0f);
+                    Dot(pitch.transform, tint, Vector2.zero, 13f);
+                    break;
+                }
+
+                case CosmeticKind.BallSkin:
+                {
+                    // A ball with three panels punched out of it.
+                    Dot(g, tint, Vector2.zero, 44f);
+                    Dot(g, ArcadeTheme.BgDeep.WithAlpha(0.8f), new Vector2(0f, 8f), 12f);
+                    Dot(g, ArcadeTheme.BgDeep.WithAlpha(0.8f), new Vector2(-11f, -8f), 12f);
+                    Dot(g, ArcadeTheme.BgDeep.WithAlpha(0.8f), new Vector2(11f, -8f), 12f);
+                    break;
+                }
+
+                case CosmeticKind.FigureSkin:
+                {
+                    // A foosball figure on its rod: the bar across the top, the body hanging from it.
+                    Rod(g, tint.WithAlpha(0.55f), new Vector2(0f, 20f), 60f, 6f, 0f);
+                    Dot(g, tint, new Vector2(0f, 6f), 20f);
+                    var legs = Child(g, "Legs");
+                    RoundedImage(legs, ArcadeTheme.RadSm, tint, false);
+                    var lrt = Rt(legs);
+                    lrt.anchorMin = lrt.anchorMax = new Vector2(0.5f, 0.5f);
+                    lrt.pivot = new Vector2(0.5f, 0.5f);
+                    lrt.sizeDelta = new Vector2(26f, 24f);
+                    lrt.anchoredPosition = new Vector2(0f, -12f);
+                    break;
+                }
+
+                case CosmeticKind.TableSkin:
+                {
+                    // The cabinet from above, with its four rods across it.
+                    var box = Child(g, "Cabinet");
+                    RoundedImage(box, ArcadeTheme.RadSm, tint.WithAlpha(0.28f), false);
+                    Stretch(Rt(box), 4f, 8f, 4f, 8f);
+                    for (int i = 0; i < 4; i++)
+                    {
+                        Rod(box.transform, tint, new Vector2(0f, 18f - i * 12f), 56f, 4f, 0f);
+                    }
+                    break;
+                }
+
+                default:
+                {
+                    Dot(g, tint, Vector2.zero, 40f);
+                    break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// A small count pip pinned to the top-right of whatever it is dropped into — "there are three
+        /// rewards waiting". Ignored by layout and non-raycast, so it can be added to a finished button
+        /// without disturbing it.
+        ///
+        /// Returns the pip so the caller can show and hide it as the count changes; the number is its
+        /// only child text.
+        /// </summary>
+        public static GameObject CountPip(Transform parent, int count, float size = 26f)
+        {
+            var pip = Child(parent, "CountPip");
+            pip.AddComponent<LayoutElement>().ignoreLayout = true;
+
+            var rt = Rt(pip);
+            rt.anchorMin = rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(size, size);
+            rt.anchoredPosition = new Vector2(-2f, -2f);
+
+            var img = pip.AddComponent<Image>();
+            img.sprite = ArcadeTheme.Disc();
+            img.color = ArcadeTheme.Red;
+            img.raycastTarget = false;
+
+            // Capped rather than truncated: "9+" is a count a player can act on, and a three-digit
+            // number inside a 26px disc is not.
+            var label = Text(pip.transform, count > 9 ? "9+" : count.ToString(), size * 0.52f,
+                             ArcadeTheme.Ink, display: true, bold: true, upper: false, tracking: 0f,
+                             richText: false);
+            Stretch(Rt(label.gameObject), 0);
+
+            pip.SetActive(count > 0);
+            return pip;
+        }
+
+        /// <summary>
+        /// Rewrites an existing pip's count. Paired with <see cref="CountPip"/> so the "9+" cap lives
+        /// in one place — and so a count that changes often does not destroy and rebuild three objects
+        /// every time it does.
+        /// </summary>
+        public static void SetCountPip(GameObject pip, int count)
+        {
+            if (pip == null)
+            {
+                return;
+            }
+
+            var label = pip.GetComponentInChildren<TextMeshProUGUI>(true);
+            if (label != null) label.text = count > 9 ? "9+" : count.ToString();
+            pip.SetActive(count > 0);
+        }
+
+        /// <summary>
+        /// A deterministic, non-negative hash of a string, for choosing between visual variants.
+        ///
+        /// Not <see cref="string.GetHashCode"/>: that is explicitly allowed to differ between runs and
+        /// platforms, and a swatch that reshuffled its stripes on every launch would look like a bug.
+        /// The same rolling hash <c>PlayerProgress.MockLevelFor</c> already uses.
+        /// </summary>
+        private static int StableHash(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return 0;
+
+            int h = 17;
+            foreach (char c in s) h = unchecked(h * 31 + c);
+            return h & 0x7fffffff;
         }
     }
 }

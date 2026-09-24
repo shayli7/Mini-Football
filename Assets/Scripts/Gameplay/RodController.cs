@@ -176,6 +176,13 @@ namespace TableFootball
         public float MeasuredSpinSpeed => measuredSpinSpeed;
 
         /// <summary>
+        /// Raised at the end of every Tick, once this step's pose has been written to the transform.
+        /// For observers that must read a settled pose rather than a half-updated one — see the call
+        /// site at the bottom of <see cref="Tick"/>.
+        /// </summary>
+        public event System.Action PoseApplied;
+
+        /// <summary>
         /// Set by <see cref="RodAutoLift"/> while it is turning this rod out of the ball's way.
         /// </summary>
         public bool LiftingClear { get; set; }
@@ -441,6 +448,14 @@ namespace TableFootball
 
             MeasureSpin(dt);
             ApplyPose();
+
+            // Fired after the pose for this step is final, so anyone REPORTING the rod reads what it
+            // actually became rather than what it was a step ago. NetworkedRod publishes from here:
+            // it has to run its Follow before this Tick (so a remote pose reaches PhysX in the same
+            // step it arrived) but its Publish after it, and one execution-order attribute cannot say
+            // both. An event settles the ordering for the half that needs to be late, and leaves the
+            // attribute free to serve the half that needs to be early.
+            PoseApplied?.Invoke();
         }
 
         /// <summary>

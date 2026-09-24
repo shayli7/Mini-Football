@@ -93,6 +93,22 @@ namespace TableFootball
         /// <summary>True from the moment a winner is named until the next restart.</summary>
         private bool matchOver;
 
+        /// <summary>
+        /// The host's clock, while one is being sent. Online the two machines used to run entirely
+        /// separate stopwatches — see <see cref="SyncClock"/> for what that cost.
+        /// </summary>
+        private float remoteClock;
+        private bool hasRemoteClock;
+
+        /// <summary>Clock error, in seconds, past which the local clock is set outright instead of
+        /// eased. Ordinary network jitter is far below this; a device that was suspended comes back
+        /// whole seconds out and should simply be corrected.</summary>
+        private const float ClockSnapSeconds = 1f;
+
+        /// <summary>How fast, in seconds per second, a small clock error is taken up. Slow enough to
+        /// be invisible, quick enough that the two clocks never sit apart for long.</summary>
+        private const float ClockCatchUpRate = 0.5f;
+
         private void Awake()
         {
             if (table == null)
@@ -134,12 +150,69 @@ namespace TableFootball
             }
 
             TimeRemaining = Mathf.Max(0f, TimeRemaining - Time.deltaTime);
+
+            if (hasRemoteClock)
+            {
+                TimeRemaining = CorrectedAgainstHost(Time.deltaTime);
+            }
+
             TimeChanged?.Invoke(TimeRemaining);
 
             if (TimeRemaining <= 0f)
             {
                 EndOfNormalTime();
             }
+        }
+
+        /// <summary>
+        /// Pulls the local clock toward the host's.
+        ///
+        /// The host's value is run down here too, between packets, so what is being compared is the
+        /// host's clock as it is NOW rather than as it was when it was sent — otherwise every packet
+        /// would read as the local clock being ahead by however long the packet took to arrive, and
+        /// the correction would drag the match time backwards a little on each one.
+        /// </summary>
+        private float CorrectedAgainstHost(float dt)
+        {
+            remoteClock = Mathf.Max(0f, remoteClock - dt);
+
+            // Whole seconds apart is not jitter — it is a device that was not running for a while.
+            // Nothing is gained by easing across a gap that large, and the two clocks would disagree
+            // on screen for the whole time it took.
+            if (Mathf.Abs(remoteClock - TimeRemaining) > ClockSnapSeconds)
+            {
+                return remoteClock;
+            }
+
+            return Mathf.MoveTowards(TimeRemaining, remoteClock, ClockCatchUpRate * dt);
+        }
+
+        /// <summary>
+        /// Takes the authoritative clock from the host. Called on the guest only.
+        ///
+        /// The clock was the last thing about an online match still being decided in two places at
+        /// once: <see cref="Update"/> counts down against local frame time, so the two machines ran
+        /// independent stopwatches that drifted apart over a match — and a device that stopped
+        /// running for a while (backgrounded, screen off) came back with a clock that was simply
+        /// wrong, while its opponent's had carried on. The guest still ticks its own clock down every
+        /// frame so the seconds move smoothly; this is what keeps that tick honest.
+        /// </summary>
+        public void SyncClock(float seconds)
+        {
+            if (matchSeconds <= 0f)
+            {
+                return;
+            }
+
+            remoteClock = Mathf.Max(0f, seconds);
+            hasRemoteClock = true;
+        }
+
+        /// <summary>Goes back to running the clock alone, for a match that is no longer online.</summary>
+        public void ClearRemoteClock()
+        {
+            hasRemoteClock = false;
+            remoteClock = 0f;
         }
 
         /// <summary>
@@ -402,6 +475,12 @@ namespace TableFootball
             LastWinWasForfeit = false;
             matchOver = false;
             TimeRemaining = matchSeconds;
+
+            // The host's clock restarts with this one. Without resetting it, the stale value from the
+            // match just ended would sit whole seconds below the fresh clock, and the snap in
+            // CorrectedAgainstHost would take the new match straight to full time before the host's
+            // next packet ever arrived.
+            remoteClock = matchSeconds;
 
             ParkForKickOff(resetRods: true);
 

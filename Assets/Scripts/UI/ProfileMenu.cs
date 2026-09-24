@@ -1,5 +1,6 @@
 using System;
 using TableFootball.Net;
+using TableFootball.Progression;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -34,12 +35,15 @@ namespace TableFootball.UI
         private GameObject signInGroup;
         private GameObject deleteGroup;
 
-        private TextMeshProUGUI nameDisplay;
         private TextMeshProUGUI accountState;
         private TextMeshProUGUI statusText;
         private TextMeshProUGUI winsValue;
         private TextMeshProUGUI lossesValue;
         private TextMeshProUGUI rateValue;
+        private TextMeshProUGUI playedValue;
+        private TextMeshProUGUI goalsValue;
+        private TextMeshProUGUI timeValue;
+        private TextMeshProUGUI levelValue;
 
         private TMP_InputField nameField;
         private TMP_InputField createUser;
@@ -61,7 +65,10 @@ namespace TableFootball.UI
             UIFactory.Stretch(UIFactory.Rt(root));
             group = root.AddComponent<CanvasGroup>();
 
-            UIFactory.Backdrop(root.transform);
+            // The shared translucent dim, not an opaque backdrop: the account screen now wears the same
+            // background as the settings/pause overlay, so the two read as one design language over the
+            // same lit table rather than two different screens.
+            UIFactory.ScrimDim(root.transform);
 
             var title = UIFactory.Text(root.transform, "ACCOUNT", ArcadeTheme.FsTitle, ArcadeTheme.Ink,
                                        display: true, bold: true, upper: true, tracking: 8f);
@@ -81,8 +88,8 @@ namespace TableFootball.UI
             // the title and Back button take a fifth of the height between them — so a tall panel
             // runs out of room while the sides sit empty. The overview answers that by using two
             // columns; the other groups fit in one and simply leave the right side clear.
-            prt.sizeDelta = new Vector2(1080f, 380f);
-            prt.anchoredPosition = new Vector2(0f, -6f);
+            prt.sizeDelta = new Vector2(1080f, 430f);
+            prt.anchoredPosition = new Vector2(0f, -18f);
 
             var fill = panel.transform.Find("Fill");
             BuildOverview(fill);
@@ -173,25 +180,27 @@ namespace TableFootball.UI
             var left = Col(overviewGroup.transform);
             var right = Col(overviewGroup.transform);
 
-            Caption(left, "your friend code");
+            // The identity header: avatar, name, level and XP — the same chip the main menu leads
+            // with, so "you" looks the same everywhere. The name it shows is this screen's friend
+            // code; the level and XP are visual placeholders (PlayerProgress).
+            var chipHolder = UIFactory.Child(left, "ChipHolder");
+            chipHolder.AddComponent<LayoutElement>().preferredHeight = 66f;
+            var chipGo = UIFactory.Child(chipHolder.transform, "Chip");
+            chipGo.AddComponent<ProfileChip>().Build(chipHolder.transform);
 
-            // The one string on this screen another human has to read and type, so it gets the
-            // treatment the join code gets in OnlineMenu.
-            //
-            // Your own name, and still not markup: it is validated on the way out now, but a name
-            // set by an older build — or by anything that is not this client — arrives here anyway.
-            nameDisplay = UIFactory.Text(left, "—", ArcadeTheme.FsTitle * 0.8f,
-                                         ArcadeTheme.Gold, display: true, bold: true, upper: false,
-                                         tracking: 4f, richText: false);
-            nameDisplay.gameObject.AddComponent<LayoutElement>().preferredHeight = 46f;
+            var codeHint = UIFactory.Text(left, "this name is your friend code — share it to be added",
+                                          ArcadeTheme.FsCaption * 0.86f, ArcadeTheme.InkMuted,
+                                          display: false, bold: true, upper: true, tracking: 3f);
+            codeHint.gameObject.AddComponent<LayoutElement>().preferredHeight = 18f;
 
-            UIFactory.SectionRule(left, "online record");
+            UIFactory.SectionRule(left, "record");
             BuildRecord(left);
+            BuildRecord2(left);
 
             accountState = UIFactory.Text(left, string.Empty, ArcadeTheme.FsCaption,
                                           ArcadeTheme.InkMuted, display: false, bold: true,
                                           upper: true, tracking: 3f);
-            accountState.gameObject.AddComponent<LayoutElement>().preferredHeight = 44f;
+            accountState.gameObject.AddComponent<LayoutElement>().preferredHeight = 40f;
             accountState.textWrappingMode = TextWrappingModes.Normal;
 
             UIFactory.SectionRule(right, "change your name");
@@ -203,12 +212,12 @@ namespace TableFootball.UI
             nameField = UIFactory.TextInput(right, "new name", 20,
                                             TMP_InputField.CharacterValidation.None,
                                             height: 50f);
-            UIFactory.Button(right, "Rename", MenuButton.Variant.Neutral, Rename, 50f);
+            UIFactory.Button(right, "Rename", MenuButton.Variant.Blue, Rename, 50f);
 
             createButton = UIFactory.Button(right, "Create Account",
                                             MenuButton.Variant.Primary, () => Show(Screen.Create), 50f);
             signInButton = UIFactory.Button(right, "Sign In",
-                                            MenuButton.Variant.Ghost, () => Show(Screen.SignIn), 50f);
+                                            MenuButton.Variant.Blue, () => Show(Screen.SignIn), 50f);
 
             // Offered to anonymous players too, not only to those with a username: the player and
             // their friends list exist either way, and erasing them is the player's call either way.
@@ -220,6 +229,11 @@ namespace TableFootball.UI
         /// This device's online record. Read from <see cref="MatchStats"/> rather than a server: it is
         /// the player's own screen, and their own device is where the count is both authoritative and
         /// instant — a friend's record is the one that has to come from somewhere else.
+        ///
+        /// The level sits in the same row rather than getting a block of its own. The overview is
+        /// already the tallest group in the game — the comment on <see cref="Column"/> says as much —
+        /// and a fourth number costs no height at all, where a ring would have cost 140. The big ring
+        /// lives on the quests screen, which has room for it.
         /// </summary>
         private void BuildRecord(Transform parent)
         {
@@ -234,9 +248,36 @@ namespace TableFootball.UI
             h.childControlWidth = true;
             h.childControlHeight = true;
 
-            winsValue = UIFactory.StatBlock(row.transform, "won", ArcadeTheme.Go);
-            lossesValue = UIFactory.StatBlock(row.transform, "lost", ArcadeTheme.Red);
+            // One colour for the record, with gold kept for the win rate — the figure the rest add
+            // up to. Seven stats in five colours read as a chart legend rather than a record.
+            winsValue = UIFactory.StatBlock(row.transform, "won", ArcadeTheme.Ink);
+            lossesValue = UIFactory.StatBlock(row.transform, "lost", ArcadeTheme.Ink);
             rateValue = UIFactory.StatBlock(row.transform, "win rate", ArcadeTheme.Gold);
+            levelValue = UIFactory.StatBlock(row.transform, "level", ArcadeTheme.Ink);
+        }
+
+        /// <summary>
+        /// A second stat row, all real now: matches played, goals scored and total time played — the
+        /// numbers a returning player checks to feel their history adding up. Goals and time are
+        /// credited by <see cref="TableFootball.UI.GameFlow"/> off the match loop; played is wins plus
+        /// losses.
+        /// </summary>
+        private void BuildRecord2(Transform parent)
+        {
+            var row = UIFactory.Child(parent, "RecordRow2");
+            row.AddComponent<LayoutElement>().preferredHeight = 76f;
+
+            var h = row.AddComponent<HorizontalLayoutGroup>();
+            h.childAlignment = TextAnchor.MiddleCenter;
+            h.spacing = ArcadeTheme.Sm;
+            h.childForceExpandWidth = true;
+            h.childForceExpandHeight = false;
+            h.childControlWidth = true;
+            h.childControlHeight = true;
+
+            playedValue = UIFactory.StatBlock(row.transform, "played", ArcadeTheme.Ink);
+            goalsValue = UIFactory.StatBlock(row.transform, "goals", ArcadeTheme.Ink);
+            timeValue = UIFactory.StatBlock(row.transform, "time played", ArcadeTheme.Ink);
         }
 
         private void BuildDelete(Transform parent)
@@ -274,15 +315,13 @@ namespace TableFootball.UI
             createGroup = Column(parent, "CreateGroup");
 
             Caption(createGroup.transform, "choose a username");
-            createUser = UIFactory.TextInput(createGroup.transform, "username", 20,
-                                             TMP_InputField.CharacterValidation.None, height: 54f);
+            // Dice fills a valid random username for a player who does not want to invent one.
+            createUser = UIFactory.UsernameField(createGroup.transform, "username", 20, 54f);
 
             Caption(createGroup.transform, "and a password");
             // 29, not 30: a symbol-free password has one appended before it is sent, and the service
-            // caps the result at 30.
-            createPass = UIFactory.TextInput(createGroup.transform, "password", 29,
-                                             TMP_InputField.CharacterValidation.None,
-                                             password: true, height: 54f);
+            // caps the result at 30. Eye toggles it between masked and plain.
+            createPass = UIFactory.PasswordField(createGroup.transform, "password", 29, 54f);
 
             var rules = UIFactory.Text(createGroup.transform,
                                        "at least 8 characters, with a capital and a number",
@@ -301,11 +340,11 @@ namespace TableFootball.UI
             signInGroup = Column(parent, "SignInGroup");
 
             Caption(signInGroup.transform, "sign in to your account");
+            // No randomiser: the sign-in username is one you already have and must type exactly. The
+            // eye still helps here — a mistyped password is the usual reason a sign-in fails.
             signInUser = UIFactory.TextInput(signInGroup.transform, "username", 20,
                                              TMP_InputField.CharacterValidation.None, height: 54f);
-            signInPass = UIFactory.TextInput(signInGroup.transform, "password", 30,
-                                             TMP_InputField.CharacterValidation.None,
-                                             password: true, height: 54f);
+            signInPass = UIFactory.PasswordField(signInGroup.transform, "password", 30, 54f);
 
             var warn = UIFactory.Text(signInGroup.transform,
                                       "this replaces the player on this device",
@@ -315,6 +354,10 @@ namespace TableFootball.UI
             warn.textWrappingMode = TextWrappingModes.Normal;
 
             UIFactory.Button(signInGroup.transform, "Sign In", MenuButton.Variant.Primary, SignIn, 54f);
+            // A way straight to the create form for a player who came here to sign in and realised they
+            // have no account yet — otherwise they would have to back out to the overview to find it.
+            UIFactory.Button(signInGroup.transform, "Sign Up", MenuButton.Variant.Ghost,
+                             () => Show(Screen.Create), 54f);
             UIFactory.Button(signInGroup.transform, "Cancel", MenuButton.Variant.Ghost,
                              () => Show(Screen.Overview), 54f);
         }
@@ -366,6 +409,10 @@ namespace TableFootball.UI
             root.transform.SetAsLastSibling();
             group.blocksRaycasts = true;
 
+            // A quick fade in, so arriving here reads as a transition rather than a hard cut.
+            group.alpha = 0f;
+            StartCoroutine(UITween.Fade(group, 0f, 1f, ArcadeTheme.TFast, ArcadeTheme.EaseOut));
+
             // The name may not exist yet for a brand new player — the service mints one on the first
             // request — so the panel opens showing a placeholder and fills itself in.
             await PlayerAccount.RefreshAsync();
@@ -393,29 +440,42 @@ namespace TableFootball.UI
 
         private void Redraw()
         {
-            if (nameDisplay == null)
+            if (accountState == null)
             {
                 return;
             }
 
-            string name = PlayerAccount.DisplayName;
-            nameDisplay.text = string.IsNullOrEmpty(name) ? "—" : name;
+            // The name is drawn by the ProfileChip header, which follows PlayerAccount on its own —
+            // nothing to set here.
 
-            winsValue.text = MatchStats.OnlineWins.ToString();
-            lossesValue.text = MatchStats.OnlineLosses.ToString();
+            // The overall progression record (vs-AI and online alike) — the same store the XP bar and
+            // level read from, so the profile is internally consistent. MatchStats stays the separate
+            // online-only feed for the leaderboard.
+            winsValue.text = PlayerProgress.Wins.ToString();
+            lossesValue.text = PlayerProgress.Losses.ToString();
             // A dash rather than 0% before the first match: nobody has a nought-percent win rate until
             // they have actually lost one.
-            rateValue.text = MatchStats.WinPercent >= 0 ? $"{MatchStats.WinPercent}%" : "–";
+            // Reads PlayerProgress like winsValue/lossesValue just above, not MatchStats — the
+            // percentage has to be computed from the same pair of numbers the player sees it beside,
+            // or a rate and a scoreline that came from two different counters would visibly disagree.
+            rateValue.text = PlayerProgress.WinPercent >= 0 ? $"{PlayerProgress.WinPercent}%" : "–";
+            levelValue.text = PlayerXp.Level.ToString();
 
+            // All real now: played is wins + losses, goals and time are credited from the match loop.
+            playedValue.text = PlayerProgress.Played.ToString();
+            goalsValue.text = PlayerProgress.Goals.ToString();
+            timeValue.text = FormatPlayTime(PlayerProgress.PlayTimeSeconds);
+
+            // Only the warning earns a line. "Your account is secured" restated something the player
+            // had just done and could do nothing about — the anonymous case is the one with a
+            // consequence worth stating before they spend an evening adding friends.
             if (PlayerAccount.HasAccount)
             {
-                accountState.text = "your account is secured";
-                accountState.color = ArcadeTheme.Go;
+                accountState.gameObject.SetActive(false);
             }
             else
             {
-                // Said plainly, because it is the one thing on this screen a player would want to know
-                // before spending an evening adding friends.
+                accountState.gameObject.SetActive(true);
                 accountState.text = "this player exists on this device only — friends are lost if you reinstall";
                 accountState.color = ArcadeTheme.Gold;
             }
@@ -432,6 +492,19 @@ namespace TableFootball.UI
             {
                 statusText.text = message ?? string.Empty;
             }
+        }
+
+        /// <summary>
+        /// Seconds as a compact "2h 14m" / "14m" / "0m", for the stat block. Hours and minutes only —
+        /// a lifetime total measured to the second would be noise on a card whose job is to feel like a
+        /// growing number.
+        /// </summary>
+        private static string FormatPlayTime(int seconds)
+        {
+            int minutes = seconds / 60;
+            int hours = minutes / 60;
+            minutes %= 60;
+            return hours > 0 ? $"{hours}h {minutes}m" : $"{minutes}m";
         }
 
         // ---------- actions ----------

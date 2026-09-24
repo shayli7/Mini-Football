@@ -41,6 +41,35 @@ namespace TableFootball.Net
         /// <summary>The code the other player types in to join. Empty outside a session.</summary>
         public static string JoinCode => Current != null ? Current.Code : string.Empty;
 
+        /// <summary>
+        /// The other player's id, or empty when nobody else is at the table.
+        ///
+        /// Read while the session is still alive — by the time a match ends the host may already
+        /// have gone, taking the roster with it. <see cref="UI.GameFlow"/> captures it at kick-off
+        /// for exactly the reason it captures the local team there.
+        /// </summary>
+        public static string OpponentId
+        {
+            get
+            {
+                if (Current == null)
+                {
+                    return string.Empty;
+                }
+
+                string me = GameServices.PlayerId;
+                foreach (var player in Current.Players)
+                {
+                    if (player != null && !string.IsNullOrEmpty(player.Id) && player.Id != me)
+                    {
+                        return player.Id;
+                    }
+                }
+
+                return string.Empty;
+            }
+        }
+
         /// <summary>Raised when a session is entered, by hosting or joining.</summary>
         public static event Action<ISession> OnJoined;
 
@@ -149,6 +178,63 @@ namespace TableFootball.Net
             catch (Exception e)
             {
                 return Fail("Could not find a match", e);
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        /// <summary>
+        /// Finds a RANKED match. When the Matchmaker queue is configured on the dashboard (and the
+        /// LADDER_UGS define is on) it pools players by rating through that queue; until then it falls
+        /// back to open pairing through a public "Ranked" table, so ranked play is testable before the
+        /// server side is deployed. Either way the match is flagged ranked by the caller, so its result
+        /// feeds the ladder.
+        /// </summary>
+        public static async Task<bool> RankedMatchAsync()
+        {
+            if (!await ReadyAsync())
+            {
+                return false;
+            }
+
+            IsBusy = true;
+            try
+            {
+                var options = new SessionOptions
+                {
+                    Name = "Ranked",
+                    MaxPlayers = MaxPlayers,
+                    IsPrivate = false
+                }.WithRelayNetwork();
+
+#if LADDER_UGS
+                try
+                {
+                    Adopt(await MultiplayerService.Instance.MatchmakeSessionAsync(
+                        new MatchmakerOptions { QueueName = "ranked" }, options));
+                    Debug.Log("Ranked: matched through the skill queue.");
+                    return true;
+                }
+                catch (Exception queueError)
+                {
+                    // The queue is not configured yet, or matchmaking timed out: fall back to open
+                    // pairing rather than failing the player outright.
+                    Debug.LogWarning($"Ranked queue unavailable, pairing openly instead: {queueError.Message}");
+                }
+#endif
+
+                Adopt(await MultiplayerService.Instance.MatchmakeSessionAsync(
+                    new QuickJoinOptions { CreateSession = true }, options));
+                Debug.Log(Current.IsHost
+                    ? "Ranked (open pairing): no open table, hosting one."
+                    : "Ranked (open pairing): joined an open table.");
+                return true;
+            }
+            catch (Exception e)
+            {
+                return Fail("Could not find a ranked match", e);
             }
             finally
             {

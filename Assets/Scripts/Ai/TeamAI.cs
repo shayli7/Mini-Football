@@ -83,6 +83,19 @@ namespace TableFootball
         [Tooltip("How near a figure must be to the ball, in metres, for that side to count as " +
                  "having it. Drives the once-per-attack read roll on the defending rods.")]
         [SerializeField] private float possessionDistance = 0.075f;
+        [Tooltip("Use the ball's OWN record of who last controlled it, instead of guessing from " +
+                 "nearest-figure distance alone. The ball knows a controlled touch from a block, so " +
+                 "the AI switches to attack the instant a rebound or bad touch turns the ball loose, " +
+                 "rather than waiting for a figure to drift closest. Falls back to the distance guess " +
+                 "when the ball is loose, or if no BallController possession is available.")]
+        [SerializeField] private bool useAuthoritativePossession = true;
+        [Tooltip("Seconds the AI's DEFENCE waits before it reacts to the opponent taking control. " +
+                 "Snapping the block across the instant they win the ball is what makes the midfield " +
+                 "impossible to break through — this gives them a beat to advance first. During the " +
+                 "wait the AI reads possession from figure distance (which lags naturally); when the " +
+                 "AI itself has the ball it still commits to attacking at once. Only applies when Use " +
+                 "Authoritative Possession is on. 0 = react instantly (the old behaviour).")]
+        [SerializeField] private float possessionReactDelay = 0.35f;
 
         [Header("Rod handoff")]
         [Tooltip("Play only the rod the ball belongs to, and leave every other rod standing where " +
@@ -96,6 +109,19 @@ namespace TableFootball
                  "Without this margin the two rods either side of the ball trade control every " +
                  "frame and both twitch.")]
         [SerializeField] private float takeoverMargin = 0.03f;
+
+        [Header("Attacking room (make the midfield beatable)")]
+        [Tooltip("Extra block-alignment error, in metres, applied to the MIDFIELD rod only, on top " +
+                 "of the resolved difficulty. The five-man line is the choke point; this makes it " +
+                 "line up a little short of the ball's lane more often, leaving an aimable gap to " +
+                 "pass through. Widens the opening without weakening the keeper or defenders. 0 = no " +
+                 "extra room.")]
+        [SerializeField] private float midfieldGapError = 0.04f;
+        [Tooltip("How much to cut the MIDFIELD rod's per-attack read chance (0..1), so it more often " +
+                 "holds its formation shape instead of coming across — giving a clean run at the " +
+                 "attack line. Applied on top of the resolved difficulty, midfield only. 0 = no cut.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float midfieldReadDrop = 0.2f;
 
         [Header("Geometry fallbacks")]
         [Tooltip("Used only if no GoalTrigger can be found to measure. Half the goal's width, metres.")]
@@ -116,6 +142,7 @@ namespace TableFootball
         private OpponentRodView opponentKeeper;
         private bool wasLive = true;
         private bool ballWasComingAtUs;
+        private float opponentControlSince = -1f;
         private readonly List<float> possessionScratch = new List<float>(8);
 
         private void Awake()
@@ -653,6 +680,32 @@ namespace TableFootball
             }
 
             bool nowTheirs = theirs < possessionDistance * 2f && theirs < ours;
+
+            // The ball's own record sharpens the distance guess — but only where that helps the
+            // flow. When WE hold the ball, commit to attacking at once (no dithering on offence).
+            // When the OPPONENT holds it, do NOT snap the defence across the instant they win it:
+            // that is exactly what makes the midfield impossible to break through. Give them a beat —
+            // keep reading from figure distance (which lags naturally) until they have held control
+            // for possessionReactDelay — then commit to defending. A loose ball falls through to the
+            // nearest-figure reading above, so counterattacks off a rebound still get contested.
+            if (useAuthoritativePossession && ball != null && !ball.IsLoose)
+            {
+                if (ball.ControllingTeam == team)
+                {
+                    nowTheirs = false;
+                    opponentControlSince = -1f;
+                }
+                else
+                {
+                    if (opponentControlSince < 0f) opponentControlSince = world.Now;
+                    if (world.Now - opponentControlSince >= possessionReactDelay) nowTheirs = true;
+                }
+            }
+            else
+            {
+                opponentControlSince = -1f;
+            }
+
             bool turnedOnUs = nowTheirs && world.BallAdvanceVelocity < -0.3f && !ballWasComingAtUs;
 
             if ((nowTheirs && !world.OpponentHasBall) || turnedOnUs)
@@ -844,6 +897,16 @@ namespace TableFootball
                 // their code defaults no longer reach this table.
                 limits.ReactionDelay += Mathf.Max(reactionHandicap.Evaluate(difficulty01), 0f);
                 limits.BlockAlignmentError += Mathf.Max(blockErrorHandicap.Evaluate(difficulty01), 0f);
+
+                // The midfield is the wall the player struggles to break. Give it a little extra
+                // give — a wider aimable gap and a lower chance of reading the attack — without
+                // touching the keeper or defenders. New fields, so their defaults reach the saved
+                // scene where the per-rod ranges no longer do.
+                if (agent.Role == RodRole.Midfield)
+                {
+                    limits.BlockAlignmentError += Mathf.Max(midfieldGapError, 0f);
+                    limits.BlockReadChance = Mathf.Clamp01(limits.BlockReadChance - Mathf.Max(midfieldReadDrop, 0f));
+                }
 
                 agent.Limits = limits;
             }

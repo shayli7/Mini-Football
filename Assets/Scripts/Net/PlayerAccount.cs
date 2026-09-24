@@ -224,6 +224,13 @@ namespace TableFootball.Net
             IsBusy = true;
             try
             {
+                // Save the OUTGOING player's progress before their identity goes away. Everything
+                // below wipes the local stores and loads the incoming account, so a reward earned in
+                // the last few seconds — still inside CloudSync's debounce and not yet uploaded —
+                // would otherwise be lost with the sign-out. Flushed while still signed in as them, so
+                // it lands in their cloud and not the new account's.
+                await CloudSync.FlushAsync();
+
                 GameServices.SignOut(clearCredentials: false);
                 // Harden here too, and identically. A password transformed on the way in but not on
                 // the way back is an account nobody can ever open again.
@@ -234,7 +241,22 @@ namespace TableFootball.Net
                 // LeaderboardHub), the honest thing is to admit this device does not know the
                 // incoming player's record rather than show them the previous player's.
                 MatchStats.ResetLocal();
+                PlayerProgress.ResetLocal();
+                // The rewards half of the same record: coins earned, cosmetics unlocked, and any
+                // uncollected weekly ranked payout. All three are things a PERSON earned, so the
+                // incoming player opens a fresh purse and an empty collection rather than inheriting
+                // the outgoing one's.
+                Wallet.ResetLocal();
+                Inventory.ResetLocal();
+                RankedRewards.ResetLocal();
+                Progression.DailyQuests.ResetForNewPlayer();
+                Progression.PlayerXp.ResetForNewPlayer();
                 FriendsHub.Reset();
+
+                // The local record is now blank; pull the incoming player's cloud save into it, so
+                // signing in as someone else opens THEIR collection rather than an empty one. Merges
+                // against the just-wiped local, so it is simply a load of the other account's document.
+                await CloudSync.LoadAsync();
 
                 await RefreshAsync();
                 Debug.Log($"Signed in as {DisplayName}.");
@@ -291,10 +313,21 @@ namespace TableFootball.Net
                 GameServices.SignOut(clearCredentials: true);
                 FriendsHub.Reset();
                 MatchStats.ResetLocal();
+                PlayerProgress.ResetLocal();
+                Wallet.ResetLocal();
+                Inventory.ResetLocal();
+                RankedRewards.ResetLocal();
+                Progression.DailyQuests.ResetForNewPlayer();
+                Progression.PlayerXp.ResetForNewPlayer();
 
                 // A player with no identity at all cannot host, join or be added, and nothing in the
                 // menu would explain why. Replacing it immediately keeps the game in a working state.
                 await GameServices.EnsureSignedInAsync();
+
+                // The replacement is a brand-new anonymous player with no cloud document; loading now
+                // just confirms that and sets the sync's loaded gate, so the fresh 250-coin float this
+                // player is about to be seeded flushes up as their first save rather than colliding.
+                await CloudSync.LoadAsync();
 
                 // Mints the replacement's name straight away. Without it the profile screen would sit
                 // showing a blank code until something else happened to ask for one.

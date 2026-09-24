@@ -57,7 +57,8 @@ namespace TableFootball.UI
             UIFactory.Stretch(UIFactory.Rt(root));
             group = root.AddComponent<CanvasGroup>();
 
-            UIFactory.Backdrop(root.transform);
+            // Shared translucent dim, matching every other secondary screen. See UIFactory.ScrimDim.
+            UIFactory.ScrimDim(root.transform);
 
             var panel = UIFactory.Panel(root.transform, "FriendPanel");
             var prt = UIFactory.Rt(panel);
@@ -288,7 +289,7 @@ namespace TableFootball.UI
             inviteButton.gameObject.SetActive(online);
             inviteButton.Configure(string.IsNullOrEmpty(joinCode)
                 ? MenuButton.Variant.Primary
-                : MenuButton.Variant.Neutral);
+                : MenuButton.Variant.Blue);
 
             // No status line for an absent friend. The presence text under their name already says
             // "offline" and both actions have removed themselves — saying it a third time in red

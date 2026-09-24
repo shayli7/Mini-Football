@@ -38,6 +38,19 @@ namespace TableFootball
         /// <summary>Short blip for buttons.</summary>
         public static AudioClip UiClick => Get("sfx_ui_click", () => Blip(0.045f, 1180f, 0.25f));
 
+        /// <summary>The "3 - 2 - 1" beep. A clean sustained tone, not the near-instant UI click.</summary>
+        public static AudioClip CountdownTick => Get("sfx_countdown_tick", () => Beep(0.18f, 700f));
+
+        /// <summary>The "GO!" - higher and longer than a tick, so the start reads as an arrival.</summary>
+        public static AudioClip CountdownGo => Get("sfx_countdown_go", () => Beep(0.40f, 1050f));
+
+        /// <summary>
+        /// A quest clearing: two notes, up. Shorter and drier than <see cref="Goal"/>, which is a
+        /// four-note flourish over a crowd — a reward that announced itself as loudly as a goal would
+        /// be competing with the result it is being handed out alongside.
+        /// </summary>
+        public static AudioClip Reward => Get("sfx_reward", () => Arpeggio(new[] { 659.25f, 987.77f }, 0.09f, 0.22f));
+
         private static AudioClip Get(string key, Func<AudioClip> build)
         {
             if (cache.TryGetValue(key, out AudioClip clip) && clip != null)
@@ -182,6 +195,50 @@ namespace TableFootball
 
             Normalise(samples, 0.5f);
             return FromSamples("blip", samples);
+        }
+
+        /// <summary>
+        /// A clean beep with a real attack-sustain-release shape, for the countdown.
+        ///
+        /// Distinct from <see cref="Blip"/>, whose exponential envelope collapses in about 20 ms and
+        /// reads as a click. A countdown wants a note you can hear land and hold, so this ramps up
+        /// fast, sustains flat, and eases out — and adds a quiet octave above the fundamental so the
+        /// tone has a little body rather than sounding like a test-equipment sine.
+        /// </summary>
+        private static AudioClip Beep(float seconds, float frequency)
+        {
+            int count = Mathf.CeilToInt(SampleRate * seconds);
+            var samples = new float[count];
+
+            float attack = 0.012f;
+            float release = seconds * 0.5f;
+
+            for (int i = 0; i < count; i++)
+            {
+                float t = i / (float)SampleRate;
+
+                float envelope;
+                if (t < attack)
+                {
+                    envelope = t / attack;
+                }
+                else if (t > seconds - release)
+                {
+                    envelope = Mathf.Clamp01((seconds - t) / release);
+                }
+                else
+                {
+                    envelope = 1f;
+                }
+
+                float tone = Mathf.Sin(2f * Mathf.PI * frequency * t)
+                             + 0.25f * Mathf.Sin(2f * Mathf.PI * frequency * 2f * t);
+
+                samples[i] = envelope * tone;
+            }
+
+            Normalise(samples, 0.6f);
+            return FromSamples("beep", samples);
         }
 
         /// <summary>Scales to a known peak, so one sound is not wildly louder than the next.</summary>

@@ -51,3 +51,14 @@ Thumbs.db
 .gradle/
 .consulo/
 ExportedObj/
+
+# Agent/tool scratch — regenerated, never part of a change
+/.claude-flow/
+**/.claude-flow/
+/run.log
+/MEMORY.md
+# Blender render staging; the shipped copies live in Assets/Resources/
+/Art/out/
+# Unity Performance Testing artifacts
+/Assets/Resources/PerformanceTestRun*.json
+/Assets/Resources/PerformanceTestRun*.json.meta

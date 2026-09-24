@@ -1,4 +1,5 @@
 using TableFootball.Net;
+using TableFootball.Progression;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -64,6 +65,13 @@ namespace TableFootball.UI
             {
                 _ = GameServices.EnsureSignedInAsync();
                 _ = FriendsHub.EnsureReadyAsync();
+
+                // Pulls this player's cloud save into the local progression stores. Fire-and-forget
+                // like the sign-in above and for the same reason: it awaits the sign-in itself, and
+                // the UI need not block on it — the monotonic merge can only ADD to what is on screen,
+                // so a chip that drew the local value first is corrected upward by the redraw, never
+                // down. See CloudSync.
+                _ = CloudSync.LoadAsync();
             }
 
             if (displayFont != null) ArcadeTheme.DisplayFont = displayFont;
@@ -79,12 +87,29 @@ namespace TableFootball.UI
             var loading = gameObject.AddComponent<LoadingScreen>();
             var mainMenu = gameObject.AddComponent<MainMenu>();
             var onlineMenu = gameObject.AddComponent<OnlineMenu>();
+            var leagueMenu = gameObject.AddComponent<LeagueMenu>();
+            var storeMenu = gameObject.AddComponent<StoreMenu>();
+            var levelPathMenu = gameObject.AddComponent<LevelPathMenu>();
             var friendsMenu = gameObject.AddComponent<FriendsMenu>();
             var profileMenu = gameObject.AddComponent<ProfileMenu>();
             var friendProfileMenu = gameObject.AddComponent<FriendProfileMenu>();
+            var questsMenu = gameObject.AddComponent<QuestsMenu>();
             var countdown = gameObject.AddComponent<CountdownScreen>();
+            var onboarding = gameObject.AddComponent<OnboardingScreen>();
             var start = gameObject.AddComponent<StartScreen>();
             var flow = gameObject.AddComponent<GameFlow>();
+
+            // One more listener on MatchManager, alongside the HUD and the audio. It is added here
+            // rather than dropped on the table so the whole progression system boots and dies with
+            // the UI that shows it.
+            var questTracker = gameObject.AddComponent<QuestTracker>();
+
+            // BEFORE the HUD, and that order is load-bearing rather than tidy. Both subscribe to
+            // MatchWon; the HUD sizes its result panel around the quests the tracker has just
+            // banked, so a tracker that subscribed second would hand it the PREVIOUS match's
+            // ledger — an empty one first time out, and a stale one every time after. Multicast
+            // delegates fire in subscription order, so subscribing first is the whole fix.
+            questTracker.Build(match);
 
             hud.Build(canvasRoot, match);
             hud.OnOpenMenu = pause.Open;
@@ -95,10 +120,19 @@ namespace TableFootball.UI
             loading.Build(canvasRoot);
             mainMenu.Build(canvasRoot, onlineImage, localImage, playerVsPlayerImage, aiVsPlayerImage);
             onlineMenu.Build(canvasRoot);
+            leagueMenu.Build(canvasRoot);
+            storeMenu.Build(canvasRoot);
+            levelPathMenu.Build(canvasRoot);
             friendsMenu.Build(canvasRoot);
             profileMenu.Build(canvasRoot);
             friendProfileMenu.Build(canvasRoot);
+            questsMenu.Build(canvasRoot);
             countdown.Build(canvasRoot);
+
+            // Built before the title screen so it sits under it: the title comes up first at boot, and
+            // the onboarding screen is what the title tap fades over — the same front-to-back order the
+            // main menu has relative to the title.
+            onboarding.Build(canvasRoot);
 
             // Built after every other screen, so it is the last sibling and comes up over all of
             // them at boot without having to fight for the front.
@@ -109,9 +143,10 @@ namespace TableFootball.UI
 
             // Built last: it raises the title screen immediately, so everything it drives has to
             // exist first.
-            flow.Build(start, loading, mainMenu, onlineMenu, friendsMenu, profileMenu,
-                       friendProfileMenu, pause, hud, countdown, match,
-                       bootLoadSeconds, transitionLoadSeconds);
+            flow.Build(start, onboarding, loading, mainMenu, onlineMenu, leagueMenu,
+                       storeMenu, levelPathMenu, friendsMenu,
+                       profileMenu, friendProfileMenu, questsMenu, pause, hud, countdown, match,
+                       questTracker, bootLoadSeconds, transitionLoadSeconds);
         }
 
         private Transform BuildCanvas()

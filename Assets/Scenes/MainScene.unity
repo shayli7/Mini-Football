@@ -212,7 +212,7 @@ MonoBehaviour:
     Prefabs:
       NetworkPrefabsLists:
       - {fileID: 11400000, guid: 6b2c9ffa84e90e741bf8710340b4f369, type: 2}
-    TickRate: 60
+    TickRate: 50
     ClientConnectionBufferTimeout: 10
     ConnectionApproval: 0
     ConnectionData: 
@@ -274,6 +274,7 @@ GameObject:
   - component: {fileID: 330585545}
   - component: {fileID: 330585544}
   - component: {fileID: 330585547}
+  - component: {fileID: 330585548}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -399,6 +400,22 @@ MonoBehaviour:
     m_MipBias: 0
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
+--- !u!114 &330585548
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 330585543}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0268addbf298d2647b8c0dcdfc91465f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  match: {fileID: 0}
+  amplitude: 0.02
+  duration: 0.35
+  frequency: 24
 --- !u!1 &410087039
 GameObject:
   m_ObjectHideFlags: 0
@@ -1071,6 +1088,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: ArcadeFloor
       objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: 916b8b2adc721474299fd7365f8178e2, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -1112,8 +1133,8 @@ MonoBehaviour:
   localImage: {fileID: 21300000, guid: 6b2b19c5cf288fb4383a4a24e8cebd11, type: 3}
   playerVsPlayerImage: {fileID: 21300000, guid: 5501c52ab0cd47e88814acd6d9aa782e, type: 3}
   aiVsPlayerImage: {fileID: 21300000, guid: ccb80366fa8df9e47bb6823f63123124, type: 3}
-  displayFont: {fileID: 0}
-  uiFont: {fileID: 0}
+  displayFont: {fileID: 11400000, guid: e8bb7d08e8e860b45b4c0d7b8c91065f, type: 2}
+  uiFont: {fileID: 11400000, guid: e8bb7d08e8e860b45b4c0d7b8c91065f, type: 2}
   reducedMotion: 0
   signInAtBoot: 1
 --- !u!4 &2047135020
@@ -6303,6 +6324,8 @@ GameObject:
   - component: {fileID: 3271520834897452823}
   - component: {fileID: 3271520834897452824}
   - component: {fileID: 3271520834897452825}
+  - component: {fileID: 3271520834897452827}
+  - component: {fileID: 3271520834897452826}
   m_Layer: 0
   m_Name: FoosballTable
   m_TagString: Untagged
@@ -6393,7 +6416,7 @@ MonoBehaviour:
   ball: {fileID: 9221244712420881481}
   goalsToWin: 10
   matchSeconds: 180
-  resetDelay: 1.2
+  resetDelay: 1.8
   resetRodsOnGoal: 0
   kickOffNudge: 0.15
   logGoals: 1
@@ -6783,8 +6806,8 @@ MonoBehaviour:
     clearPowerScale: 1.05
     difficulty:
       reactionDelay:
-        atEasy: 0.34
-        atHard: 0.06
+        atEasy: 0.4
+        atHard: 0.1
         response:
           serializedVersion: 2
           m_Curve:
@@ -6810,8 +6833,8 @@ MonoBehaviour:
           m_PostInfinity: 2
           m_RotationOrder: 4
       predictionAccuracy:
-        atEasy: 0.35
-        atHard: 0.92
+        atEasy: 0.3
+        atHard: 0.9
         response:
           serializedVersion: 2
           m_Curve:
@@ -6837,8 +6860,8 @@ MonoBehaviour:
           m_PostInfinity: 2
           m_RotationOrder: 4
       aimError:
-        atEasy: 0.055
-        atHard: 0.007
+        atEasy: 0.065
+        atHard: 0.01
         response:
           serializedVersion: 2
           m_Curve:
@@ -6864,8 +6887,8 @@ MonoBehaviour:
           m_PostInfinity: 2
           m_RotationOrder: 4
       handSpeed:
-        atEasy: 0.65
-        atHard: 1.25
+        atEasy: 0.5
+        atHard: 1.1
         response:
           serializedVersion: 2
           m_Curve:
@@ -6891,8 +6914,8 @@ MonoBehaviour:
           m_PostInfinity: 2
           m_RotationOrder: 4
       spinPower:
-        atEasy: 0.82
-        atHard: 1.1
+        atEasy: 0.75
+        atHard: 1.05
         response:
           serializedVersion: 2
           m_Curve:
@@ -7129,7 +7152,7 @@ MonoBehaviour:
     spacingBias: 0.45
     difficulty:
       reactionDelay:
-        atEasy: 0.3
+        atEasy: 0.5
         atHard: 0.07
         response:
           serializedVersion: 2
@@ -7345,8 +7368,8 @@ MonoBehaviour:
           m_PostInfinity: 2
           m_RotationOrder: 4
       blockReadChance:
-        atEasy: 0.4
-        atHard: 0.98
+        atEasy: 0.2
+        atHard: 0.9
         response:
           serializedVersion: 2
           m_Curve:
@@ -7372,7 +7395,7 @@ MonoBehaviour:
           m_PostInfinity: 2
           m_RotationOrder: 4
       blockAlignmentError:
-        atEasy: 0.07
+        atEasy: 0.1
         atHard: 0.008
         response:
           serializedVersion: 2
@@ -7861,8 +7884,12 @@ MonoBehaviour:
       m_RotationOrder: 4
   aimErrorInterval: 0.6
   possessionDistance: 0.075
+  useAuthoritativePossession: 1
+  possessionReactDelay: 0.35
   onlyPlayNearestRod: 1
   takeoverMargin: 0.03
+  midfieldGapError: 0.04
+  midfieldReadDrop: 0.2
   fallbackGoalHalfWidth: 0.09
   logSetupOnStart: 0
 --- !u!114 &3271520834897452823
@@ -7906,14 +7933,17 @@ MonoBehaviour:
   kickOffWhistleClip: {fileID: 0}
   fullTimeWhistleClip: {fileID: 0}
   uiClickClip: {fileID: 0}
+  countdownTickClip: {fileID: 0}
+  countdownGoClip: {fileID: 0}
   menuMusicClip: {fileID: 8300000, guid: 679c6b027fd25470286fe5f199c0d44b, type: 3}
   menuMusicVolume: 0.3
-  ballHitVolume: 2.1
+  ballHitVolume: 2.6
   ballHitQuietest: 0.7
-  wallThudVolume: 0.5
-  goalVolume: 0.7
+  wallThudVolume: 0.8
+  goalVolume: 0.9
   whistleVolume: 0.45
   uiVolume: 0.5
+  countdownVolume: 0.55
   voices: 10
 --- !u!114 &3271520834897452825
 MonoBehaviour:
@@ -7941,6 +7971,30 @@ MonoBehaviour:
   - Rail_Sp
   - Rail_Sm
   - GoalBack
+--- !u!114 &3271520834897452826
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3271520834897452817}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1e0e147a44124414d8296f6059008e9c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &3271520834897452827
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3271520834897452817}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d1e9252032a2f1045819ab8bf8264d29, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!33 &3277456722895647001
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -13122,6 +13176,7 @@ GameObject:
   - component: {fileID: 1724128649913643423}
   - component: {fileID: 4772692297225436401}
   - component: {fileID: 6961171697160487694}
+  - component: {fileID: 6961171697160487695}
   m_Layer: 0
   m_Name: Field
   m_TagString: Untagged
@@ -13150,6 +13205,18 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 1.2, y: 0.05, z: 0.65999997}
   m_Center: {x: 0, y: -0.019000001, z: 0}
+--- !u!114 &6961171697160487695
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6961171697160487693}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 695e07c33052d454c9e4e6c87853affd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!33 &6983649128933215418
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -17614,6 +17681,8 @@ GameObject:
   - component: {fileID: 9221244712420881487}
   - component: {fileID: 9221244712420881486}
   - component: {fileID: 9221244712420881485}
+  - component: {fileID: 9221244712420881488}
+  - component: {fileID: 9221244712420881489}
   m_Layer: 0
   m_Name: Ball
   m_TagString: Untagged
@@ -17642,6 +17711,8 @@ MonoBehaviour:
   contactOffset: 0.002
   maxAngularSpeed: 100
   fallResetDistance: 0.3
+  pickupDuration: 0.45
+  pickupLiftHeight: 0.4
   stuckSpeed: 0.05
   stuckSeconds: 10
   nudgeSpeed: 0.45
@@ -17656,6 +17727,24 @@ MonoBehaviour:
   minSlideSpeed: 0.05
   wallAssist: 1
   wallBounceRetention: 1
+  contactPointInfluence: 0.35
+  contactAngleInfluence: 0.25
+  momentumRedirect: 0.5
+  baseSpread: 1.5
+  powerSpread: 6
+  powerJitter: 0.08
+  controlWindowSeconds: 0.18
+  controlDamping: 6
+  controlMinSpeed: 0.2
+  controlRadius: 0.12
+  controlMaxSpeed: 0.7
+  passMaxSpin: 700
+  passSpeedCap: 3.5
+  passSpread: 1
+  passReceiveBonus: 0.08
+  figureRetention: 0.75
+  figureDeflectSpread: 3
+  possessionMemorySeconds: 0.6
   quietImpactSpeed: 0.4
   loudImpactSpeed: 3
 --- !u!54 &9221244712420881482
@@ -17745,6 +17834,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   ShowTopMostFoldoutHeaderGroup: 1
+  interpolationLeadSeconds: 0.04
+  maxLeadSeconds: 0.12
+  maxLeadDistance: 0.12
+  leadSharpness: 25
 --- !u!114 &9221244712420881486
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -17781,14 +17874,14 @@ MonoBehaviour:
   RotationInterpolationType: 0
   ScaleInterpolationType: 0
   PositionLerpSmoothing: 1
-  PositionMaxInterpolationTime: 0.1
+  PositionMaxInterpolationTime: 0.04
   RotationLerpSmoothing: 1
-  RotationMaxInterpolationTime: 0.1
+  RotationMaxInterpolationTime: 0.04
   ScaleLerpSmoothing: 1
   ScaleMaxInterpolationTime: 0.1
   AuthorityMode: 0
   TickSyncChildren: 0
-  UseUnreliableDeltas: 0
+  UseUnreliableDeltas: 1
   SyncPositionX: 1
   SyncPositionY: 1
   SyncPositionZ: 1
@@ -17808,6 +17901,30 @@ MonoBehaviour:
   SwitchTransformSpaceWhenParented: 0
   Interpolate: 1
   SlerpPosition: 0
+--- !u!114 &9221244712420881488
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9221244712420881480}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d0e1d3f78a3eff040ad61a34ef1f7daf, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &9221244712420881489
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9221244712420881480}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ec9358d0399d4964382e94e6233fe0b0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

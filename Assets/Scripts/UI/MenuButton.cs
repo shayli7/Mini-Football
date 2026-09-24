@@ -19,7 +19,7 @@ namespace TableFootball.UI
     [RequireComponent(typeof(RectTransform))]
     public class MenuButton : Selectable, IPointerClickHandler, ISubmitHandler
     {
-        public enum Variant { Primary, Ghost, Danger, Neutral, IconGold }
+        public enum Variant { Primary, Ghost, Danger, Neutral, IconGold, Blue }
 
         public UnityEvent onClick = new UnityEvent();
 
@@ -49,19 +49,30 @@ namespace TableFootball.UI
                     glowColor = ArcadeTheme.Gold; glowBase = 0f; glowHover = 0.9f;
                     break;
                 case Variant.Ghost:
-                    fillBase = ArcadeTheme.BgRaised; borderBase = ArcadeTheme.Line; borderHover = ArcadeTheme.Blue;
+                    // The quiet way out — Back, Cancel, Later. Panel blue a step up, so it is plainly a
+                    // button without competing with the blue action beside it.
+                    fillBase = ArcadeTheme.BgRaised; borderBase = ArcadeTheme.Line; borderHover = ArcadeTheme.BlueSoft;
                     labelBase = ArcadeTheme.Ink; labelHover = Color.white;
-                    glowColor = ArcadeTheme.Blue; glowBase = 0f; glowHover = 0.85f;
+                    glowColor = ArcadeTheme.BlueSoft; glowBase = 0f; glowHover = 0.85f;
                     break;
                 case Variant.Danger:
-                    fillBase = ArcadeTheme.BgRaised; borderBase = ArcadeTheme.Line; borderHover = ArcadeTheme.Red;
-                    labelBase = ArcadeTheme.Ink; labelHover = Color.white;
+                    // Outlined in the muted red rather than filled: destructive, but not the loudest
+                    // thing on the screen.
+                    fillBase = ArcadeTheme.BgPanel; borderBase = ArcadeTheme.Danger.WithAlpha(0.45f); borderHover = ArcadeTheme.Danger;
+                    labelBase = ArcadeTheme.Danger; labelHover = ArcadeTheme.Danger;
                     glowColor = ArcadeTheme.Red; glowBase = 0f; glowHover = 0.85f;
                     break;
                 case Variant.IconGold:
                     fillBase = ArcadeTheme.BgRaised.WithAlpha(0.55f); borderBase = ArcadeTheme.Gold; borderHover = ArcadeTheme.Gold;
                     labelBase = ArcadeTheme.Gold; labelHover = ArcadeTheme.Gold;
                     glowColor = ArcadeTheme.Gold; glowBase = 0f; glowHover = 0.9f;
+                    break;
+                case Variant.Blue:
+                    // The main blue button: an ordinary action that is not the screen's one gold
+                    // highlight — Host, Join, Rename. A step brighter than the panel it sits on.
+                    fillBase = ArcadeTheme.BlueFill; borderBase = ArcadeTheme.BlueLine; borderHover = ArcadeTheme.BlueSoft;
+                    labelBase = ArcadeTheme.Ink; labelHover = Color.white;
+                    glowColor = ArcadeTheme.BlueSoft; glowBase = 0f; glowHover = 0.8f;
                     break;
                 default:
                     fillBase = ArcadeTheme.BgRaised; borderBase = ArcadeTheme.Line; borderHover = ArcadeTheme.Gold;
@@ -148,9 +159,12 @@ namespace TableFootball.UI
             if (disabled)
             {
                 SetScale(Vector3.one, instant);
-                if (fill != null) fill.color = fillBase.WithAlpha(0.4f);
-                if (border != null) border.color = borderBase.WithAlpha(0.4f);
-                if (label != null) label.color = labelBase.WithAlpha(0.4f);
+                // Greyed to the panel's own blue rather than a faded copy of the variant: a gold
+                // button at 40% still read as gold, and so as the thing to press — which a disabled
+                // Claim All is exactly not.
+                if (fill != null) fill.color = ArcadeTheme.BgRaised.WithAlpha(0.6f);
+                if (border != null) border.color = ArcadeTheme.Line.WithAlpha(0.6f);
+                if (label != null) label.color = ArcadeTheme.InkMuted.WithAlpha(0.7f);
                 if (glow != null) glow.color = glowColor.WithAlpha(0f);
                 return;
             }
@@ -166,7 +180,10 @@ namespace TableFootball.UI
                      released ? ArcadeTheme.EaseOutBack : ArcadeTheme.EaseSnap);
 
             bool lit = active || pressed;
-            if (fill != null) fill.color = fillBase;
+            // Pressing darkens the fill as well as dipping the scale — a control that only shrinks
+            // reads as pulling away from the finger, where one that also darkens reads as being
+            // pushed into the panel. Hover leaves the fill alone (see the quiet-hover note above).
+            if (fill != null) fill.color = pressed ? Color.Lerp(fillBase, Color.black, 0.12f) : fillBase;
             if (border != null) border.color = lit ? borderHover : borderBase;
             if (label != null) label.color = lit ? labelHover : labelBase;
             if (glow != null) glow.color = glowColor.WithAlpha(lit ? glowHover : glowBase);

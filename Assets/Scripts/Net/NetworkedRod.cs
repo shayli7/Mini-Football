@@ -22,6 +22,14 @@ namespace TableFootball.Net
     /// a wrapped angle arriving in jumps got its SIGN wrong on exactly the hardest shots, which sent
     /// them back down the table at the player who took them.
     /// </summary>
+    /// <remarks>
+    /// Ordered ahead of everything else so Follow lands the incoming pose BEFORE
+    /// <see cref="RodController"/>'s own FixedUpdate reads it and pushes it to PhysX. Both run on
+    /// FixedUpdate now, and Unity does not order two components' FixedUpdate calls on its own — left
+    /// to chance, half the physics steps would apply a pose one step stale, which is a jitter the
+    /// ball feels as an inconsistent sweep.
+    /// </remarks>
+    [DefaultExecutionOrder(-50)]
     [RequireComponent(typeof(RodController))]
     [DisallowMultipleComponent]
     public class NetworkedRod : NetworkBehaviour
@@ -80,6 +88,11 @@ namespace TableFootball.Net
         {
             rod = GetComponent<RodController>();
 
+            // Subscribed for the rod's whole lifetime rather than around spawn, so publishing can
+            // never be left unhooked by an ownership change or a despawn/respawn. OnPoseApplied
+            // checks IsSpawned and IsOwner itself, so an idle subscription costs nothing.
+            rod.PoseApplied += OnPoseApplied;
+
             // A rod outlives whoever was holding it.
             //
             // Netcode's default is that objects a client owns are DESTROYED when that client
@@ -96,6 +109,20 @@ namespace TableFootball.Net
             }
         }
 
+        /// <summary>
+        /// Override rather than a plain OnDestroy: NetworkBehaviour does its own teardown here, and
+        /// declaring a new method would hide it and quietly skip that.
+        /// </summary>
+        public override void OnDestroy()
+        {
+            if (rod != null)
+            {
+                rod.PoseApplied -= OnPoseApplied;
+            }
+
+            base.OnDestroy();
+        }
+
         public override void OnNetworkSpawn()
         {
             // Seed from where the rod actually is, so a rod that spawns mid-match does not lurch
@@ -107,22 +134,39 @@ namespace TableFootball.Net
         }
 
         /// <summary>
-        /// Publishes in FixedUpdate rather than Update because that is the clock RodController runs on
-        /// once the rod has its kinematic Rigidbody — sampling faster would only resend the same pose.
+        /// Follows on FixedUpdate rather than Update, because that is the clock RodController runs on
+        /// once the rod has its kinematic Rigidbody. Follow used to run on Update: at 60 fps against a
+        /// 100 Hz physics step, some physics steps saw a Follow call and some saw none, so the sweep a
+        /// remote rod handed the ball varied step to step for no gameplay reason. On FixedUpdate, and
+        /// with this component ordered ahead of RodController, an arriving pose reaches PhysX in the
+        /// same step it landed.
+        ///
+        /// Publishing does NOT belong here — see <see cref="OnPoseApplied"/>.
         /// </summary>
         private void FixedUpdate()
+        {
+            if (IsSpawned && !IsOwner)
+            {
+                Follow(Time.fixedDeltaTime);
+            }
+        }
+
+        /// <summary>
+        /// Publishes off <see cref="RodController.PoseApplied"/> rather than this component's own
+        /// FixedUpdate, because the two halves of this class need OPPOSITE orderings and the
+        /// execution-order attribute can only grant one.
+        ///
+        /// Follow has to run before RodController's Tick. Publish has to run after it: ordered early,
+        /// it samples CurrentSpinAngle before Tick has advanced it, so every packet leaves carrying
+        /// the pose from one step ago. That is a free 10 ms of latency on the owner-to-opponent leg at
+        /// 100 Hz, paid on every rod on every step, and it is invisible — the rod looks right on both
+        /// screens, it is just consistently late.
+        /// </summary>
+        private void OnPoseApplied()
         {
             if (IsSpawned && IsOwner)
             {
                 Publish();
-            }
-        }
-
-        private void Update()
-        {
-            if (IsSpawned && !IsOwner)
-            {
-                Follow(Time.deltaTime);
             }
         }
 
@@ -164,21 +208,36 @@ namespace TableFootball.Net
             Pose target = pose.Value;
             float k = 1f - Mathf.Exp(-followSharpness * dt);
 
-            // LerpAngle, not Lerp: the angle is wrapped to 0..360, so a rod crossing zero would
-            // otherwise be dragged the long way round — a full backwards spin on screen, and a
-            // MeasuredSpinSpeed reading hundreds of times too high on the host.
             rod.SetSlide01Immediate(Mathf.Lerp(rod.CurrentSlide01, target.Slide01, k));
-            rod.SetSpinAngle(Mathf.LerpAngle(rod.CurrentSpinAngle, target.SpinAngle, k));
+
+            // Turn the rod at the reported rate first, then fold in whatever's left toward the exact
+            // reported angle. Advancing by the signed speed (rather than only easing toward a wrapped
+            // angle) keeps the host's rod moving the same way its owner turned it — LerpAngle alone
+            // takes the shorter way round, which points a whip past half a turn backwards.
+            float previousAngle = rod.CurrentSpinAngle;
+            float extrapolated = previousAngle + target.SpinSpeed * dt;
+            float newAngle = Mathf.LerpAngle(extrapolated, target.SpinAngle, k);
+            rod.SetSpinAngle(newAngle);
 
             // The rod is being positioned outright, so any leftover velocity would be integrated on
             // top of it and push the rod past where its owner actually is.
             rod.SetSpinVelocity(0f);
 
-            // The owner's own reading, not one worked back out of the angle above. LerpAngle takes
-            // the shorter way round, so a rod whipped more than half a turn between two updates
-            // arrives here looking like it spun the other way — and the ball is struck in whichever
-            // direction this number says. This is the line that stops hard shots going backwards.
-            rod.SetMeasuredSpin(target.SpinSpeed);
+            // Report the spin the rod ACTUALLY turned this step, not the raw number the last packet
+            // carried. That distinction is the whole fix for the ball being struck by a rod that is
+            // standing still: when a rod stops, its owner's measured spin decays over ~10 steps
+            // (991 → 495 → 248 → …), and through that decay the rod moves too little to send a fresh
+            // packet yet stays above the "stopped" packet's threshold — so the host holds the last
+            // speed it heard and keeps the rod ARMED at a swing it is no longer making. A ball
+            // rolling into it then gets shot by a motionless figure. Measuring the magnitude from the
+            // rod's real motion here makes a still rod read as still (~0°/s, not armed), exactly as a
+            // local rod does. The SIGN still comes from the packet: a whip past half a turn lands as
+            // a short backwards step under LerpAngle, and the shot's direction keys off this sign.
+            float appliedStep = Mathf.DeltaAngle(previousAngle, newAngle);
+            float sign = Mathf.Approximately(target.SpinSpeed, 0f)
+                ? Mathf.Sign(appliedStep)
+                : Mathf.Sign(target.SpinSpeed);
+            rod.SetMeasuredSpin(sign * Mathf.Abs(appliedStep) / dt);
         }
 
         /// <summary>

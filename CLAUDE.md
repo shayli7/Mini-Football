@@ -2,9 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-**See [AGENTS.md](AGENTS.md).** It carries the whole guide — project layout, the compile-check
-command that stands in for a test suite, the architecture, and the list of invariants that fail
-silently in this codebase.
+The whole guide lives in `AGENTS.md`, which other AI coding tools also read. It is imported here, so
+it loads with this file. Add new guidance there, not here, so the two cannot drift apart.
 
-Kept as a pointer rather than a copy so the two cannot drift apart. Add new guidance to `AGENTS.md`,
-which other AI coding tools also read.
+@AGENTS.md
+
+## UI work
+
+Anything under `Assets/Scripts/UI/` also follows the UI style guide: palette and theme tokens,
+button variants, motion rules and the screen-building pattern. Read it before changing any screen:
+`Assets/Scripts/UI/AGENTS.md`.
+
+## Cloud sessions
+
+A claude.ai cloud container has no Unity install, and its network policy blocks downloading a .NET
+SDK. So the compile check in `AGENTS.md` cannot run there. Say so when handing work back, and ask the
+user to compile in Unity (or run the compile check on their Windows machine) before relying on it.
