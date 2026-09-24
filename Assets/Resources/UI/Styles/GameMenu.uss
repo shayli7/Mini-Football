@@ -1,0 +1,193 @@
+/* Pause menu, leave confirmation and Settings. See GameMenu.cs. Laid out against a 760-unit-high
+   panel; the dialog matches the Settings artboard of the design. */
+
+.gm {
+    align-items: center;
+    justify-content: center;
+}
+
+.gm__dim { background-color: rgba(3, 5, 9, 0.72); }
+
+.gm__panel {
+    width: 520px;
+    padding: 30px 32px;
+    border-color: var(--line-2);
+    border-radius: 26px;
+}
+
+.gm__group { align-items: stretch; }
+
+.gm__settings { height: 520px; }
+
+/* ---------- pause ---------- */
+
+.gm__logo {
+    align-items: center;
+    margin-top: 6px;
+}
+
+.gm__mini {
+    font-size: 15px;
+    letter-spacing: 9px;
+    padding-left: 9px;
+    -unity-text-align: middle-center;
+}
+
+.gm__football {
+    font-size: 34px;
+    letter-spacing: 5px;
+    padding-left: 5px;
+    color: var(--gold);
+    -unity-text-align: middle-center;
+}
+
+.gm__paused {
+    margin-top: 12px;
+    font-size: 14px;
+    letter-spacing: 12px;
+    padding-left: 12px;
+    color: var(--muted);
+    -unity-text-align: middle-center;
+}
+
+.gm__buttons { margin-top: 26px; }
+.gm__buttons .btn { margin-top: 12px; height: 56px; }
+.gm__buttons .btn:first-child { margin-top: 0; }
+
+/* ---------- confirm ---------- */
+
+.gm__title {
+    font-size: 30px;
+    letter-spacing: 5px;
+}
+
+.gm__title--center {
+    margin-top: 6px;
+    -unity-text-align: middle-center;
+}
+
+.gm__warning {
+    margin-top: 10px;
+    font-size: 15px;
+    letter-spacing: 4px;
+    color: var(--gold);
+    -unity-text-align: middle-center;
+}
+
+/* ---------- settings ---------- */
+
+.gm__head {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.gm__close { width: 48px; height: 48px; border-radius: 14px; }
+.gm__close .icon { width: 18px; height: 18px; }
+
+.gm__block { margin-top: 18px; }
+
+.gm__row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.gm__label {
+    flex-direction: row;
+    align-items: center;
+}
+
+.gm__label .icon { width: 18px; height: 18px; margin-right: 10px; }
+
+.gm__label-text {
+    font-size: 13px;
+    letter-spacing: 3px;
+    color: var(--muted);
+}
+
+.gm__value { font-size: 16px; }
+
+.gm__divider {
+    height: 1px;
+    margin-top: 22px;
+    background-color: var(--line);
+}
+
+.gm__block .seg { margin-top: 12px; }
+
+.gm__done { height: 56px; }
+
+/* ---------- slider ---------- */
+
+.slider {
+    height: 28px;
+    justify-content: center;
+}
+
+.slider__track {
+    height: 6px;
+    border-radius: 3px;
+    background-color: var(--black);
+}
+
+.slider__fill {
+    height: 100%;
+    border-radius: 3px;
+    background-color: var(--blue);
+}
+
+.slider__knob {
+    position: absolute;
+    top: 0;
+    width: 28px;
+    height: 28px;
+    margin-left: -14px;
+    border-radius: 14px;
+    border-width: 4px;
+    border-color: var(--blue-fill);
+    background-color: var(--ink);
+}
+
+/* ---------- segmented control ---------- */
+
+.seg {
+    flex-direction: row;
+    height: 60px;
+    padding: 5px;
+    border-radius: 16px;
+    background-color: var(--black);
+}
+
+.seg__item {
+    flex-grow: 1;
+    flex-basis: 0;
+    margin-left: 5px;
+    border-radius: 12px;
+    border-width: 2px;
+    border-color: rgba(0, 0, 0, 0);
+    align-items: center;
+    justify-content: center;
+    transition-property: background-color, border-color, scale;
+    transition-duration: 0.2s, 0.2s, 0.12s;
+}
+
+.seg__item:first-child { margin-left: 0; }
+.seg__item:hover { background-color: var(--panel); }
+.seg__item:active { scale: 0.97 0.97; }
+
+.seg__item.is-selected {
+    background-color: var(--blue-fill);
+    border-color: var(--gold);
+}
+
+.seg__label {
+    font-size: 15px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    -unity-text-align: middle-center;
+}
+
+.seg__item.is-selected .seg__label { color: var(--ink); }

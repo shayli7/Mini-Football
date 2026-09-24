@@ -1,9 +1,7 @@
 using System;
-using System.Collections;
-using TMPro;
+using TableFootball.UI.Toolkit;
 using UnityEngine;
-using UnityEngine.EventSystems;
-using UnityEngine.UI;
+using UnityEngine.UIElements;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem;
 #endif
@@ -11,8 +9,12 @@ using UnityEngine.InputSystem;
 namespace TableFootball.UI
 {
     /// <summary>
-    /// Owns the pause access and the menu overlay: the top-right pause button, the main/pause menu
-    /// (Resume / Settings / Quit) and the Settings panel (Master + SFX volume, AI difficulty).
+    /// Owns the pause access and the menu overlay: the top-right pause button, the pause menu
+    /// (Resume / Settings / Main Menu), the leave confirmation, and the Settings panel (music and
+    /// effects volume, AI difficulty).
+    ///
+    /// The overlay is drawn by UI Toolkit (<c>Resources/UI/Styles/GameMenu.uss</c>); the pause button
+    /// is still uGUI, beside the score strip it belongs with, and moves when the match HUD does.
     ///
     /// Pausing is real: <c>Time.timeScale = 0</c> and <c>AudioListener.pause = true</c> while the menu
     /// is open. Because MatchManager and TeamAI both idle on their own timers, that alone freezes play;
@@ -24,20 +26,23 @@ namespace TableFootball.UI
         private Transform canvasRoot;
 
         private GameObject pauseButton;
-        private GameObject overlay;
-        private CanvasGroup overlayCg;
-        private Transform menuPanel;
-        private GameObject mainGroup;
-        private GameObject settingsGroup;
-        private GameObject confirmGroup;
-        private MenuButton resumeButton;
-        private MenuButton backButton;
-        private MenuButton stayButton;
-        private TextMeshProUGUI confirmBody;
+
+        private VisualElement root;
+        private VisualElement dim;
+        private VisualElement panel;
+        private VisualElement mainGroup;
+        private VisualElement settingsGroup;
+        private VisualElement confirmGroup;
+        private Label confirmBody;
+        private VolumeSlider musicSlider;
+        private VolumeSlider sfxSlider;
+        private Label musicValue;
+        private Label sfxValue;
+        private readonly VisualElement[] difficultyItems = new VisualElement[3];
+        private IVisualElementScheduledItem tween;
 
         private bool isOpen;
         private bool standalone;
-        private Coroutine overlayRoutine;
 
         /// <summary>
         /// Whether the pause icon is allowed to show at all, independent of whether the overlay it
@@ -72,8 +77,8 @@ namespace TableFootball.UI
                 // Back steps out of whichever sub-screen is up before it closes the menu. Escape on
                 // the confirmation must mean "no" — closing the menu outright there would resume a
                 // match the player was in the middle of deciding to leave.
-                if (isOpen && confirmGroup.activeSelf) HideLeaveConfirm();
-                else if (isOpen && settingsGroup.activeSelf) HideSettings();
+                if (isOpen && UiKit.IsShown(confirmGroup)) HideLeaveConfirm();
+                else if (isOpen && UiKit.IsShown(settingsGroup)) HideSettings();
                 else Toggle();
             }
         }
@@ -120,9 +125,9 @@ namespace TableFootball.UI
         public Action OnLeaveMatch;
 
         /// <summary>
-        /// Raised when Settings, opened straight from the main menu, is closed. GameFlow hides the
-        /// main menu while it is up and reopens it here: the menu is drawn by UI Toolkit and this panel
-        /// by uGUI, and which of the two draws on top is not something either system promises.
+        /// Raised when Settings, opened straight from the main menu, is closed. The overlay and the
+        /// main menu are both UI Toolkit now, so the menu can stay up underneath it; this is kept for
+        /// any caller that wants to know when the player is back.
         /// </summary>
         public Action OnStandaloneClosed;
 
@@ -170,56 +175,49 @@ namespace TableFootball.UI
                 if (pauseButton != null) pauseButton.SetActive(!open && pauseButtonAllowed);
             }
 
-            overlayCg.blocksRaycasts = open;
-            overlayCg.interactable = open;
-
             if (open)
             {
-                overlay.SetActive(true);
-                overlay.transform.SetAsLastSibling();
                 ShowMain();
-                if (overlayRoutine != null) StopCoroutine(overlayRoutine);
-                overlayRoutine = StartCoroutine(OpenAnim(instant));
+                root.style.opacity = 1f;
+                UiKit.Show(root, true);
+                // Over whichever UI Toolkit screen is up — the main menu, when Settings is opened
+                // from it.
+                root.BringToFront();
+
+                // Pops in: the dim fades, the panel scales up from a touch smaller.
+                Animate(instant ? 0f : ArcadeTheme.TNormal, t =>
+                {
+                    float k = ArcadeTheme.EaseOut(t);
+                    dim.style.opacity = k;
+                    panel.style.opacity = k;
+                    float s = Mathf.Lerp(ArcadeTheme.MenuFrom, 1f, k);
+                    panel.style.scale = new Scale(new Vector2(s, s));
+                });
             }
             else
             {
-                if (overlayRoutine != null) StopCoroutine(overlayRoutine);
-                if (instant) { overlayCg.alpha = 0f; overlay.SetActive(false); }
-                else overlayRoutine = StartCoroutine(CloseAnim());
+                // Exit is subtler than enter: a quick fade, no movement.
+                float from = root.resolvedStyle.opacity;
+                Animate(instant ? 0f : ArcadeTheme.TFast,
+                        t => root.style.opacity = Mathf.Lerp(from, 0f, ArcadeTheme.EaseIn(t)),
+                        () => UiKit.Show(root, false));
             }
-        }
-
-        private IEnumerator OpenAnim(bool instant)
-        {
-            float dur = instant ? 0f : ArcadeTheme.TNormal;
-            StartCoroutine(UITween.ScaleTo(menuPanel, Vector3.one * ArcadeTheme.MenuFrom, Vector3.one, dur, ArcadeTheme.EaseOut));
-            yield return UITween.Fade(overlayCg, 0f, 1f, dur, ArcadeTheme.EaseOut);
-            // focus the primary action for keyboard / gamepad
-            if (EventSystem.current != null && resumeButton != null)
-                EventSystem.current.SetSelectedGameObject(resumeButton.gameObject);
-        }
-
-        private IEnumerator CloseAnim()
-        {
-            // exit is subtler than enter: fade only, faster ease-in (per motion-principles)
-            yield return UITween.Fade(overlayCg, overlayCg.alpha, 0f, ArcadeTheme.TFast, ArcadeTheme.EaseIn);
-            overlay.SetActive(false);
         }
 
         private void ShowMain()
         {
-            mainGroup.SetActive(true);
-            settingsGroup.SetActive(false);
-            confirmGroup.SetActive(false);
+            UiKit.Show(mainGroup, true);
+            UiKit.Show(settingsGroup, false);
+            UiKit.Show(confirmGroup, false);
         }
 
         public void ShowSettings()
         {
-            mainGroup.SetActive(false);
-            settingsGroup.SetActive(true);
-            confirmGroup.SetActive(false);
-            if (EventSystem.current != null && backButton != null)
-                EventSystem.current.SetSelectedGameObject(backButton.gameObject);
+            // Read back every time: the difficulty can also be changed from the main menu's cards.
+            RefreshSettings();
+            UiKit.Show(mainGroup, false);
+            UiKit.Show(settingsGroup, true);
+            UiKit.Show(confirmGroup, false);
         }
 
         public void HideSettings()
@@ -235,8 +233,6 @@ namespace TableFootball.UI
             }
 
             ShowMain();
-            if (EventSystem.current != null && resumeButton != null)
-                EventSystem.current.SetSelectedGameObject(resumeButton.gameObject);
         }
 
         /// <summary>
@@ -245,31 +241,16 @@ namespace TableFootball.UI
         /// </summary>
         public void ShowLeaveConfirm()
         {
-            mainGroup.SetActive(false);
-            settingsGroup.SetActive(false);
-            confirmGroup.SetActive(true);
+            UiKit.Show(mainGroup, false);
+            UiKit.Show(settingsGroup, false);
+            UiKit.Show(confirmGroup, true);
 
-            if (confirmBody != null)
-            {
-                confirmBody.text = OnlineMatch
-                    ? "YOUR OPPONENT WINS"
-                    : "THE MATCH WILL BE LOST";
-            }
-
-            // Focus Stay, not Leave. A confirmation that arrives with the destructive option already
-            // selected is answered by the same reflex that opened it.
-            if (EventSystem.current != null && stayButton != null)
-                EventSystem.current.SetSelectedGameObject(stayButton.gameObject);
+            confirmBody.text = OnlineMatch ? "YOUR OPPONENT WINS" : "THE MATCH WILL BE LOST";
         }
 
-        public void HideLeaveConfirm()
-        {
-            ShowMain();
-            if (EventSystem.current != null && resumeButton != null)
-                EventSystem.current.SetSelectedGameObject(resumeButton.gameObject);
-        }
+        public void HideLeaveConfirm() => ShowMain();
 
-        // ---------- build ----------
+        // ---------- build: pause button (uGUI, with the score strip) ----------
 
         private void BuildPauseButton()
         {
@@ -296,7 +277,7 @@ namespace TableFootball.UI
 
             // two-bar pause glyph
             var glyph = UIFactory.Child(root.transform, "Glyph");
-            var grow = glyph.AddComponent<HorizontalLayoutGroup>();
+            var grow = glyph.AddComponent<UnityEngine.UI.HorizontalLayoutGroup>();
             grow.childAlignment = TextAnchor.MiddleCenter; grow.spacing = 5f;
             grow.childControlWidth = false; grow.childControlHeight = false;
             UIFactory.Stretch(UIFactory.Rt(glyph), 0);
@@ -305,7 +286,7 @@ namespace TableFootball.UI
                 var bar = UIFactory.Child(glyph.transform, "Bar");
                 UIFactory.RoundedImage(bar, 2, ArcadeTheme.Ink, false);
                 UIFactory.Rt(bar).sizeDelta = new Vector2(4f, 16f);
-                bar.AddComponent<LayoutElement>();
+                bar.AddComponent<UnityEngine.UI.LayoutElement>();
             }
 
             var btn = root.AddComponent<MenuButton>();
@@ -319,165 +300,230 @@ namespace TableFootball.UI
             pauseButton = root;
         }
 
+        // ---------- build: overlay (UI Toolkit) ----------
+
         private void BuildOverlay()
         {
-            overlay = UIFactory.Child(canvasRoot, "MenuOverlay");
-            UIFactory.Stretch(UIFactory.Rt(overlay), 0);
-            // The same shared dim the account/friends/online screens now use, so the settings overlay
-            // and those screens read as one design language rather than two. See UIFactory.ScrimDim.
-            UIFactory.ScrimDim(overlay.transform);
-            overlayCg = overlay.AddComponent<CanvasGroup>();
+            root = UiKit.El("screen gm", UiToolkitHost.Root, "GameMenu");
+            var sheet = Resources.Load<StyleSheet>("UI/Styles/GameMenu");
+            if (sheet != null) root.styleSheets.Add(sheet);
+            // Blocks the table and the screen beneath while it is up.
+            root.pickingMode = PickingMode.Position;
 
-            var panel = UIFactory.Panel(overlay.transform, "MenuPanel");
-            menuPanel = panel.transform;
-            var prt = UIFactory.Rt(panel);
-            prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
-            prt.pivot = new Vector2(0.5f, 0.5f);
-            prt.sizeDelta = new Vector2(480f, 540f);
+            dim = UiKit.El("bleed gm__dim", root);
+            dim.pickingMode = PickingMode.Ignore;
 
-            var fill = panel.transform.Find("Fill");
-            var vlg = fill.gameObject.AddComponent<VerticalLayoutGroup>();
-            vlg.childAlignment = TextAnchor.UpperCenter;
-            vlg.spacing = ArcadeTheme.Md;
-            vlg.padding = new RectOffset(28, 28, 28, 28);
-            vlg.childForceExpandWidth = true; vlg.childForceExpandHeight = false;
-            vlg.childControlWidth = true; vlg.childControlHeight = true;
+            panel = UiKit.El("panel gm__panel", root);
 
-            BuildMainGroup(fill);
-            BuildSettingsGroup(fill);
-            BuildConfirmGroup(fill);
+            BuildMainGroup();
+            BuildSettingsGroup();
+            BuildConfirmGroup();
+
+            UiFonts.Apply(root);
+            UiKit.Show(root, false);
         }
 
-        private VerticalLayoutGroup Group(Transform parent, string name)
+        private void BuildMainGroup()
         {
-            var go = UIFactory.Child(parent, name);
-            var v = go.AddComponent<VerticalLayoutGroup>();
-            v.childAlignment = TextAnchor.UpperCenter;
-            v.spacing = ArcadeTheme.Md;
-            v.childForceExpandWidth = true; v.childForceExpandHeight = false;
-            v.childControlWidth = true; v.childControlHeight = true;
-            var le = go.AddComponent<LayoutElement>();
-            le.flexibleWidth = 1f;
-            return v;
+            mainGroup = UiKit.El("gm__group", panel);
+
+            var logo = UiKit.El("gm__logo", mainGroup);
+            UiKit.Text(ArcadeTheme.GameNameA, "gm__mini f-display-semi", logo);
+            UiKit.Text(ArcadeTheme.GameNameB, "gm__football f-display", logo);
+            UiKit.Text("PAUSED", "gm__paused f-body-semi", mainGroup);
+
+            var buttons = UiKit.El("gm__buttons", mainGroup);
+            UiKit.Button("RESUME", "gold", Resume, buttons);
+            UiKit.Button("SETTINGS", "blue", ShowSettings, buttons);
+            UiKit.Button("MAIN MENU", "danger", ShowLeaveConfirm, buttons);
         }
 
-        private void BuildMainGroup(Transform parent)
+        private void BuildConfirmGroup()
         {
-            var group = Group(parent, "MainGroup");
-            mainGroup = group.gameObject;
+            confirmGroup = UiKit.El("gm__group", panel);
 
-            // The same lockup the main menu uses, at panel scale and without the mark — the panel is
-            // 400 wide and the ball-and-rods would crowd it. This replaced a hand-written
-            // "<color=#FF3355>FOOS</color>…" string, the only place in the UI that bypassed the theme.
-            var logo = UIFactory.LogoLockup(group.transform, scale: 0.62f, withMark: false);
-            logo.AddComponent<LayoutElement>().preferredHeight = 76f;
-
-            var tagline = UIFactory.Text(group.transform, "PAUSED", ArcadeTheme.FsBody, ArcadeTheme.Ink,
-                                         display: false, bold: true, upper: true, tracking: 18f);
-            tagline.gameObject.AddComponent<LayoutElement>().preferredHeight = 28f;
-
-            Spacer(group.transform, 8f);
-            resumeButton = UIFactory.Button(group.transform, "Resume", MenuButton.Variant.Primary, Resume);
-            UIFactory.Button(group.transform, "Settings", MenuButton.Variant.Ghost, ShowSettings);
-            UIFactory.Button(group.transform, "Main Menu", MenuButton.Variant.Danger, ShowLeaveConfirm);
-        }
-
-        private void BuildConfirmGroup(Transform parent)
-        {
-            var group = Group(parent, "ConfirmGroup");
-            confirmGroup = group.gameObject;
-
-            var title = UIFactory.Text(group.transform, "LEAVE MATCH?", ArcadeTheme.FsTitle * 0.6f,
-                                       ArcadeTheme.Ink, display: true, bold: true, upper: true,
-                                       tracking: 4f);
-            title.gameObject.AddComponent<LayoutElement>().preferredHeight = 44f;
-
+            UiKit.Text("LEAVE MATCH?", "gm__title gm__title--center f-display", confirmGroup);
             // Filled in by ShowLeaveConfirm, which is the only place that knows the mode.
-            confirmBody = UIFactory.Text(group.transform, string.Empty, ArcadeTheme.FsBody,
-                                         ArcadeTheme.Gold, display: false, bold: true, upper: true,
-                                         tracking: 4f);
-            confirmBody.gameObject.AddComponent<LayoutElement>().preferredHeight = 28f;
-
-            Spacer(group.transform, 12f);
+            confirmBody = UiKit.Text(string.Empty, "gm__warning f-body-semi", confirmGroup);
 
             // Stay is the primary and comes first: the safe answer should be the one under the thumb
             // and the one that looks like the default.
-            stayButton = UIFactory.Button(group.transform, "Stay", MenuButton.Variant.Primary,
-                                          HideLeaveConfirm);
-            UIFactory.Button(group.transform, "Leave", MenuButton.Variant.Danger, Quit);
+            var buttons = UiKit.El("gm__buttons", confirmGroup);
+            UiKit.Button("STAY", "gold", HideLeaveConfirm, buttons);
+            UiKit.Button("LEAVE", "danger", Quit, buttons);
         }
 
-        private void BuildSettingsGroup(Transform parent)
+        private void BuildSettingsGroup()
         {
-            var group = Group(parent, "SettingsGroup");
-            settingsGroup = group.gameObject;
+            settingsGroup = UiKit.El("gm__group gm__settings", panel);
 
-            // Title with a close button beside it, so the way out of a pop-up is where pop-ups keep
-            // it rather than only at the bottom of the panel.
-            var head = UIFactory.Child(group.transform, "Head");
-            head.AddComponent<LayoutElement>().preferredHeight = 52f;
-            var title = UIFactory.Text(head.transform, "SETTINGS", ArcadeTheme.FsTitle * 0.6f, ArcadeTheme.Ink,
-                                       display: true, bold: true, upper: true, tracking: 6f,
-                                       align: TextAlignmentOptions.Left);
-            UIFactory.Stretch(UIFactory.Rt(title.gameObject), 0);
-            var close = UIFactory.IconButton(head.transform, "Close", UIFactory.Icon.Close,
-                                             MenuButton.Variant.Ghost, HideSettings, 48f);
-            var crt = UIFactory.Rt(close.gameObject);
-            crt.anchorMin = crt.anchorMax = new Vector2(1f, 0.5f);
-            crt.pivot = new Vector2(1f, 0.5f);
-            crt.anchoredPosition = Vector2.zero;
-            Spacer(group.transform, 4f);
+            // Title with a close button beside it, so the way out of a pop-up is where pop-ups keep it.
+            var head = UiKit.El("gm__head", settingsGroup);
+            UiKit.Text("SETTINGS", "gm__title f-display", head);
+            var close = UiKit.El("icon-btn gm__close", head);
+            close.Add(new UiIcon(UiIcon.Glyph.Close, ArcadeTheme.Ink, 2.5f));
+            UiKit.OnTap(close, HideSettings);
 
-            var music = SettingRow(group.transform, "MUSIC", GameAudio.Music);
-            UIFactory.Slider(group.transform, GameAudio.Music, v =>
+            musicSlider = VolumeBlock(UiIcon.Glyph.Music, "MUSIC", out musicValue, v =>
             {
                 GameAudio.Music = v;
-                music.text = Percent(v);
+                musicValue.text = Percent(v);
             });
 
-            var sfx = SettingRow(group.transform, "SOUND EFFECTS", GameAudio.Sfx);
-            UIFactory.Slider(group.transform, GameAudio.Sfx, v =>
+            sfxSlider = VolumeBlock(UiIcon.Glyph.Speaker, "SOUND EFFECTS", out sfxValue, v =>
             {
                 GameAudio.Sfx = v;
-                sfx.text = Percent(v);
+                sfxValue.text = Percent(v);
             });
 
-            Spacer(group.transform, 4f);
-            SettingLabel(group.transform, "AI DIFFICULTY");
-            UIFactory.Segmented(group.transform, new[] { "EASY", "NORMAL", "HARD" }, (int)GameAudio.Difficulty,
-                                i => GameAudio.Difficulty = (AiLevel)i);
+            UiKit.El("gm__divider", settingsGroup);
 
-            Spacer(group.transform, 12f);
-            backButton = UIFactory.Button(group.transform, "Done", MenuButton.Variant.Blue, HideSettings, 54f);
+            var diff = UiKit.El("gm__block", settingsGroup);
+            SettingLabel(diff, UiIcon.Glyph.Robot, "AI DIFFICULTY");
+            var seg = UiKit.El("seg", diff);
+            string[] names = { "EASY", "NORMAL", "HARD" };
+            for (int i = 0; i < names.Length; i++)
+            {
+                int level = i;
+                var item = UiKit.El("seg__item", seg);
+                UiKit.Text(names[i], "seg__label f-display", item);
+                UiKit.OnTap(item, () =>
+                {
+                    GameAudio.Difficulty = (AiLevel)level;
+                    RefreshDifficulty();
+                });
+                difficultyItems[i] = item;
+            }
+
+            UiKit.El("grow", settingsGroup);
+            UiKit.Button("DONE", "blue", HideSettings, settingsGroup, "gm__done");
         }
 
-        /// <summary>A setting's name on the left and its current value, as a percentage, on the right.</summary>
-        private TextMeshProUGUI SettingRow(Transform parent, string text, float value)
+        /// <summary>A volume setting: its icon and name on the left, the value on the right, and the
+        /// slider under them.</summary>
+        private VolumeSlider VolumeBlock(UiIcon.Glyph glyph, string text, out Label value, Action<float> changed)
         {
-            var row = UIFactory.Child(parent, "Row_" + text);
-            row.AddComponent<LayoutElement>().preferredHeight = 24f;
+            var block = UiKit.El("gm__block", settingsGroup);
+            var row = UiKit.El("gm__row", block);
+            SettingLabel(row, glyph, text);
+            value = UiKit.Text("0%", "gm__value f-display", row);
 
-            var label = UIFactory.Text(row.transform, text, ArcadeTheme.FsCaption, ArcadeTheme.InkMuted,
-                                       display: false, bold: true, upper: true, tracking: 8f,
-                                       align: TextAlignmentOptions.Left);
-            UIFactory.Stretch(UIFactory.Rt(label.gameObject), 0);
+            var slider = new VolumeSlider(changed);
+            block.Add(slider);
+            return slider;
+        }
 
-            var readout = UIFactory.Text(row.transform, Percent(value), ArcadeTheme.FsCaption, ArcadeTheme.Ink,
-                                         display: true, bold: true, align: TextAlignmentOptions.Right);
-            UIFactory.Stretch(UIFactory.Rt(readout.gameObject), 0);
-            return readout;
+        private static void SettingLabel(VisualElement parent, UiIcon.Glyph glyph, string text)
+        {
+            var label = UiKit.El("gm__label", parent);
+            label.Add(new UiIcon(glyph, ArcadeTheme.BlueSoft, 2f));
+            UiKit.Text(text, "gm__label-text f-body-semi", label);
+        }
+
+        private void RefreshSettings()
+        {
+            musicSlider.SetValueWithoutNotify(GameAudio.Music);
+            musicValue.text = Percent(GameAudio.Music);
+            sfxSlider.SetValueWithoutNotify(GameAudio.Sfx);
+            sfxValue.text = Percent(GameAudio.Sfx);
+            RefreshDifficulty();
+        }
+
+        private void RefreshDifficulty()
+        {
+            int selected = (int)GameAudio.Difficulty;
+            for (int i = 0; i < difficultyItems.Length; i++)
+            {
+                difficultyItems[i].EnableInClassList("is-selected", i == selected);
+            }
         }
 
         private static string Percent(float v) => Mathf.RoundToInt(Mathf.Clamp01(v) * 100f) + "%";
 
-        private void SettingLabel(Transform parent, string text)
+        /// <summary>Runs <paramref name="step"/> from 0 to 1 over <paramref name="seconds"/> of
+        /// unscaled time — the pause menu animates while the world is frozen.</summary>
+        private void Animate(float seconds, Action<float> step, Action done = null)
         {
-            var t = UIFactory.Text(parent, text, ArcadeTheme.FsCaption, ArcadeTheme.InkMuted,
-                                   display: false, bold: true, upper: true, tracking: 14f,
-                                   align: TextAlignmentOptions.Left);
-            t.gameObject.AddComponent<LayoutElement>().preferredHeight = 20f;
+            tween?.Pause();
+            tween = null;
+
+            if (seconds <= 0f || ArcadeTheme.ReducedMotion)
+            {
+                step(1f);
+                done?.Invoke();
+                return;
+            }
+
+            float start = Time.unscaledTime;
+            IVisualElementScheduledItem item = null;
+            item = root.schedule.Execute(() =>
+            {
+                float t = Mathf.Clamp01((Time.unscaledTime - start) / seconds);
+                step(t);
+                if (t >= 1f)
+                {
+                    item.Pause();
+                    done?.Invoke();
+                }
+            }).Every(16);
+            tween = item;
         }
 
-        private static void Spacer(Transform parent, float height) => UIFactory.Spacer(parent, height);
+        /// <summary>
+        /// The volume slider: a thin track, a blue fill up to the value, and a round knob on it. The
+        /// whole 28-unit-high row takes the pointer, so it is easy to grab with a thumb; dragging
+        /// anywhere along it sets the value under the finger.
+        /// </summary>
+        private sealed class VolumeSlider : VisualElement
+        {
+            private readonly VisualElement fill;
+            private readonly VisualElement knob;
+            private readonly Action<float> changed;
+            private float value;
+
+            public VolumeSlider(Action<float> changed)
+            {
+                this.changed = changed;
+                AddToClassList("slider");
+                pickingMode = PickingMode.Position;
+
+                var track = UiKit.El("slider__track", this);
+                fill = UiKit.El("slider__fill", track);
+                knob = UiKit.El("slider__knob", this);
+                track.pickingMode = fill.pickingMode = knob.pickingMode = PickingMode.Ignore;
+
+                RegisterCallback<PointerDownEvent>(e =>
+                {
+                    this.CapturePointer(e.pointerId);
+                    SetFromPointer(e.localPosition.x);
+                    e.StopPropagation();
+                });
+                RegisterCallback<PointerMoveEvent>(e =>
+                {
+                    if (this.HasPointerCapture(e.pointerId)) SetFromPointer(e.localPosition.x);
+                });
+                RegisterCallback<PointerUpEvent>(e =>
+                {
+                    if (this.HasPointerCapture(e.pointerId)) this.ReleasePointer(e.pointerId);
+                });
+            }
+
+            public void SetValueWithoutNotify(float v)
+            {
+                value = Mathf.Clamp01(v);
+                fill.style.width = Length.Percent(value * 100f);
+                knob.style.left = Length.Percent(value * 100f);
+            }
+
+            private void SetFromPointer(float x)
+            {
+                float w = resolvedStyle.width;
+                if (w <= 0f) return;
+                float v = Mathf.Clamp01(x / w);
+                if (Mathf.Approximately(v, value)) return;
+                SetValueWithoutNotify(v);
+                changed?.Invoke(value);
+            }
+        }
     }
 }

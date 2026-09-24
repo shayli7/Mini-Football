@@ -23,8 +23,10 @@ screen, control, or visual.
 ## Two UI systems, mid-migration
 
 The front end is moving from uGUI (the `Canvas` built by `TableFootballUI`) to **UI Toolkit**, one
-screen at a time, so it can match the design canvas closely. Moved so far: **`StartScreen`**, **`StoreMenu`** and
-**`MainMenu`**. Everything else is still uGUI and follows the rest of this guide.
+screen at a time, so it can match the design canvas closely. Moved so far: **`StartScreen`**, **`StoreMenu`**,
+**`MainMenu`**, the **`GameMenu`** overlay (pause, leave confirmation and Settings; its pause button
+stays uGUI with the score strip) and **`ChestOpening`**. Everything else is still uGUI and follows the
+rest of this guide.
 
 A migrated screen keeps its class name and its whole public surface (`Build`, `Open`/`Close`/`Show`,
 the `On…` callbacks), so `GameFlow` and `TableFootballUI` do not change when one moves. Inside it:
@@ -53,9 +55,9 @@ Two rules that fail silently:
   `PickingMode.Ignore`; a screen blocks touches only while `display` is not `none`. A picking element
   left visible over the table makes every rod dead, with no error.
 - **Never rely on which system draws on top.** A uGUI panel opened over a UI Toolkit screen may draw
-  underneath it. The one case today — Settings opened from the main menu — closes the menu first and
-  reopens it from `GameMenu.OnStandaloneClosed`. Do the same for any new overlap until both sides
-  have moved.
+  underneath it, so any overlap between the two hides one side first, until both have moved.
+  (Settings used to do this over the main menu; `GameMenu`'s overlay is UI Toolkit now and simply
+  brings itself to the front.)
   The chest opening (`ChestOpening`, UI Toolkit) plays over the uGUI level path the same way: the
   path fades its `CanvasGroup` out while the chest plays and back in when the player collects.
 - **Chest opening** — `ChestOpening.Play(tier, item, coins, onClosed)` is the one place a chest is
