@@ -233,10 +233,8 @@ namespace TableFootball.UI
         {
             for (int i = 0; i < cards.Count; i++)
             {
-                bool on = i == index;
-                cards[i].EnableInClassList("is-selected", on);
-                var icon = cards[i].Q<UiIcon>("PlayIcon");
-                if (icon != null) icon.Color = on ? ArcadeTheme.OnGold : ArcadeTheme.Ink;
+                // No card is picked out any more: all PLAY strips look alike, same size, no gold.
+                cards[i].EnableInClassList("is-selected", false);
             }
         }
 

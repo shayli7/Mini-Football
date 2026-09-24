@@ -173,6 +173,33 @@ namespace TableFootball.Net
         }
 
         /// <summary>
+        /// Banks XP that did not come from a match — daily quests. One total, so the level a quest
+        /// screen shows is the level everything else shows. Returns the levels gained.
+        /// </summary>
+        public static int AddXp(int amount)
+        {
+            if (amount <= 0)
+            {
+                return 0;
+            }
+
+            int prevLevel = Level;
+            PlayerPrefs.SetInt(XpKey, Xp + amount);
+            PlayerPrefs.Save();
+            CloudSync.MarkDirty();
+            _onChanged?.Invoke();
+            return Level - prevLevel;
+        }
+
+        /// <summary>XP earned inside the current level, for a captioned bar.</summary>
+        public static int XpIntoLevel => Xp - CumulativeXpForLevel(Level);
+
+        /// <summary>The level and bar fill for an XP total that is not the current one — the quest
+        /// ledger animates from the state before its payout.</summary>
+        public static int LevelOfXp(int xp) => LevelForXp(xp);
+        public static float FractionOfXp(int xp) => FractionForXp(xp);
+
+        /// <summary>
         /// Credits one goal to the local player. Called by <see cref="UI.GameFlow"/> when the team it
         /// is crediting scores; local player-vs-player credits nothing, since there is no single owner
         /// to credit — the same gate <see cref="RecordMatch"/> lives behind.

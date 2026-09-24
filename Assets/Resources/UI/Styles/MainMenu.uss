@@ -169,7 +169,6 @@
 
 .card.is-selected {
     background-color: var(--panel-2);
-    border-color: var(--gold);
     translate: 0 -10px;
 }
 

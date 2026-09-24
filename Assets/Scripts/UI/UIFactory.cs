@@ -382,7 +382,7 @@ namespace TableFootball.UI
 
         /// <summary>
         /// The top row every full-screen menu shares: the screen's name centred, and Back in the
-        /// top-left corner. Back used to sit at the bottom centre on some screens and inside the panel
+        /// bottom-left corner, under the thumb on a landscape phone. Back used to sit at the bottom centre on some screens and inside the panel
         /// on others, so the way out moved every time the player changed screen; here it is always in
         /// the same corner, where every phone app has taught players to look for it.
         ///
@@ -411,13 +411,14 @@ namespace TableFootball.UI
 
             if (onBack == null) return null;
 
-            var holder = Child(header.transform, "BackHolder");
+            // Bottom-left of the screen, under the thumb on a landscape phone. Parented to the
+            // screen rather than the header, which lives at the top.
+            var holder = Child(parent, "BackHolder");
             var brt = Rt(holder);
-            brt.anchorMin = new Vector2(0f, 0f);
-            brt.anchorMax = new Vector2(0f, 1f);
-            brt.pivot = new Vector2(0f, 0.5f);
-            brt.sizeDelta = new Vector2(ArcadeTheme.BackWidth, 0f);
-            brt.anchoredPosition = Vector2.zero;
+            brt.anchorMin = brt.anchorMax = new Vector2(0f, 0f);
+            brt.pivot = new Vector2(0f, 0f);
+            brt.sizeDelta = new Vector2(ArcadeTheme.BackWidth, ArcadeTheme.HeaderHeight);
+            brt.anchoredPosition = new Vector2(ArcadeTheme.Xl2, ArcadeTheme.Xl);
 
             var v = holder.AddComponent<VerticalLayoutGroup>();
             v.childAlignment = TextAnchor.MiddleCenter;

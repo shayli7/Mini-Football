@@ -1,4 +1,5 @@
 using System;
+using TableFootball.Net;
 using TableFootball.Progression;
 using TMPro;
 using UnityEngine;
@@ -430,8 +431,9 @@ namespace TableFootball.UI
 
             if (levelCaption != null)
             {
-                int left = PlayerXp.LevelSpan - PlayerXp.IntoLevel;
-                levelCaption.text = $"{left} XP to level {PlayerXp.Level + 1}";
+                levelCaption.text = PlayerProgress.AtMaxLevel
+                    ? "MAX LEVEL"
+                    : $"{PlayerProgress.XpToNext - PlayerProgress.Xp} XP to level {PlayerXp.Level + 1}";
             }
 
             if (streakLabel != null)
