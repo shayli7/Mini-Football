@@ -348,10 +348,20 @@ namespace TableFootball
         /// Nothing about the rod looks wrong when that happens. What breaks is the ball: the strike
         /// impulse takes its direction from the sign of this measurement, so every hard shot went
         /// back down the table towards the player who took it.
+        ///
+        /// The value is CLAMPED to the rod's physical ceiling before it is believed. This is the one
+        /// number a remote peer feeds straight into the host's ball physics — the strike impulse
+        /// reads it for both power and direction — and it is the only network input that is not
+        /// already bounded (slide is Clamp01'd, the angle is wrapped). A locally driven rod can never
+        /// exceed <see cref="maxSpinSpeed"/>, so an incoming report that does is not a hard shot, it
+        /// is a modified client claiming a swing no rod could make; clamping it to the same ceiling
+        /// the local physics obeys costs a genuine player nothing (the strike boost already saturates
+        /// well below this) and denies a peer a value the game itself cannot produce. It does NOT, on
+        /// its own, prove a genuine swing happened — see AGENTS.md — but it keeps the number physical.
         /// </summary>
         public void SetMeasuredSpin(float degreesPerSecond)
         {
-            measuredSpinSpeed = degreesPerSecond;
+            measuredSpinSpeed = Mathf.Clamp(degreesPerSecond, -maxSpinSpeed, maxSpinSpeed);
             spinReportedExternally = true;
         }
 

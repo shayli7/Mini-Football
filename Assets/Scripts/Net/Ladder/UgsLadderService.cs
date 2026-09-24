@@ -88,22 +88,26 @@ namespace TableFootball
             }
         }
 
-        public async Task SubmitResultAsync(int opponentRating, bool won)
+        public async Task SubmitResultAsync(int opponentRating, bool won, string matchId, string opponentId)
         {
             if (!IsAvailable) return;
 
             try
             {
                 // The server applies the league's asymmetric points itself — never trust a client to
-                // report its own new rating. It just needs the outcome (and the opponent, later, for
-                // validation / skill-scaled scoring).
+                // report its own new rating. matchId/opponentId are what let it also require the
+                // named opponent to report the same match, with the opposite outcome, before either
+                // side is credited — a lone { won: true } call is no longer enough on its own. See
+                // cloudcode/ladder.js's submitResult for the corroboration and its documented limits.
                 await Unity.Services.CloudCode.CloudCodeService.Instance
                     .CallEndpointAsync<object>("ladder",
                         new Dictionary<string, object>
                         {
                             { "action", "submitResult" },
                             { "won", won },
-                            { "opponentRating", opponentRating }
+                            { "opponentRating", opponentRating },
+                            { "matchId", matchId ?? string.Empty },
+                            { "opponentId", opponentId ?? string.Empty }
                         });
 
                 OnChanged?.Invoke();
@@ -154,7 +158,8 @@ namespace TableFootball
         public Task<LadderStanding> GetMyStandingAsync() => Task.FromResult(default(LadderStanding));
         public Task<IReadOnlyList<LadderEntry>> GetMyPodAsync() =>
             Task.FromResult<IReadOnlyList<LadderEntry>>(Array.Empty<LadderEntry>());
-        public Task SubmitResultAsync(int opponentRating, bool won) => Task.CompletedTask;
+        public Task SubmitResultAsync(int opponentRating, bool won, string matchId, string opponentId) =>
+            Task.CompletedTask;
     }
 #endif
 }
