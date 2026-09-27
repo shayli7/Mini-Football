@@ -97,7 +97,8 @@ not new branches inside `RodController`.**
 
 **The rewards economy is four statics and one rule: coins are earned, never bought.** `Wallet` is the
 only balance; exactly two things credit it — `RankedRewards` at the weekly ladder rollover and
-`LevelPath` when a level's reward is claimed — and exactly one thing spends it, the store. Screens
+`LevelPath` when a level's reward is claimed — and exactly one thing spends it, the store (skins, and chests through `ChestLoot.TryBuy`, priced
+above their coin consolation so a finished collection cannot farm coins). Screens
 read these synchronously and redraw on their `OnChanged`, the same shape as `PlayerProgress`.
 `CosmeticCatalog` is the single list of skins; adding one is a row there and nothing else, because
 the store grid, the chest pool and the level path's named rewards all read it.

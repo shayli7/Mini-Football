@@ -61,7 +61,7 @@ Two rules that fail silently:
   The chest opening (`ChestOpening`, UI Toolkit) plays over the uGUI level path the same way: the
   path fades its `CanvasGroup` out while the chest plays and back in when the player collects.
 - **Chest opening** — `ChestOpening.Play(tier, item, coins, onClosed)` is the one place a chest is
-  opened on screen, for any caller: drop, wait for a tap, charge, burst, prize. The roll has already
+  opened on screen, for any caller (the level path and the store's Chests tab): drop, wait for a tap, charge, burst, prize. The roll has already
   been granted by `ChestLoot.Open` before it plays; it is presentation only.
 
 ## The look — black, blue and gold

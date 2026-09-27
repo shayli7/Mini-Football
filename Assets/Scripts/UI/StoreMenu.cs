@@ -41,7 +41,11 @@ namespace TableFootball.UI
         private Vector2 scrollAtPress;
 
         private CosmeticKind tab = CosmeticKind.FieldSkin;
+        /// <summary>The Chests tab is up. It is not a cosmetic kind, so it is a flag beside
+        /// <see cref="tab"/> rather than a value of it.</summary>
+        private bool chestsTab = true;
         private CosmeticItem pendingBuy;
+        private ChestTier? pendingChest;
 
         /// <summary>Raised when the player backs out.</summary>
         public Action OnBack;
@@ -97,6 +101,18 @@ namespace TableFootball.UI
         private void BuildTabs()
         {
             var row = UiKit.El("store__tabs", root);
+
+            // First, and open by default: the one shelf whose contents change every visit.
+            var chests = UiKit.El("store__tab", row);
+            UiKit.Text("CHESTS", "store__tab-label f-display-semi", chests);
+            UiKit.OnTap(chests, () =>
+            {
+                chestsTab = true;
+                Redraw();
+                grid.scrollOffset = Vector2.zero;
+            });
+            tabs.Add(chests); // userData stays null: that is how Redraw tells it apart
+
             for (int i = 0; i < CosmeticCatalog.TabKinds.Length; i++)
             {
                 CosmeticKind kind = CosmeticCatalog.TabKinds[i];
@@ -105,6 +121,7 @@ namespace TableFootball.UI
                 UiKit.OnTap(t, () =>
                 {
                     tab = kind;
+                    chestsTab = false;
                     Redraw();
                     grid.scrollOffset = Vector2.zero;
                 });
@@ -143,7 +160,24 @@ namespace TableFootball.UI
             if (grid == null) return;
 
             coinLabel.text = Wallet.Coins.ToString("N0");
-            foreach (var t in tabs) t.EnableInClassList("is-selected", (CosmeticKind)t.userData == tab);
+            foreach (var t in tabs)
+            {
+                bool selected = t.userData == null ? chestsTab : !chestsTab && (CosmeticKind)t.userData == tab;
+                t.EnableInClassList("is-selected", selected);
+            }
+
+            if (chestsTab)
+            {
+                // Said up front once the collection is finished: from then on a chest can only pay
+                // coins back, and fewer than it cost.
+                caption.text = ChestLoot.AnySkinsLeft()
+                    ? "CHESTS — A RANDOM SKIN YOU DON'T OWN"
+                    : "COLLECTION COMPLETE — CHESTS PAY COINS";
+                grid.Clear();
+                for (int i = 0; i <= (int)ChestTier.Legendary; i++) grid.Add(ChestCard((ChestTier)i));
+                UiFonts.Apply(grid);
+                return;
+            }
 
             bool badges = tab == CosmeticKind.Badge;
             // Says what the tab IS rather than what the screen is called. A shelf of badges under a
@@ -273,6 +307,55 @@ namespace TableFootball.UI
                  .style.color = affordable ? ArcadeTheme.Gold : ArcadeTheme.InkMuted;
         }
 
+        /// <summary>
+        /// A chest for sale: the chest itself in its tier's colour, its name, the best it can give, and
+        /// its price. Same card, edge and footer as a skin, so the shelf reads as part of the store.
+        /// </summary>
+        private VisualElement ChestCard(ChestTier chestTier)
+        {
+            Color tint = UIFactory.ChestColor(chestTier);
+            int price = ChestLoot.Price(chestTier);
+
+            var card = UiKit.El("store-card");
+            card.style.borderTopColor = card.style.borderBottomColor =
+                card.style.borderLeftColor = card.style.borderRightColor = tint.WithAlpha(0.55f);
+            UiKit.OnTap(card, () =>
+            {
+                if ((grid.scrollOffset - scrollAtPress).sqrMagnitude > ScrollTapSlop * ScrollTapSlop) return;
+                TappedChest(chestTier);
+            });
+
+            var picture = UiKit.El("store-card__picture", card);
+            picture.style.backgroundColor = Color.Lerp(ArcadeTheme.BgDeep, tint, 0.16f);
+            var art = ChestOpening.ChestArt(chestTier);
+            art.style.scale = new Scale(new Vector2(0.48f, 0.48f));
+            picture.Add(art);
+
+            UiKit.Text(ChestLoot.TierName(chestTier), "store-card__name f-display", card);
+            var odds = UiKit.Text(ChestOdds(chestTier), "store-card__rarity f-body-semi", card);
+            odds.style.color = tint;
+
+            var footer = UiKit.El("store-card__footer row", card);
+            bool affordable = Wallet.CanAfford(price);
+            if (!affordable) footer.style.opacity = 0.5f;
+            footer.Add(new UiIcon(UiIcon.Glyph.Coin, affordable ? ArcadeTheme.Gold : ArcadeTheme.InkMuted, 2f));
+            UiKit.Text(price.ToString("N0"), "store-card__price f-display", footer)
+                 .style.color = affordable ? ArcadeTheme.Gold : ArcadeTheme.InkMuted;
+
+            return card;
+        }
+
+        /// <summary>The honest one-line pitch for a tier: the best it can drop.</summary>
+        private static string ChestOdds(ChestTier chestTier)
+        {
+            switch (chestTier)
+            {
+                case ChestTier.Common: return "UP TO EPIC";
+                case ChestTier.Legendary: return "RARE OR BETTER";
+                default: return "UP TO LEGENDARY";
+            }
+        }
+
         /// <summary>The icon standing in for a cosmetic with no rendered thumbnail. Shared with
         /// <see cref="ChestOpening"/>.</summary>
         internal static UiIcon.Glyph KindGlyph(CosmeticKind kind)
@@ -329,6 +412,41 @@ namespace TableFootball.UI
             ShowConfirm(item);
         }
 
+        private void TappedChest(ChestTier chestTier)
+        {
+            if (!Wallet.CanAfford(ChestLoot.Price(chestTier)))
+            {
+                Say("Not enough coins — play ranked to earn more");
+                return;
+            }
+
+            pendingBuy = default;
+            pendingChest = chestTier;
+            confirmTitle.text = $"Open a {ChestLoot.TierName(chestTier)}?";
+            confirmPrice.text = ChestLoot.Price(chestTier).ToString("N0");
+            UiKit.Show(confirm, true);
+            confirm.BringToFront();
+            UiKit.Enter(confirm.Q(className: "store__confirm-panel"));
+        }
+
+        /// <summary>
+        /// Pays, rolls and grants in one call, then plays the opening over the store. The drop is
+        /// already banked before the chest appears, so leaving mid-animation loses nothing.
+        /// </summary>
+        private void BuyChest(ChestTier chestTier)
+        {
+            if (!ChestLoot.TryBuy(chestTier, out ChestDrop drop))
+            {
+                Say("Not enough coins — play ranked to earn more");
+                return;
+            }
+
+            ChestOpening.Play(chestTier, drop.Item, drop.Coins, () =>
+            {
+                if (drop.Item.Valid) Say($"{drop.Item.Name} added — tap it to equip");
+            });
+        }
+
         private void Buy(CosmeticItem item)
         {
             // Asked and answered in one call: a separate "can I afford it" check followed by a
@@ -359,6 +477,7 @@ namespace TableFootball.UI
         private void ShowConfirm(CosmeticItem item)
         {
             pendingBuy = item;
+            pendingChest = null;
             confirmTitle.text = $"Buy {item.Name}?";
             confirmPrice.text = item.Price.ToString("N0");
             UiKit.Show(confirm, true);
@@ -369,13 +488,16 @@ namespace TableFootball.UI
         private void ConfirmBuy()
         {
             CosmeticItem item = pendingBuy;
+            ChestTier? chest = pendingChest;
             CancelBuy();
-            if (item.Valid) Buy(item);
+            if (chest.HasValue) BuyChest(chest.Value);
+            else if (item.Valid) Buy(item);
         }
 
         private void CancelBuy()
         {
             pendingBuy = default;
+            pendingChest = null;
             UiKit.Show(confirm, false);
         }
 
@@ -404,6 +526,9 @@ namespace TableFootball.UI
 
         public void Close()
         {
+            // A chest opening over the store goes with it. Guarded, because GameFlow closes screens
+            // that are not open, and one of those must not cancel a chest playing over another.
+            if (IsOpen) ChestOpening.Cancel();
             Wallet.OnChanged -= Redraw;
             Inventory.OnChanged -= Redraw;
             if (root != null) UiKit.Show(root, false);

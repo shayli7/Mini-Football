@@ -133,6 +133,37 @@ namespace TableFootball.UI
             onClosed = null;
         }
 
+        /// <summary>
+        /// A still chest in a tier's colour, 220 x 196 — the same drawing the opening animates, for a
+        /// store card or a reward. Scale it with <c>style.scale</c>; it does not shrink to fit.
+        /// </summary>
+        internal static VisualElement ChestArt(ChestTier chestTier)
+        {
+            Color c = UIFactory.ChestColor(chestTier);
+            var box = new VisualElement { pickingMode = PickingMode.Ignore };
+            box.style.width = 220f;
+            box.style.height = 196f;
+            box.style.flexShrink = 0f;
+
+            var b = new ChestPart(false) { Tint = c };
+            b.style.position = Position.Absolute;
+            b.style.left = 0f;
+            b.style.right = 0f;
+            b.style.bottom = 0f;
+            b.style.height = 130f;
+            box.Add(b);
+
+            var l = new ChestPart(true) { Tint = c };
+            l.style.position = Position.Absolute;
+            l.style.left = 0f;
+            l.style.right = 0f;
+            l.style.top = 0f;
+            l.style.height = 76f;
+            box.Add(l);
+
+            return box;
+        }
+
         // ---------- build ----------
 
         private static void Build()

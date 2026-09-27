@@ -736,7 +736,7 @@ namespace TableFootball.UI
         {
             PlayerProgress.OnChanged -= RefreshAll;
             LevelPath.OnChanged -= RefreshAll;
-            ChestOpening.Cancel();
+            if (IsOpen) ChestOpening.Cancel();
 
             if (root != null)
             {
