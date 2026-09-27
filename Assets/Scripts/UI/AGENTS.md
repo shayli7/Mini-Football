@@ -25,8 +25,8 @@ screen, control, or visual.
 The front end is moving from uGUI (the `Canvas` built by `TableFootballUI`) to **UI Toolkit**, one
 screen at a time, so it can match the design canvas closely. Moved so far: **`StartScreen`**, **`StoreMenu`**,
 **`MainMenu`**, the **`GameMenu`** overlay (pause, leave confirmation and Settings; its pause button
-stays uGUI with the score strip) and **`ChestOpening`**. Everything else is still uGUI and follows the
-rest of this guide.
+stays uGUI with the score strip), **`ChestOpening`** and **`QuestsMenu`**. Everything else is still
+uGUI and follows the rest of this guide.
 
 A migrated screen keeps its class name and its whole public surface (`Build`, `Open`/`Close`/`Show`,
 the `On…` callbacks), so `GameFlow` and `TableFootballUI` do not change when one moves. Inside it:

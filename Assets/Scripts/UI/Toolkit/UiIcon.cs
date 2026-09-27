@@ -17,7 +17,7 @@ namespace TableFootball.UI.Toolkit
         {
             Person, Sliders, Table, Levels, Quests, Store, Coin, Trophy, TwoPlayers, Robot, Globe,
             Play, ChevronLeft, Close, Check, Lock, Clock, Star, Flame, Bolt, Copy, AddPerson, Trash,
-            Chest, Music, Speaker
+            Chest, Music, Speaker, Target, Shield, Repeat, Crown, TrendUp
         }
 
         private Glyph glyph;
@@ -219,6 +219,34 @@ namespace TableFootball.UI.Toolkit
                 case Glyph.Speaker:
                     Path(4f, 9f); To(4f, 15f); To(8f, 15f); To(13f, 19f); To(13f, 5f); To(8f, 9f); p.ClosePath(); p.Stroke();
                     Path(16.5f, 8.5f); Curve(18.5f, 10.5f, 18.5f, 13.5f, 16.5f, 15.5f); p.Stroke();
+                    break;
+
+                case Glyph.Target:
+                    Circle(12f, 12f, 9f); Circle(12f, 12f, 5.2f); Dot(12f, 12f, 1.6f);
+                    break;
+
+                case Glyph.Shield:
+                    Path(12f, 2.5f); To(20f, 6f); To(20f, 12.5f);
+                    Curve(20f, 17.5f, 16.4f, 20.3f, 12f, 21.5f);
+                    Curve(7.6f, 20.3f, 4f, 17.5f, 4f, 12.5f); To(4f, 6f); p.ClosePath(); p.Stroke();
+                    break;
+
+                case Glyph.Repeat:
+                    p.BeginPath(); p.Arc(V(12f, 12f), 8f * s, Angle.Degrees(-160f), Angle.Degrees(140f)); p.Stroke();
+                    Path(19f, 2.5f); To(20.4f, 8f); To(15f, 6.5f); p.ClosePath(); p.Fill();
+                    p.BeginPath(); p.Arc(V(12f, 12f), 8f * s, Angle.Degrees(20f), Angle.Degrees(-40f)); p.Stroke();
+                    Path(5f, 21.5f); To(3.6f, 16f); To(9f, 17.5f); p.ClosePath(); p.Fill();
+                    break;
+
+                case Glyph.Crown:
+                    Path(3.5f, 19.5f); To(20.5f, 19.5f); p.Stroke();
+                    Path(3.5f, 19.5f); To(3.5f, 9f); To(9f, 14f); To(12f, 6f); To(15f, 14f); To(20.5f, 9f); To(20.5f, 19.5f);
+                    p.ClosePath(); p.Stroke();
+                    break;
+
+                case Glyph.TrendUp:
+                    Path(3.5f, 17f); To(9f, 10.5f); To(13f, 14f); To(20.5f, 5.5f); p.Stroke();
+                    Path(14.5f, 5.5f); To(20.5f, 5.5f); To(20.5f, 11.5f); p.Stroke();
                     break;
             }
         }

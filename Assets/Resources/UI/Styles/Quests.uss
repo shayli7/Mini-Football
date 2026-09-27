@@ -1,0 +1,252 @@
+/* Daily quests. See QuestsMenu.cs. Laid out against a 760-unit-high panel. */
+
+.quests__scrim { background-color: rgba(7, 9, 14, 0.9); }
+.quests__glow { -unity-background-scale-mode: stretch-to-fill; }
+
+.quests .header__right .icon { width: 20px; height: 20px; }
+
+.quests__timer {
+    padding: 0 16px;
+}
+
+.quests__timer-label {
+    font-size: 13px;
+    letter-spacing: 1px;
+    color: var(--muted);
+    margin-left: 8px;
+}
+
+/* ---------- layout ---------- */
+
+.quests__main {
+    position: absolute;
+    top: 110px;
+    bottom: 24px;
+    left: 48px;
+    right: 48px;
+    flex-direction: row;
+}
+
+/* ---------- left: the level card ---------- */
+
+.quests__level {
+    width: 300px;
+    padding: 26px 22px;
+    align-items: center;
+}
+
+.quests__ring-box {
+    width: 148px;
+    height: 148px;
+    align-items: center;
+    justify-content: center;
+}
+
+.quests__ring {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+.quests__ring-text {
+    align-items: center;
+}
+
+.quests__ring-caption {
+    font-size: 12px;
+    letter-spacing: 3px;
+    color: var(--muted);
+}
+
+.quests__ring-number {
+    font-size: 48px;
+    color: var(--gold);
+}
+
+.quests__xp {
+    margin-top: 16px;
+    font-size: 17px;
+}
+
+.quests__xp-note {
+    margin-top: 2px;
+    font-size: 14px;
+    color: var(--muted);
+}
+
+.quests__divider {
+    width: 100%;
+    height: 1px;
+    margin: 20px 0 16px 0;
+    background-color: var(--line);
+}
+
+.quests__level .caption { width: 100%; margin-bottom: 4px; }
+
+.quests__streak-row {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+}
+
+.quests__streak-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background-color: var(--raised);
+    align-items: center;
+    justify-content: center;
+    margin-right: 12px;
+}
+
+.quests__streak-icon .icon { width: 20px; height: 20px; }
+
+.quests__streak-title { font-size: 17px; }
+
+.quests__streak-note {
+    margin-top: 2px;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+/* ---------- right: the quest rows ---------- */
+
+.quests__column {
+    flex-grow: 1;
+    margin-left: 24px;
+}
+
+.quests__rows { flex-grow: 1; }
+
+.quests__row {
+    height: 112px;
+    margin-bottom: 12px;
+    padding: 16px 20px;
+    flex-direction: row;
+    align-items: center;
+    background-color: var(--panel);
+    border-width: 1px;
+    border-radius: 20px;
+}
+
+.quests__row.is-done { background-color: var(--panel-2); border-width: 2px; }
+
+.quests__row-icon {
+    width: 64px;
+    height: 64px;
+    flex-shrink: 0;
+    margin-right: 18px;
+    border-radius: 32px;
+    border-width: 3px;
+    background-color: var(--raised);
+    align-items: center;
+    justify-content: center;
+}
+
+.quests__row-icon .icon { width: 26px; height: 26px; }
+
+.quests__row-title { align-items: center; }
+
+.quests__row-name { font-size: 18px; letter-spacing: 1px; }
+
+.quests__row-tier {
+    margin-left: 10px;
+    font-size: 10px;
+    letter-spacing: 2px;
+    border-radius: 6px;
+    padding: 3px 8px;
+}
+
+.quests__row-offline {
+    margin-left: 8px;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--muted);
+    border-width: 1px;
+    border-color: var(--line-2);
+    border-radius: 6px;
+    padding: 2px 7px;
+}
+
+.quests__row-desc {
+    margin-top: 5px;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.quests__row-progress {
+    margin-top: 8px;
+    align-items: center;
+}
+
+.quests__row-progress .bar { height: 8px; margin-right: 12px; }
+
+.quests__row-count {
+    width: 36px;
+    font-size: 14px;
+    -unity-text-align: middle-right;
+}
+
+.quests__row-xp {
+    flex-shrink: 0;
+    width: 100px;
+    height: 100%;
+    margin-left: 16px;
+    border-radius: 14px;
+    background-color: var(--raised);
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+}
+
+/* ---------- daily slam ---------- */
+
+.quests__slam {
+    height: 76px;
+    padding: 0 20px;
+    flex-direction: row;
+    align-items: center;
+    background-color: #0C1828;
+    border-width: 1px;
+    border-color: var(--line-2);
+    border-radius: 20px;
+}
+
+.quests__slam-icon {
+    width: 26px;
+    height: 26px;
+    margin-right: 16px;
+}
+
+.quests__slam-icon .icon { width: 26px; height: 26px; }
+
+.quests__slam-title { font-size: 15px; letter-spacing: 2px; }
+
+.quests__slam-note {
+    margin-top: 2px;
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.quests__slam-pips { margin-right: 16px; }
+
+.quests__slam-pip {
+    width: 13px;
+    height: 13px;
+    margin-left: 7px;
+    border-radius: 7px;
+    border-width: 1px;
+    border-color: var(--line-2);
+    background-color: var(--raised);
+}
+
+.quests__slam-pip:first-child { margin-left: 0; }
+.quests__slam-pip.is-lit { background-color: var(--gold); border-color: var(--gold); }
+
+.quests__slam-xp {
+    width: 90px;
+    font-size: 16px;
+    -unity-text-align: middle-right;
+}
