@@ -31,7 +31,14 @@ namespace TableFootball
         /// <summary>The local player's pod — up to Leagues.PodSize rows, sorted best first.</summary>
         Task<IReadOnlyList<LadderEntry>> GetMyPodAsync();
 
-        /// <summary>Records a ranked result and applies the league's points delta.</summary>
-        Task SubmitResultAsync(int opponentRating, bool won);
+        /// <summary>
+        /// Records a ranked result and applies the league's points delta.
+        ///
+        /// <paramref name="matchId"/> and <paramref name="opponentId"/> let the real backend require
+        /// BOTH players to report the same match before crediting either — see UgsLadderService and
+        /// cloudcode/ladder.js. The mock has no second player to corroborate with, so it ignores them
+        /// and credits on the spot, exactly as before.
+        /// </summary>
+        Task SubmitResultAsync(int opponentRating, bool won, string matchId, string opponentId);
     }
 }

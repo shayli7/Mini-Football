@@ -1,543 +1,1042 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using TableFootball.Net;
-using TableFootball.UI.Toolkit;
+using TMPro;
 using UnityEngine;
-using UnityEngine.UIElements;
+using UnityEngine.UI;
 
 namespace TableFootball.UI
 {
     /// <summary>
-    /// The store: tabs of cosmetics, bought with the gold coins earned from ranked weeks and the level
-    /// path. Built on UI Toolkit (see <see cref="UiToolkitHost"/>), styled by
-    /// <c>Resources/UI/Styles/Store.uss</c>.
+    /// The store: one horizontal shelf of four chests bought with coins, then the daily deal (a free
+    /// Common or Rare chest for one ad), then a coin top-up paid for by ads. Skins are no longer sold
+    /// one by one. They come out of chests, through <see cref="ChestLoot"/>, which never repeats a
+    /// skin the player already owns.
     ///
-    /// It reads its data from <c>Net/</c> (<see cref="CosmeticCatalog"/>, <see cref="Inventory"/>,
-    /// <see cref="Wallet"/>), redraws on their change events, and talks out only through
-    /// <see cref="OnBack"/>. It holds no economy rules of its own: what an item costs and whether it
-    /// can be afforded are questions for the wallet.
+    /// The store is also where skins are WORN: the Collection button opens the player's owned
+    /// cosmetics, tabbed by kind, and tapping one equips it. It used to be the price grid; it is the
+    /// same grid with the prices taken off, because every chest drop has to be equippable somewhere.
+    ///
+    /// Like every other screen it is built in code, reads its data from <c>Net/</c>
+    /// (<see cref="ChestLoot"/>, <see cref="ShopOffers"/>, <see cref="Wallet"/>, <see cref="Inventory"/>),
+    /// redraws on their change events, and talks out only through <see cref="OnBack"/>. It holds no
+    /// economy rules of its own.
     ///
     /// A purchase asks first. One tap spending three thousand coins with no way back would make the
-    /// grid dangerous to browse, and browsing is most of what a store is for.
+    /// shelf dangerous to browse.
     /// </summary>
     public class StoreMenu : MonoBehaviour
     {
-        /// <summary>How long a status message stays up, in milliseconds.</summary>
-        private const long StatusMillis = 2600;
+        private GameObject root;
+        private CanvasGroup group;
 
-        /// <summary>A card tap after the grid scrolled further than this is a scroll, not a tap.</summary>
-        private const float ScrollTapSlop = 8f;
+        private TextMeshProUGUI footerLabel;
+        private Coroutine statusRoutine;
 
-        private VisualElement root;
-        private ScrollView grid;
-        private Label coinLabel;
-        private Label caption;
-        private Label status;
-        private VisualElement confirm;
-        private Label confirmTitle;
-        private Label confirmPrice;
-        private readonly List<VisualElement> tabs = new List<VisualElement>();
-        private IVisualElementScheduledItem statusClear;
-        private Vector2 scrollAtPress;
+        // The chest shelf, built once and refreshed in place.
+        private readonly MenuButton[] chestButtons = new MenuButton[4];
+        private readonly CanvasGroup[] chestPrices = new CanvasGroup[4];
 
+        private MenuButton dealButton;
+        private Transform dealArt;
+        private TextMeshProUGUI dealTierLabel;
+        private TextMeshProUGUI dealName;
+        private TextMeshProUGUI dealCountdown;
+        private ChestTier shownDealTier = (ChestTier)(-1);
+
+        private MenuButton adButton;
+        private TextMeshProUGUI adsLeftLabel;
+        private readonly List<Image> adPips = new List<Image>();
+
+        private float nextTick;
+
+        // Buy confirmation.
+        private GameObject confirmPanel;
+        private Transform confirmArt;
+        private TextMeshProUGUI confirmTitle;
+        private TextMeshProUGUI confirmPrice;
+        private ChestTier? pendingBuy;
+
+
+        // Collection (the wardrobe).
+        private GameObject collectionPanel;
+        private RectTransform gridContent;
+        private TextMeshProUGUI collectionCaption;
         private CosmeticKind tab = CosmeticKind.FieldSkin;
-        /// <summary>The Chests tab is up. It is not a cosmetic kind, so it is a flag beside
-        /// <see cref="tab"/> rather than a value of it.</summary>
-        private bool chestsTab = true;
-        private CosmeticItem pendingBuy;
-        private ChestTier? pendingChest;
 
         /// <summary>Raised when the player backs out.</summary>
         public Action OnBack;
 
-        public bool IsOpen => root != null && root.style.display != DisplayStyle.None;
+        public bool IsOpen => root != null && root.activeSelf;
 
-        /// <summary>
-        /// <paramref name="canvasRoot"/> is the uGUI canvas the other screens still hang off, unused
-        /// here and kept so TableFootballUI's boot order does not change.
-        /// </summary>
+        private const string FooterText =
+            "Chests never repeat a skin you own. Collected everything? You get coins instead.";
+
+        // The shelf's proportions, in one place. Sized so the whole row fits a 16:9 phone without
+        // scrolling; a 4:3 tablet scrolls it sideways.
+        private const float CardWidth = 220f;
+        private const float DealWidth = 264f;
+        private const float CardHeight = 500f;
+        private const float ArtHeight = 190f;
+        private const float ChestSize = 150f;
+
+        // The collection grid's proportions. Four columns fit the panel with a card wide enough for a
+        // legible name.
+        private const int Columns = 4;
+        private const float GridCardWidth = 232f;
+        private const float GridCardHeight = 224f;
+        private const float GridGap = 18f;
+
         public void Build(Transform canvasRoot)
         {
-            root = UiKit.El("screen store", UiToolkitHost.Root, "StoreMenu");
-            var sheet = Resources.Load<StyleSheet>("UI/Styles/Store");
-            if (sheet != null) root.styleSheets.Add(sheet);
-            root.pickingMode = PickingMode.Position;
+            root = UIFactory.Child(canvasRoot, "StoreMenu");
+            UIFactory.Stretch(UIFactory.Rt(root));
+            group = root.AddComponent<CanvasGroup>();
+            UIFactory.ScrimDim(root.transform);
 
-            UiKit.El("bleed store__scrim", root).pickingMode = PickingMode.Ignore;
-            var glow = UiKit.El("bleed store__glow", root);
-            glow.pickingMode = PickingMode.Ignore;
-            glow.style.backgroundImage = new StyleBackground(UiKit.TopGlow());
+            UIFactory.ScreenHeader(root.transform, "Store", Back);
+            BuildCorners(root.transform);
+            BuildShelf(root.transform);
+            BuildFooter(root.transform);
 
-            var header = UiKit.Header(root, "STORE", Back);
-            var right = UiKit.El("header__right", header);
-            var coins = UiKit.El("chip", right);
-            coins.Add(new UiIcon(UiIcon.Glyph.Coin, ArcadeTheme.Gold, 2f));
-            coinLabel = UiKit.Text("0", "chip__value f-display", coins);
+            // Last, in this order: each covers the whole screen and must draw over what is under it.
+            BuildCollection(root.transform);
+            BuildConfirm(root.transform);
 
-            BuildTabs();
-
-            var info = UiKit.El("store__info", root);
-            caption = UiKit.Text("COSMETICS", "store__caption f-body-semi", info);
-            status = UiKit.Text(string.Empty, "store__status f-body-semi", info);
-
-            grid = new ScrollView(ScrollViewMode.Vertical);
-            grid.AddToClassList("store__grid");
-            grid.contentContainer.AddToClassList("store__grid-content");
-            grid.verticalScrollerVisibility = ScrollerVisibility.Hidden;
-            grid.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
-            grid.touchScrollBehavior = ScrollView.TouchScrollBehavior.Clamped;
-            // Recorded before any card sees the press, so a card can tell a tap from a drag.
-            grid.RegisterCallback<PointerDownEvent>(_ => scrollAtPress = grid.scrollOffset, TrickleDown.TrickleDown);
-            root.Add(grid);
-
-            BuildConfirm();
-
-            UiFonts.Apply(root);
-            UiKit.Show(root, false);
+            root.SetActive(false);
         }
 
-        // ---------- build ----------
+        // ---------- header corners ----------
 
-        private void BuildTabs()
+        /// <summary>The Collection button top-left and the live balance top-right, level with the title.</summary>
+        private void BuildCorners(Transform parent)
         {
-            var row = UiKit.El("store__tabs", root);
+            var left = Corner(parent, "CollectionHolder", 0f);
+            UIFactory.Button(left.transform, "Collection", MenuButton.Variant.Blue, OpenCollection,
+                             ArcadeTheme.HeaderHeight);
 
-            // First, and open by default: the one shelf whose contents change every visit.
-            var chests = UiKit.El("store__tab", row);
-            UiKit.Text("CHESTS", "store__tab-label f-display-semi", chests);
-            UiKit.OnTap(chests, () =>
-            {
-                chestsTab = true;
-                Redraw();
-                grid.scrollOffset = Vector2.zero;
-            });
-            tabs.Add(chests); // userData stays null: that is how Redraw tells it apart
+            var right = Corner(parent, "Purse", 1f);
+            // On a child of the holder, not on the holder: Build reparents its own GameObject to what
+            // it is given, and a transform cannot be its own parent.
+            UIFactory.Child(right.transform, "Pill").AddComponent<CoinPill>().Build(right.transform);
+        }
 
-            for (int i = 0; i < CosmeticCatalog.TabKinds.Length; i++)
+        private static GameObject Corner(Transform parent, string name, float side)
+        {
+            var go = UIFactory.Child(parent, name);
+            var rt = UIFactory.Rt(go);
+            rt.anchorMin = rt.anchorMax = new Vector2(side, 1f);
+            rt.pivot = new Vector2(side, 1f);
+            rt.sizeDelta = new Vector2(210f, ArcadeTheme.HeaderHeight);
+            rt.anchoredPosition = new Vector2(side < 0.5f ? ArcadeTheme.Xl2 : -ArcadeTheme.Xl2, -ArcadeTheme.Xl);
+
+            var v = go.AddComponent<VerticalLayoutGroup>();
+            v.childAlignment = TextAnchor.MiddleCenter;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
+            return go;
+        }
+
+        // ---------- the shelf ----------
+
+        /// <summary>
+        /// One horizontal row between the header and the Back button: chests, a divider, the daily
+        /// deal, a divider, free coins. A sideways scroll view, centred when it fits, so a narrow
+        /// screen scrolls rather than squeezing the cards.
+        /// </summary>
+        private void BuildShelf(Transform parent)
+        {
+            var view = UIFactory.Child(parent, "Shelf");
+            float top = ArcadeTheme.Xl + ArcadeTheme.HeaderHeight + ArcadeTheme.Lg;
+            float bottom = ArcadeTheme.Xl + ArcadeTheme.HeaderHeight + ArcadeTheme.Md;
+            UIFactory.Stretch(UIFactory.Rt(view), ArcadeTheme.Xl2, bottom, ArcadeTheme.Xl2, top);
+            var scroll = view.AddComponent<ScrollRect>();
+
+            var viewport = UIFactory.Child(view.transform, "Viewport");
+            viewport.AddComponent<RectMask2D>();
+            UIFactory.Stretch(UIFactory.Rt(viewport), 0);
+
+            var content = UIFactory.Child(viewport.transform, "Content");
+            var crt = UIFactory.Rt(content);
+            // Centre pivot: ScrollRect keeps content narrower than the viewport at its pivot, so the
+            // row sits in the middle of a wide phone and only scrolls when it does not fit.
+            crt.anchorMin = new Vector2(0.5f, 0f);
+            crt.anchorMax = new Vector2(0.5f, 1f);
+            crt.pivot = new Vector2(0.5f, 0.5f);
+            crt.sizeDelta = Vector2.zero;
+
+            var h = content.AddComponent<HorizontalLayoutGroup>();
+            h.spacing = ArcadeTheme.Xl;
+            h.childAlignment = TextAnchor.MiddleCenter;
+            h.childForceExpandWidth = false;
+            h.childForceExpandHeight = false;
+            h.childControlWidth = true;
+            h.childControlHeight = true;
+
+            var fitter = content.AddComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
+            fitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
+
+            scroll.content = crt;
+            scroll.viewport = UIFactory.Rt(viewport);
+            scroll.horizontal = true;
+            scroll.vertical = false;
+            scroll.movementType = ScrollRect.MovementType.Elastic;
+            scroll.scrollSensitivity = 24f;
+
+            var chests = Section(content.transform, "CHESTS", ArcadeTheme.InkMuted, ArcadeTheme.Lg);
+            for (int i = 0; i < 4; i++)
             {
-                CosmeticKind kind = CosmeticCatalog.TabKinds[i];
-                var t = UiKit.El("store__tab", row);
-                UiKit.Text(CosmeticCatalog.KindName(kind).ToUpperInvariant(), "store__tab-label f-display-semi", t);
-                UiKit.OnTap(t, () =>
-                {
-                    tab = kind;
-                    chestsTab = false;
-                    Redraw();
-                    grid.scrollOffset = Vector2.zero;
-                });
-                t.userData = kind;
-                tabs.Add(t);
+                BuildChestCard(chests, (ChestTier)i);
             }
+
+            Divider(content.transform);
+            BuildDealCard(Section(content.transform, "DAILY DEAL", ArcadeTheme.Gold, 0f));
+
+            Divider(content.transform);
+            BuildCoinsCard(Section(content.transform, "FREE COINS", ArcadeTheme.InkMuted, 0f));
+        }
+
+        /// <summary>A caption over a row of cards. Returns the row to put the cards in.</summary>
+        private static Transform Section(Transform parent, string caption, Color captionColor, float gap)
+        {
+            var col = UIFactory.Child(parent, "Section_" + caption);
+            var v = col.AddComponent<VerticalLayoutGroup>();
+            v.spacing = ArcadeTheme.Md;
+            v.childAlignment = TextAnchor.UpperLeft;
+            v.childForceExpandWidth = false;
+            v.childForceExpandHeight = false;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
+
+            var label = UIFactory.Text(col.transform, caption, ArcadeTheme.FsCaption, captionColor,
+                                       display: true, bold: true, upper: true, tracking: 4f,
+                                       align: TextAlignmentOptions.Left);
+            label.gameObject.AddComponent<LayoutElement>().preferredHeight = 22f;
+
+            var row = UIFactory.Child(col.transform, "Row");
+            var h = row.AddComponent<HorizontalLayoutGroup>();
+            h.spacing = gap;
+            h.childAlignment = TextAnchor.UpperLeft;
+            h.childForceExpandWidth = false;
+            h.childForceExpandHeight = false;
+            h.childControlWidth = true;
+            h.childControlHeight = true;
+            return row.transform;
+        }
+
+        private static void Divider(Transform parent)
+        {
+            var go = UIFactory.Child(parent, "Divider");
+            var le = go.AddComponent<LayoutElement>();
+            le.preferredWidth = 1f;
+            le.minWidth = 1f;
+            le.preferredHeight = CardHeight - ArcadeTheme.Xl2;
+            var img = go.AddComponent<Image>();
+            img.color = ArcadeTheme.Line;
+            img.raycastTarget = false;
         }
 
         /// <summary>
-        /// The purchase prompt: what, how much, and a way out. Built once and shown or hidden rather
-        /// than created per purchase.
+        /// The frame every shelf card shares: an edge in its colour, the panel fill, a soft glow behind
+        /// the art, and a column under the art for the words and the button. Returns the column; the
+        /// art area comes back through <paramref name="art"/>.
         /// </summary>
-        private void BuildConfirm()
+        private static Transform CardFrame(Transform parent, string name, float width, Color edge,
+                                           Color glow, out Transform art)
         {
-            confirm = UiKit.El("store__confirm", root);
-            confirm.pickingMode = PickingMode.Position;
-            UiKit.El("bleed store__confirm-dim", confirm).pickingMode = PickingMode.Ignore;
+            var card = UIFactory.Child(parent, name);
+            var le = card.AddComponent<LayoutElement>();
+            le.preferredWidth = width;
+            le.minWidth = width;
+            le.preferredHeight = CardHeight;
+            le.minHeight = CardHeight;
 
-            var panel = UiKit.El("panel store__confirm-panel", confirm);
-            confirmTitle = UiKit.Text("Buy this?", "store__confirm-title f-display", panel);
-            var price = UiKit.El("row store__confirm-price", panel);
-            price.Add(new UiIcon(UiIcon.Glyph.Coin, ArcadeTheme.Gold, 2f));
-            confirmPrice = UiKit.Text("0", "store__confirm-amount f-display", price);
+            var border = UIFactory.Child(card.transform, "Border");
+            UIFactory.RoundedImage(border, ArcadeTheme.RadLg, edge, false);
+            UIFactory.Stretch(UIFactory.Rt(border), 0);
 
-            var buttons = UiKit.El("row store__confirm-buttons", panel);
-            UiKit.Button("BUY", "gold", ConfirmBuy, buttons, "grow");
-            UiKit.Button("CANCEL", "ghost", CancelBuy, buttons, "grow");
+            var fill = UIFactory.Child(card.transform, "Fill");
+            UIFactory.RoundedImage(fill, ArcadeTheme.RadLg, ArcadeTheme.BgPanel, false);
+            UIFactory.Stretch(UIFactory.Rt(fill), 2f);
 
-            UiKit.Show(confirm, false);
+            var artGo = UIFactory.Child(card.transform, "Art");
+            var artRt = UIFactory.Rt(artGo);
+            artRt.anchorMin = new Vector2(0f, 1f);
+            artRt.anchorMax = new Vector2(1f, 1f);
+            artRt.pivot = new Vector2(0.5f, 1f);
+            artRt.sizeDelta = new Vector2(0f, ArtHeight);
+            artRt.anchoredPosition = Vector2.zero;
+
+            var halo = UIFactory.Child(artGo.transform, "Halo");
+            UIFactory.GlowImage(halo, ArcadeTheme.RadLg, 48f, glow);
+            var hrt = UIFactory.Rt(halo);
+            hrt.anchorMin = hrt.anchorMax = new Vector2(0.5f, 0.45f);
+            hrt.pivot = new Vector2(0.5f, 0.5f);
+            hrt.sizeDelta = new Vector2(width * 0.85f, ArtHeight * 0.8f);
+            art = artGo.transform;
+
+            var col = UIFactory.Child(card.transform, "Column");
+            UIFactory.Stretch(UIFactory.Rt(col), ArcadeTheme.Lg, ArcadeTheme.Lg, ArcadeTheme.Lg, ArtHeight);
+            var v = col.AddComponent<VerticalLayoutGroup>();
+            v.spacing = ArcadeTheme.Sm;
+            v.childAlignment = TextAnchor.UpperLeft;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
+            return col.transform;
         }
 
-        // ---------- the grid ----------
-
-        private void Redraw()
+        /// <summary>A small caption pinned into a top corner of a card's art.</summary>
+        private static TextMeshProUGUI CornerTag(Transform art, string text, Color color, float side)
         {
-            if (grid == null) return;
+            var t = UIFactory.Text(art, text, ArcadeTheme.FsCaption * 0.88f, color, display: true,
+                                   bold: true, upper: true, tracking: 3f,
+                                   align: side < 0.5f ? TextAlignmentOptions.Left : TextAlignmentOptions.Right);
+            var rt = UIFactory.Rt(t.gameObject);
+            rt.anchorMin = rt.anchorMax = new Vector2(side, 1f);
+            rt.pivot = new Vector2(side, 1f);
+            rt.sizeDelta = new Vector2(150f, 24f);
+            rt.anchoredPosition = new Vector2(side < 0.5f ? ArcadeTheme.Lg : -ArcadeTheme.Lg, -ArcadeTheme.Md);
+            return t;
+        }
 
-            coinLabel.text = Wallet.Coins.ToString("N0");
-            foreach (var t in tabs)
+        private static TextMeshProUGUI CardTitle(Transform col, string text, Color color, float size)
+        {
+            var t = UIFactory.Text(col, text, size, color, display: true, bold: true, upper: false,
+                                   tracking: 1f, align: TextAlignmentOptions.Left);
+            t.gameObject.AddComponent<LayoutElement>().preferredHeight = size + 6f;
+            return t;
+        }
+
+        private static void CardBlurb(Transform col, string text)
+        {
+            var t = UIFactory.Text(col, text, ArcadeTheme.FsCaption, ArcadeTheme.InkMuted, display: false,
+                                   bold: false, upper: false, align: TextAlignmentOptions.TopLeft);
+            t.textWrappingMode = TextWrappingModes.Normal;
+            t.gameObject.AddComponent<LayoutElement>().preferredHeight = 70f;
+        }
+
+        private static void Flex(Transform col)
+        {
+            UIFactory.Child(col, "Flex").AddComponent<LayoutElement>().flexibleHeight = 1f;
+        }
+
+        private void BuildChestCard(Transform parent, ChestTier tier)
+        {
+            Color tint = UIFactory.ChestColor(tier);
+            var col = CardFrame(parent, "Chest_" + tier, CardWidth, tint.WithAlpha(0.55f),
+                                tint.WithAlpha(0.26f), out Transform art);
+
+            CornerTag(art, CosmeticCatalog.RarityName((Rarity)(int)tier), tint, 0f);
+            PlaceChest(art, tier, ChestSize);
+
+            CardTitle(col, ChestLoot.TierName(tier), ArcadeTheme.Ink, ArcadeTheme.FsBody * 1.1f);
+            Flex(col);
+
+            var btn = UIFactory.Button(col, string.Empty, MenuButton.Variant.Blue, () => AskBuy(tier), 56f);
+            var price = UIFactory.CoinAmount(btn.transform, ChestLoot.Price(tier).ToString("N0", CultureInfo.InvariantCulture), 34f);
+            UIFactory.Stretch(UIFactory.Rt(price), 0);
+            var dim = price.AddComponent<CanvasGroup>();
+            dim.blocksRaycasts = false;
+
+            chestButtons[(int)tier] = btn;
+            chestPrices[(int)tier] = dim;
+        }
+
+        private void BuildDealCard(Transform parent)
+        {
+            // The one card on the screen with a resting gold halo, alongside its gold button.
+            var halo = UIFactory.Child(parent, "DealHalo");
+            halo.AddComponent<LayoutElement>().ignoreLayout = true;
+
+            var col = CardFrame(parent, "Deal", DealWidth, ArcadeTheme.Gold,
+                                ArcadeTheme.Gold.WithAlpha(0.22f), out Transform art);
+
+            UIFactory.GlowImage(halo, ArcadeTheme.RadLg, 30f, ArcadeTheme.Gold.WithAlpha(0.18f));
+            var hrt = UIFactory.Rt(halo);
+            hrt.anchorMin = hrt.anchorMax = new Vector2(0f, 1f);
+            hrt.pivot = new Vector2(0f, 1f);
+            hrt.sizeDelta = new Vector2(DealWidth + 28f, CardHeight + 28f);
+            hrt.anchoredPosition = new Vector2(-14f, 14f);
+
+            // A gold chip reading FREE in the top-left corner.
+            var chip = UIFactory.Child(art, "FreeChip");
+            UIFactory.RoundedImage(chip, ArcadeTheme.RadSm, ArcadeTheme.Gold.WithAlpha(0.16f), false);
+            var crt = UIFactory.Rt(chip);
+            crt.anchorMin = crt.anchorMax = new Vector2(0f, 1f);
+            crt.pivot = new Vector2(0f, 1f);
+            crt.sizeDelta = new Vector2(72f, 28f);
+            crt.anchoredPosition = new Vector2(ArcadeTheme.Md, -ArcadeTheme.Md);
+            var free = UIFactory.Text(chip.transform, "FREE", ArcadeTheme.FsCaption * 0.88f, ArcadeTheme.Gold,
+                                      display: true, bold: true, upper: true, tracking: 3f);
+            UIFactory.Stretch(UIFactory.Rt(free.gameObject), 0);
+
+            dealTierLabel = CornerTag(art, string.Empty, ArcadeTheme.Ink, 1f);
+
+            var holder = UIFactory.Child(art, "ChestHolder");
+            UIFactory.Stretch(UIFactory.Rt(holder), 0);
+            dealArt = holder.transform;
+
+            dealName = CardTitle(col, string.Empty, ArcadeTheme.Ink, ArcadeTheme.FsBody * 1.1f);
+            CardBlurb(col, "Watch one ad to open it. A new deal every day, Common or Rare.");
+            Flex(col);
+
+            dealCountdown = UIFactory.Text(col, string.Empty, ArcadeTheme.FsCaption, ArcadeTheme.InkMuted,
+                                           display: false, bold: true, upper: false,
+                                           align: TextAlignmentOptions.Left, richText: false);
+            dealCountdown.gameObject.AddComponent<LayoutElement>().preferredHeight = 24f;
+
+            dealButton = UIFactory.Button(col, "Watch ad", MenuButton.Variant.Primary, ClaimDeal, 56f);
+            UIShine.AddTo(dealButton);
+        }
+
+        private void BuildCoinsCard(Transform parent)
+        {
+            var col = CardFrame(parent, "Coins", CardWidth, ArcadeTheme.Coin.WithAlpha(0.45f),
+                                ArcadeTheme.Coin.WithAlpha(0.20f), out Transform art);
+
+            // A small pile: two coins behind, one in front.
+            PlaceCoin(art, new Vector2(-30f, -18f), 70f);
+            PlaceCoin(art, new Vector2(30f, -18f), 70f);
+            PlaceCoin(art, new Vector2(0f, 8f), 96f);
+
+            CardTitle(col, "+" + ShopOffers.AdCoins, ArcadeTheme.Coin, ArcadeTheme.FsBody * 1.45f);
+            CardTitle(col, "Coins", ArcadeTheme.Ink, ArcadeTheme.FsBody);
+            CardBlurb(col, "Watch a short ad for a coin top-up.");
+            Flex(col);
+
+            var pipRow = UIFactory.Child(col, "Pips");
+            pipRow.AddComponent<LayoutElement>().preferredHeight = 24f;
+            var h = pipRow.AddComponent<HorizontalLayoutGroup>();
+            h.spacing = ArcadeTheme.Xs + 2f;
+            h.childAlignment = TextAnchor.MiddleLeft;
+            h.childForceExpandWidth = false;
+            h.childForceExpandHeight = false;
+            h.childControlWidth = true;
+            h.childControlHeight = true;
+
+            for (int i = 0; i < ShopOffers.AdsPerDay; i++)
             {
-                bool selected = t.userData == null ? chestsTab : !chestsTab && (CosmeticKind)t.userData == tab;
-                t.EnableInClassList("is-selected", selected);
+                var pip = UIFactory.Child(pipRow.transform, "Pip");
+                var ple = pip.AddComponent<LayoutElement>();
+                ple.preferredWidth = 20f;
+                ple.preferredHeight = 8f;
+                adPips.Add(UIFactory.RoundedImage(pip, 4, ArcadeTheme.BgRaised, false));
             }
 
-            if (chestsTab)
+            UIFactory.Child(pipRow.transform, "Gap").AddComponent<LayoutElement>().flexibleWidth = 1f;
+            adsLeftLabel = UIFactory.Text(pipRow.transform, string.Empty, ArcadeTheme.FsCaption * 0.9f,
+                                          ArcadeTheme.InkMuted, display: false, bold: true,
+                                          align: TextAlignmentOptions.Right, richText: false);
+
+            adButton = UIFactory.Button(col, "Watch ad", MenuButton.Variant.Blue, WatchCoinAd, 56f);
+        }
+
+        private static void PlaceChest(Transform parent, ChestTier tier, float size)
+        {
+            var chest = UIFactory.ChestGlyph(parent, tier, size);
+            UIFactory.Rt(chest).anchoredPosition = new Vector2(0f, -ArcadeTheme.Sm);
+        }
+
+        private static void PlaceCoin(Transform parent, Vector2 pos, float size)
+        {
+            var coin = UIFactory.CoinGlyph(parent, size);
+            UIFactory.Rt(coin).anchoredPosition = pos;
+        }
+
+        private void BuildFooter(Transform parent)
+        {
+            // Along the bottom edge, level with Back, and clear of it.
+            footerLabel = UIFactory.Text(parent, FooterText, ArcadeTheme.FsCaption, ArcadeTheme.InkMuted,
+                                         display: false, bold: true, upper: false, richText: false);
+            var rt = UIFactory.Rt(footerLabel.gameObject);
+            rt.anchorMin = new Vector2(0f, 0f);
+            rt.anchorMax = new Vector2(1f, 0f);
+            rt.pivot = new Vector2(0.5f, 0f);
+            rt.offsetMin = new Vector2(ArcadeTheme.Xl2 + ArcadeTheme.BackWidth + ArcadeTheme.Lg, ArcadeTheme.Xl);
+            rt.offsetMax = new Vector2(-(ArcadeTheme.Xl2 + ArcadeTheme.BackWidth + ArcadeTheme.Lg),
+                                       ArcadeTheme.Xl + ArcadeTheme.HeaderHeight);
+        }
+
+        // ---------- refresh ----------
+
+        /// <summary>Repaints the shelf's live state: what can be afforded, and what the ad offers have left.</summary>
+        private void RefreshShelf()
+        {
+            if (root == null) return;
+
+            for (int i = 0; i < chestButtons.Length; i++)
             {
-                // Said up front once the collection is finished: from then on a chest can only pay
-                // coins back, and fewer than it cost.
-                caption.text = ChestLoot.AnySkinsLeft()
-                    ? "CHESTS — A RANDOM SKIN YOU DON'T OWN"
-                    : "COLLECTION COMPLETE — CHESTS PAY COINS";
-                grid.Clear();
-                for (int i = 0; i <= (int)ChestTier.Legendary; i++) grid.Add(ChestCard((ChestTier)i));
-                UiFonts.Apply(grid);
+                bool affordable = Wallet.CanAfford(ChestLoot.Price((ChestTier)i));
+                chestButtons[i].interactable = affordable;
+                chestPrices[i].alpha = affordable ? 1f : 0.45f;
+            }
+
+            ChestTier tier = ShopOffers.DealTier;
+            if (tier != shownDealTier)
+            {
+                shownDealTier = tier;
+                UIFactory.ClearChildren(dealArt);
+                PlaceChest(dealArt, tier, ChestSize + 10f);
+                dealTierLabel.text = CosmeticCatalog.RarityName((Rarity)(int)tier);
+                dealTierLabel.color = UIFactory.ChestColor(tier);
+                dealName.text = ChestLoot.TierName(tier);
+            }
+
+            bool dealOpen = !ShopOffers.DealClaimed;
+            dealButton.interactable = dealOpen;
+            dealButton.label.text = dealOpen ? "Watch ad" : "Claimed today";
+            // The screen's one resting glow, and only while there is something to take.
+            dealButton.SetAccent(ArcadeTheme.Gold, dealOpen ? 0.5f : 0f);
+
+            int left = ShopOffers.AdsLeft;
+            for (int i = 0; i < adPips.Count; i++)
+            {
+                adPips[i].color = i < left ? ArcadeTheme.Coin : ArcadeTheme.BgRaised;
+            }
+            adsLeftLabel.text = $"{left} of {ShopOffers.AdsPerDay} left";
+            adButton.interactable = left > 0;
+            adButton.label.text = left > 0 ? "Watch ad" : "Back tomorrow";
+
+            RefreshCountdown();
+        }
+
+        private void RefreshCountdown()
+        {
+            if (dealCountdown == null) return;
+            TimeSpan t = ShopOffers.UntilReset;
+            dealCountdown.text = $"New deal in {(int)t.TotalHours:00}:{t.Minutes:00}:{t.Seconds:00}";
+        }
+
+        private void Update()
+        {
+            if (!IsOpen || Time.unscaledTime < nextTick) return;
+            nextTick = Time.unscaledTime + 1f;
+
+            // Once a second: the countdown, and — reading the offers is what rolls them over — a
+            // screen left open past midnight picks up the new day's deal and ad count.
+            bool dealWas = dealButton != null && dealButton.interactable;
+            bool dealNow = !ShopOffers.DealClaimed;
+            if (dealWas != dealNow || ShopOffers.DealTier != shownDealTier || !adButton.interactable && ShopOffers.AdsLeft > 0)
+            {
+                RefreshShelf();
                 return;
             }
 
-            bool badges = tab == CosmeticKind.Badge;
-            // Says what the tab IS rather than what the screen is called. A shelf of badges under a
-            // heading reading "cosmetics" invites exactly one question, and this answers it first.
-            caption.text = badges ? "LEAGUE BADGES — EARNED, NOT SOLD" : "COSMETICS";
+            RefreshCountdown();
+        }
 
-            grid.Clear();
-            List<CosmeticItem> items = CosmeticCatalog.OfKind(tab);
-            for (int i = 0; i < items.Count; i++)
+        // ---------- actions ----------
+
+        private void AskBuy(ChestTier tier)
+        {
+            if (!Wallet.CanAfford(ChestLoot.Price(tier)))
             {
-                // What is for sale, the catalogue default (owned by everybody, never priced — it has
-                // to be reachable, because taking a bought skin off means putting the default back
-                // on), and the badges, which are the wardrobe. Anything else is not shopping.
-                CosmeticItem item = items[i];
-                if (!item.IsForSale && !item.IsDefault && item.Kind != CosmeticKind.Badge) continue;
-                grid.Add(Card(item));
+                Say("Not enough coins. Play ranked or watch an ad to earn more");
+                return;
             }
 
-            UiFonts.Apply(grid);
+            ShowConfirm(tier);
+        }
+
+        private void Buy(ChestTier tier)
+        {
+            // Asked and answered in one call: the balance may have moved since the confirm opened.
+            if (!Wallet.TrySpend(ChestLoot.Price(tier)))
+            {
+                Say("Not enough coins. Play ranked or watch an ad to earn more");
+                return;
+            }
+
+            ShowReveal(ChestLoot.Open(tier));
+        }
+
+        private void ClaimDeal()
+        {
+            ShopOffers.ClaimDeal(drop =>
+            {
+                if (drop.HasValue) ShowReveal(drop.Value);
+                else Say("The ad didn't finish, so the deal is still yours");
+            });
+        }
+
+        private void WatchCoinAd()
+        {
+            ShopOffers.WatchCoinAd(paid =>
+            {
+                Say(paid ? $"+{ShopOffers.AdCoins} coins added" : "The ad didn't finish, so no coins this time");
+            });
         }
 
         /// <summary>
-        /// One item card: art, name, rarity, and a price or its ownership state. The edge is the
-        /// item's rarity colour, which is what makes a wall of cards scannable.
+        /// Swaps the footer line for a short message, then puts it back. The footer rather than a popup:
+        /// it never moves the shelf, and it sits where the player is already looking after a tap.
         /// </summary>
-        private VisualElement Card(CosmeticItem item)
+        private void Say(string message)
+        {
+            if (footerLabel == null) return;
+
+            footerLabel.text = message;
+            footerLabel.color = ArcadeTheme.Coin;
+
+            if (statusRoutine != null) StopCoroutine(statusRoutine);
+            if (isActiveAndEnabled) statusRoutine = StartCoroutine(ClearStatus());
+        }
+
+        private IEnumerator ClearStatus()
+        {
+            // Realtime: the front end runs at timeScale 0, and a scaled wait here would never finish.
+            yield return new WaitForSecondsRealtime(2.6f);
+            ResetFooter();
+            statusRoutine = null;
+        }
+
+        private void ResetFooter()
+        {
+            if (footerLabel == null) return;
+            footerLabel.text = FooterText;
+            footerLabel.color = ArcadeTheme.InkMuted;
+        }
+
+        // ---------- confirm ----------
+
+        /// <summary>
+        /// The purchase prompt: which chest, how much, and a way out. Built once and refilled, rather
+        /// than created per purchase, so there is no fresh set of listeners to leak.
+        /// </summary>
+        private void BuildConfirm(Transform parent)
+        {
+            confirmPanel = UIFactory.Child(parent, "ConfirmBuy");
+            UIFactory.Stretch(UIFactory.Rt(confirmPanel));
+            UIFactory.ScrimDim(confirmPanel.transform, 0.6f);
+
+            var panel = UIFactory.Panel(confirmPanel.transform, "ConfirmPanel");
+            var prt = UIFactory.Rt(panel);
+            prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
+            prt.pivot = new Vector2(0.5f, 0.5f);
+            prt.sizeDelta = new Vector2(520f, 420f);
+
+            var col = UIFactory.Child(panel.transform.Find("Fill"), "Col");
+            UIFactory.Stretch(UIFactory.Rt(col), 26f);
+
+            var v = col.AddComponent<VerticalLayoutGroup>();
+            v.spacing = ArcadeTheme.Md;
+            v.childAlignment = TextAnchor.UpperCenter;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
+
+            var art = UIFactory.Child(col.transform, "Art");
+            art.AddComponent<LayoutElement>().preferredHeight = 130f;
+            confirmArt = art.transform;
+
+            confirmTitle = UIFactory.Text(col.transform, string.Empty, ArcadeTheme.FsBody * 1.2f,
+                                          ArcadeTheme.Ink, display: true, bold: true, upper: false,
+                                          tracking: 1f, richText: false);
+            confirmTitle.gameObject.AddComponent<LayoutElement>().preferredHeight = 36f;
+
+            var priceRow = UIFactory.CoinAmount(col.transform, "0", 40f);
+            confirmPrice = priceRow.GetComponentInChildren<TextMeshProUGUI>();
+
+            UIFactory.Spacer(col.transform, 4f);
+
+            var buttons = UIFactory.Child(col.transform, "Buttons");
+            buttons.AddComponent<LayoutElement>().preferredHeight = 62f;
+            var h = buttons.AddComponent<HorizontalLayoutGroup>();
+            h.spacing = ArcadeTheme.Sm;
+            h.childForceExpandWidth = true;
+            h.childForceExpandHeight = true;
+            h.childControlWidth = true;
+            h.childControlHeight = true;
+
+            UIFactory.Button(buttons.transform, "Cancel", MenuButton.Variant.Ghost, CancelBuy);
+            UIFactory.Button(buttons.transform, "Open", MenuButton.Variant.Primary, ConfirmBuy);
+
+            confirmPanel.SetActive(false);
+        }
+
+        private void ShowConfirm(ChestTier tier)
+        {
+            pendingBuy = tier;
+            if (confirmPanel == null) return;
+
+            UIFactory.ClearChildren(confirmArt);
+            UIFactory.ChestGlyph(confirmArt, tier, 130f);
+            confirmTitle.text = $"Open {ChestLoot.TierName(tier)}?";
+            confirmPrice.text = ChestLoot.Price(tier).ToString("N0", CultureInfo.InvariantCulture);
+            confirmPanel.SetActive(true);
+            confirmPanel.transform.SetAsLastSibling();
+        }
+
+        private void ConfirmBuy()
+        {
+            ChestTier? tier = pendingBuy;
+            CancelBuy();
+            if (tier.HasValue) Buy(tier.Value);
+        }
+
+        private void CancelBuy()
+        {
+            pendingBuy = null;
+            if (confirmPanel != null) confirmPanel.SetActive(false);
+        }
+
+        // ---------- reveal ----------
+
+        /// <summary>
+        /// Plays the chest opening over the store for a chest that has already been rolled and
+        /// granted. The store is uGUI and the opening is UI Toolkit, and which of the two draws on
+        /// top is not something either system promises — so the store fades out and stops taking
+        /// touches while it plays, and comes back when the player collects.
+        /// </summary>
+        private void ShowReveal(ChestDrop drop)
+        {
+            group.alpha = 0f;
+            group.blocksRaycasts = false;
+
+            ChestOpening.Play(drop.Tier, drop.Item, drop.Coins, () =>
+            {
+                if (!IsOpen) return;
+                group.alpha = 1f;
+                group.blocksRaycasts = true;
+            });
+        }
+
+        // ---------- collection ----------
+
+        /// <summary>
+        /// The wardrobe: every cosmetic the player owns, tabbed by kind, tap to wear. League badges
+        /// are shown even when locked, because a wardrobe that only listed what you had won would
+        /// never tell a player what climbing the ladder is FOR.
+        /// </summary>
+        private void BuildCollection(Transform parent)
+        {
+            collectionPanel = UIFactory.Child(parent, "Collection");
+            UIFactory.Stretch(UIFactory.Rt(collectionPanel));
+            UIFactory.ScrimDim(collectionPanel.transform, 0.9f);
+
+            UIFactory.ScreenHeader(collectionPanel.transform, "Collection", CloseCollection);
+
+            var panel = UIFactory.Panel(collectionPanel.transform, "CollectionPanel");
+            var prt = UIFactory.Rt(panel);
+            prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
+            prt.pivot = new Vector2(0.5f, 0.5f);
+            // Clears the shared header even on a 20:9 phone, where the canvas is only ~805 tall.
+            prt.sizeDelta = new Vector2(1050f, 600f);
+            prt.anchoredPosition = new Vector2(0f, -10f);
+
+            // Laid-out content goes in a stretched column on top of the panel's frame, so a layout
+            // group never touches the shadow, border or fill. Same split as LeagueMenu.
+            var content = UIFactory.Child(panel.transform, "Content");
+            UIFactory.Stretch(UIFactory.Rt(content), 0f);
+
+            var col = content.AddComponent<VerticalLayoutGroup>();
+            col.padding = new RectOffset(24, 24, 24, 24);
+            col.spacing = ArcadeTheme.Md;
+            col.childAlignment = TextAnchor.UpperCenter;
+            col.childForceExpandWidth = true;
+            col.childForceExpandHeight = false;
+            col.childControlWidth = true;
+            col.childControlHeight = true;
+
+            var labels = new string[CosmeticCatalog.TabKinds.Length];
+            for (int i = 0; i < labels.Length; i++)
+            {
+                labels[i] = CosmeticCatalog.KindName(CosmeticCatalog.TabKinds[i]);
+            }
+
+            UIFactory.Segmented(content.transform, labels, 0, index =>
+            {
+                tab = CosmeticCatalog.TabKinds[Mathf.Clamp(index, 0, CosmeticCatalog.TabKinds.Length - 1)];
+                RedrawCollection();
+            }, 48f);
+
+            collectionCaption = UIFactory.Text(content.transform, string.Empty, ArcadeTheme.FsCaption,
+                                               ArcadeTheme.InkMuted, display: false, bold: true,
+                                               upper: true, tracking: 3f, richText: false);
+            collectionCaption.gameObject.AddComponent<LayoutElement>().preferredHeight = 22f;
+
+            var holder = UIFactory.Child(content.transform, "GridHolder");
+            var le = holder.AddComponent<LayoutElement>();
+            le.preferredHeight = 420f;
+            le.flexibleHeight = 1f;
+            le.minHeight = 160f;
+            gridContent = UIFactory.ScrollList(holder.transform, GridGap);
+
+            collectionPanel.SetActive(false);
+        }
+
+        private void OpenCollection()
+        {
+            if (collectionPanel == null) return;
+            collectionPanel.SetActive(true);
+            collectionPanel.transform.SetAsLastSibling();
+            RedrawCollection();
+        }
+
+        private void CloseCollection()
+        {
+            if (collectionPanel != null) collectionPanel.SetActive(false);
+        }
+
+        private void RedrawCollection()
+        {
+            if (gridContent == null || collectionPanel == null || !collectionPanel.activeSelf)
+            {
+                return;
+            }
+
+            UIFactory.ClearChildren(gridContent);
+
+            bool badges = tab == CosmeticKind.Badge;
+            collectionCaption.text = badges ? "League badges are earned in ranked" : "Tap a skin to wear it";
+
+            List<CosmeticItem> items = CosmeticCatalog.OfKind(tab);
+            Transform row = null;
+
+            for (int i = 0, shown = 0; i < items.Count; i++)
+            {
+                // What you own (the catalogue default counts: everybody owns it, and taking a skin OFF
+                // means putting it back on), plus every badge. Unowned skins come from chests.
+                CosmeticItem item = items[i];
+                if (!badges && !item.IsDefault && !Inventory.Owns(item.Id)) continue;
+
+                if (shown % Columns == 0) row = NewRow();
+                AddCard(row, item);
+                shown++;
+            }
+        }
+
+        private Transform NewRow()
+        {
+            var row = UIFactory.Child(gridContent, "Row");
+            row.AddComponent<LayoutElement>().preferredHeight = GridCardHeight;
+
+            var h = row.AddComponent<HorizontalLayoutGroup>();
+            h.spacing = GridGap;
+            // Left, not centre: a final row holding two cards should line up under the four above it.
+            h.childAlignment = TextAnchor.MiddleLeft;
+            h.childForceExpandWidth = false;
+            h.childForceExpandHeight = false;
+            h.childControlWidth = true;
+            h.childControlHeight = true;
+
+            return row.transform;
+        }
+
+        /// <summary>
+        /// One item card: placeholder art, name, rarity, and its ownership state. Built on
+        /// <see cref="MenuButton"/> so the whole card hovers, presses and clicks like a button, with
+        /// its edge in the item's rarity colour.
+        /// </summary>
+        private void AddCard(Transform parent, CosmeticItem item)
         {
             bool owned = Inventory.Owns(item.Id);
             bool equipped = Inventory.IsEquipped(item.Id);
             Color rarity = UIFactory.RarityColor(item.Rarity);
 
-            var card = UiKit.El("store-card" + (equipped ? " is-equipped" : string.Empty));
-            card.style.borderTopColor = card.style.borderBottomColor =
-                card.style.borderLeftColor = card.style.borderRightColor = equipped ? rarity : rarity.WithAlpha(0.55f);
-            UiKit.OnTap(card, () =>
-            {
-                if ((grid.scrollOffset - scrollAtPress).sqrMagnitude > ScrollTapSlop * ScrollTapSlop) return;
-                Tapped(item);
-            });
+            var card = UIFactory.Child(parent, "Card_" + item.Id);
+            var cle = card.AddComponent<LayoutElement>();
+            cle.preferredWidth = GridCardWidth;
+            cle.minWidth = GridCardWidth;
+            cle.preferredHeight = GridCardHeight;
 
-            var picture = UiKit.El("store-card__picture", card);
-            picture.style.backgroundColor = Color.Lerp(ArcadeTheme.BgDeep, rarity, 0.16f);
+            var glowGo = UIFactory.Child(card.transform, "Glow");
+            var glow = UIFactory.GlowImage(glowGo, ArcadeTheme.RadMd, 26f, rarity.WithAlpha(0f));
+            UIFactory.Stretch(UIFactory.Rt(glowGo), -14f);
+
+            var borderGo = UIFactory.Child(card.transform, "Border");
+            var border = UIFactory.RoundedImage(borderGo, ArcadeTheme.RadMd, rarity, false);
+            UIFactory.Stretch(UIFactory.Rt(borderGo), 0);
+
+            var fillGo = UIFactory.Child(card.transform, "Fill");
+            var fill = UIFactory.RoundedImage(fillGo, ArcadeTheme.RadMd, ArcadeTheme.BgRaised, true);
+            UIFactory.Stretch(UIFactory.Rt(fillGo), 2f);
+
+            var btn = card.AddComponent<MenuButton>();
+            btn.fill = fill;
+            btn.border = border;
+            btn.glow = glow;
+            btn.label = null;
+            btn.targetGraphic = fill;
+            btn.Configure(MenuButton.Variant.Neutral);
+            // Equipped is the one card per tab that lights up at rest.
+            btn.SetAccent(rarity, equipped ? 0.55f : 0f);
+            btn.onClick.AddListener(() => Tapped(item));
+
+            var body = UIFactory.Child(card.transform, "Body");
+            UIFactory.Stretch(UIFactory.Rt(body), 8f);
+
+            var v = body.AddComponent<VerticalLayoutGroup>();
+            v.spacing = ArcadeTheme.Xs;
+            v.childAlignment = TextAnchor.UpperCenter;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
+
+            var picture = UIFactory.Child(body.transform, "Picture");
+            picture.AddComponent<LayoutElement>().preferredHeight = 112f;
 
             if (item.Kind == CosmeticKind.Badge)
             {
-                // A badge draws itself — a ring in the league's metal round the trophy. Locked badges
-                // are shown, not hidden: a wardrobe that only listed what you had won would never tell
-                // a player what climbing the ladder is FOR.
-                Color metal = UIFactory.LeagueColor(LeagueBadges.LeagueOf(item.Id));
-                var ring = UiKit.El("store-card__badge", picture);
-                ring.style.borderTopColor = ring.style.borderBottomColor =
-                    ring.style.borderLeftColor = ring.style.borderRightColor = metal;
-                ring.Add(new UiIcon(UiIcon.Glyph.Trophy, metal, 2f));
-                if (!owned) ring.style.opacity = 0.3f;
+                UIFactory.LeagueBadgeGlyph(picture.transform, LeagueBadges.LeagueOf(item.Id), 96f);
+
+                if (!owned)
+                {
+                    var locked = picture.AddComponent<CanvasGroup>();
+                    locked.alpha = 0.28f;
+                    locked.blocksRaycasts = false;
+                }
             }
             else
             {
-                // A real render of the real thing when one exists; the kind's icon when it does not.
-                Sprite thumb = CosmeticThumbnails.For(item.Id);
-                if (thumb != null)
-                {
-                    var art = UiKit.El("store-card__art", picture);
-                    art.style.backgroundImage = new StyleBackground(thumb);
-                }
-                else
-                {
-                    var icon = new UiIcon(KindGlyph(item.Kind), rarity, 1.8f);
-                    icon.AddToClassList("store-card__glyph");
-                    picture.Add(icon);
-                }
+                UIFactory.CosmeticSwatch(picture.transform, item);
             }
 
-            UiKit.Text(item.Name, "store-card__name f-display", card);
-            var rar = UiKit.Text(CosmeticCatalog.RarityName(item.Rarity).ToUpperInvariant(), "store-card__rarity f-body-semi", card);
-            rar.style.color = rarity;
+            var name = UIFactory.Text(body.transform, item.Name, ArcadeTheme.FsCaption, ArcadeTheme.Ink,
+                                      display: true, bold: true, upper: false, tracking: 1f,
+                                      richText: false);
+            name.gameObject.AddComponent<LayoutElement>().preferredHeight = 24f;
+            name.overflowMode = TextOverflowModes.Ellipsis;
 
-            Footer(card, item, owned, equipped, rarity);
+            var rar = UIFactory.Text(body.transform, CosmeticCatalog.RarityName(item.Rarity),
+                                     ArcadeTheme.FsCaption * 0.78f, rarity, display: false, bold: true,
+                                     upper: true, tracking: 3f);
+            rar.gameObject.AddComponent<LayoutElement>().preferredHeight = 18f;
+
+            AddCardFooter(body.transform, item, owned, equipped);
 
             if (equipped)
             {
-                // "This is what you're wearing", readable before anything else on the card.
-                var check = UiKit.El("store-card__check", card);
-                check.Add(new UiIcon(UiIcon.Glyph.Check, ArcadeTheme.OnGold, 3f));
+                var check = UIFactory.EquippedCheck(card.transform, 30f);
+                var checkRt = UIFactory.Rt(check);
+                checkRt.anchorMin = checkRt.anchorMax = new Vector2(1f, 1f);
+                checkRt.pivot = new Vector2(1f, 1f);
+                checkRt.anchoredPosition = new Vector2(-8f, -8f);
             }
-
-            return card;
         }
 
-        /// <summary>
-        /// The bottom line of a card, which is the whole state machine of a store item in one row:
-        /// a price when it can be bought, EQUIPPED when it is worn, TAP TO EQUIP when it is not.
-        /// </summary>
-        private static void Footer(VisualElement card, CosmeticItem item, bool owned, bool equipped, Color rarity)
+        /// <summary>The bottom line of a card: EQUIPPED, tap to equip, or which league earns a badge.</summary>
+        private static void AddCardFooter(Transform parent, CosmeticItem item, bool owned, bool equipped)
         {
-            var footer = UiKit.El("store-card__footer", card);
+            var footer = UIFactory.Child(parent, "Footer");
+            footer.AddComponent<LayoutElement>().preferredHeight = 34f;
 
+            TextMeshProUGUI t;
             if (equipped)
             {
-                footer.style.backgroundColor = rarity.WithAlpha(0.2f);
-                UiKit.Text("EQUIPPED", "store-card__state f-display", footer).style.color = rarity;
-                return;
+                UIFactory.RoundedImage(footer, ArcadeTheme.RadSm,
+                                       UIFactory.RarityColor(item.Rarity).WithAlpha(0.22f), false);
+                t = UIFactory.Text(footer.transform, "EQUIPPED", ArcadeTheme.FsCaption * 0.82f,
+                                   UIFactory.RarityColor(item.Rarity), display: true, bold: true,
+                                   upper: true, tracking: 3f);
             }
-
-            if (owned)
+            else if (owned)
             {
-                UiKit.Text("TAP TO EQUIP", "store-card__state f-body-semi", footer).style.color = ArcadeTheme.InkMuted;
-                return;
+                t = UIFactory.Text(footer.transform, "Tap to equip", ArcadeTheme.FsCaption * 0.82f,
+                                   ArcadeTheme.InkMuted, display: false, bold: true, upper: true,
+                                   tracking: 3f);
             }
-
-            // A badge has no price, because there is no price at which it can be had — it says which
-            // league to reach instead, which is the only way to get one.
-            if (item.Kind == CosmeticKind.Badge)
+            else
             {
                 League league = LeagueBadges.LeagueOf(item.Id);
-                UiKit.Text($"REACH {Leagues.Name(league).ToUpperInvariant()}", "store-card__state f-body-semi", footer)
-                     .style.color = UIFactory.LeagueColor(league);
-                return;
+                t = UIFactory.Text(footer.transform, $"Reach {Leagues.Name(league)}",
+                                   ArcadeTheme.FsCaption * 0.82f, UIFactory.LeagueColor(league),
+                                   display: false, bold: true, upper: true, tracking: 3f,
+                                   richText: false);
             }
 
-            // Dimmed when it cannot be afforded, so the wall of prices sorts itself into "today" and
-            // "later" without the player doing arithmetic against the balance in the header.
-            bool affordable = Wallet.CanAfford(item.Price);
-            footer.AddToClassList("row");
-            if (!affordable) footer.style.opacity = 0.5f;
-            footer.Add(new UiIcon(UiIcon.Glyph.Coin, affordable ? ArcadeTheme.Gold : ArcadeTheme.InkMuted, 2f));
-            UiKit.Text(item.Price.ToString("N0"), "store-card__price f-display", footer)
-                 .style.color = affordable ? ArcadeTheme.Gold : ArcadeTheme.InkMuted;
+            UIFactory.Stretch(UIFactory.Rt(t.gameObject), 0);
         }
-
-        /// <summary>
-        /// A chest for sale: the chest itself in its tier's colour, its name, the best it can give, and
-        /// its price. Same card, edge and footer as a skin, so the shelf reads as part of the store.
-        /// </summary>
-        private VisualElement ChestCard(ChestTier chestTier)
-        {
-            Color tint = UIFactory.ChestColor(chestTier);
-            int price = ChestLoot.Price(chestTier);
-
-            var card = UiKit.El("store-card");
-            card.style.borderTopColor = card.style.borderBottomColor =
-                card.style.borderLeftColor = card.style.borderRightColor = tint.WithAlpha(0.55f);
-            UiKit.OnTap(card, () =>
-            {
-                if ((grid.scrollOffset - scrollAtPress).sqrMagnitude > ScrollTapSlop * ScrollTapSlop) return;
-                TappedChest(chestTier);
-            });
-
-            var picture = UiKit.El("store-card__picture", card);
-            picture.style.backgroundColor = Color.Lerp(ArcadeTheme.BgDeep, tint, 0.16f);
-            var art = ChestOpening.ChestArt(chestTier);
-            art.style.scale = new Scale(new Vector2(0.48f, 0.48f));
-            picture.Add(art);
-
-            UiKit.Text(ChestLoot.TierName(chestTier), "store-card__name f-display", card);
-            var odds = UiKit.Text(ChestOdds(chestTier), "store-card__rarity f-body-semi", card);
-            odds.style.color = tint;
-
-            var footer = UiKit.El("store-card__footer row", card);
-            bool affordable = Wallet.CanAfford(price);
-            if (!affordable) footer.style.opacity = 0.5f;
-            footer.Add(new UiIcon(UiIcon.Glyph.Coin, affordable ? ArcadeTheme.Gold : ArcadeTheme.InkMuted, 2f));
-            UiKit.Text(price.ToString("N0"), "store-card__price f-display", footer)
-                 .style.color = affordable ? ArcadeTheme.Gold : ArcadeTheme.InkMuted;
-
-            return card;
-        }
-
-        /// <summary>The honest one-line pitch for a tier: the best it can drop.</summary>
-        private static string ChestOdds(ChestTier chestTier)
-        {
-            switch (chestTier)
-            {
-                case ChestTier.Common: return "UP TO EPIC";
-                case ChestTier.Legendary: return "RARE OR BETTER";
-                default: return "UP TO LEGENDARY";
-            }
-        }
-
-        /// <summary>The icon standing in for a cosmetic with no rendered thumbnail. Shared with
-        /// <see cref="ChestOpening"/>.</summary>
-        internal static UiIcon.Glyph KindGlyph(CosmeticKind kind)
-        {
-            switch (kind)
-            {
-                case CosmeticKind.BallSkin: return UiIcon.Glyph.Coin;
-                case CosmeticKind.FigureSkin: return UiIcon.Glyph.Person;
-                case CosmeticKind.FieldSkin: return UiIcon.Glyph.Table;
-                case CosmeticKind.TableSkin: return UiIcon.Glyph.Table;
-                case CosmeticKind.Background: return UiIcon.Glyph.Globe;
-                default: return UiIcon.Glyph.Star;
-            }
-        }
-
-        // ---------- actions ----------
 
         private void Tapped(CosmeticItem item)
         {
             bool badge = item.Kind == CosmeticKind.Badge;
 
-            if (Inventory.Owns(item.Id))
+            if (!Inventory.Owns(item.Id))
             {
-                if (Inventory.IsEquipped(item.Id))
+                if (badge)
                 {
-                    // A badge is the one cosmetic with no default underneath it, so it is the only one
-                    // that can genuinely be taken OFF. Every other kind always has something equipped.
-                    if (badge)
-                    {
-                        Inventory.Unequip(CosmeticKind.Badge);
-                        Say("Badge removed");
-                    }
-
-                    return;
+                    collectionCaption.text = $"Reach {Leagues.Name(LeagueBadges.LeagueOf(item.Id))} league to earn this badge";
                 }
-
-                Inventory.Equip(item.Id);
-                Say(badge ? $"{item.Name} now shows beside your name" : $"{item.Name} equipped");
                 return;
             }
 
-            if (badge)
+            if (Inventory.IsEquipped(item.Id))
             {
-                Say($"Reach {Leagues.Name(LeagueBadges.LeagueOf(item.Id))} league to earn this badge");
+                // A badge is the one cosmetic with no default underneath it, so it is the only one that
+                // can genuinely be taken OFF.
+                if (badge)
+                {
+                    Inventory.Unequip(CosmeticKind.Badge);
+                    collectionCaption.text = "Badge removed";
+                }
                 return;
             }
 
-            if (!Wallet.CanAfford(item.Price))
-            {
-                Say("Not enough coins — play ranked to earn more");
-                return;
-            }
-
-            ShowConfirm(item);
-        }
-
-        private void TappedChest(ChestTier chestTier)
-        {
-            if (!Wallet.CanAfford(ChestLoot.Price(chestTier)))
-            {
-                Say("Not enough coins — play ranked to earn more");
-                return;
-            }
-
-            pendingBuy = default;
-            pendingChest = chestTier;
-            confirmTitle.text = $"Open a {ChestLoot.TierName(chestTier)}?";
-            confirmPrice.text = ChestLoot.Price(chestTier).ToString("N0");
-            UiKit.Show(confirm, true);
-            confirm.BringToFront();
-            UiKit.Enter(confirm.Q(className: "store__confirm-panel"));
-        }
-
-        /// <summary>
-        /// Pays, rolls and grants in one call, then plays the opening over the store. The drop is
-        /// already banked before the chest appears, so leaving mid-animation loses nothing.
-        /// </summary>
-        private void BuyChest(ChestTier chestTier)
-        {
-            if (!ChestLoot.TryBuy(chestTier, out ChestDrop drop))
-            {
-                Say("Not enough coins — play ranked to earn more");
-                return;
-            }
-
-            ChestOpening.Play(chestTier, drop.Item, drop.Coins, () =>
-            {
-                if (drop.Item.Valid) Say($"{drop.Item.Name} added — tap it to equip");
-            });
-        }
-
-        private void Buy(CosmeticItem item)
-        {
-            // Asked and answered in one call: a separate "can I afford it" check followed by a
-            // subtraction is two steps that can disagree, and the balance may have moved since the
-            // confirm opened.
-            if (!Wallet.TrySpend(item.Price))
-            {
-                Say("Not enough coins — play ranked to earn more");
-                return;
-            }
-
-            Inventory.Grant(item.Id);
-            // Worn straight away. Nobody buys a skin to leave it in a drawer.
             Inventory.Equip(item.Id);
-            Say($"{item.Name} unlocked and equipped");
+            collectionCaption.text = badge ? $"{item.Name} now shows beside your name" : $"{item.Name} equipped";
         }
 
-        private void Say(string message)
-        {
-            if (status == null) return;
-            status.text = message;
-            statusClear?.Pause();
-            statusClear = status.schedule.Execute(() => status.text = string.Empty).StartingIn(StatusMillis);
-        }
-
-        // ---------- confirm ----------
-
-        private void ShowConfirm(CosmeticItem item)
-        {
-            pendingBuy = item;
-            pendingChest = null;
-            confirmTitle.text = $"Buy {item.Name}?";
-            confirmPrice.text = item.Price.ToString("N0");
-            UiKit.Show(confirm, true);
-            confirm.BringToFront();
-            UiKit.Enter(confirm.Q(className: "store__confirm-panel"));
-        }
-
-        private void ConfirmBuy()
-        {
-            CosmeticItem item = pendingBuy;
-            ChestTier? chest = pendingChest;
-            CancelBuy();
-            if (chest.HasValue) BuyChest(chest.Value);
-            else if (item.Valid) Buy(item);
-        }
-
-        private void CancelBuy()
-        {
-            pendingBuy = default;
-            pendingChest = null;
-            UiKit.Show(confirm, false);
-        }
-
-        // ---------- open / close ----------
+        // ---------- state ----------
 
         public void Open()
         {
             if (root == null) return;
 
-            // Removed first, so reopening cannot stack a second handler onto a static event.
-            Wallet.OnChanged -= Redraw;
-            Wallet.OnChanged += Redraw;
-            Inventory.OnChanged -= Redraw;
-            Inventory.OnChanged += Redraw;
+            // Removed first, so reopening cannot stack a second handler onto a static event that
+            // outlives this panel — the pattern MainMenu and LeagueMenu already use.
+            Wallet.OnChanged -= RefreshShelf;
+            Wallet.OnChanged += RefreshShelf;
+            ShopOffers.OnChanged -= RefreshShelf;
+            ShopOffers.OnChanged += RefreshShelf;
+            Inventory.OnChanged -= RedrawCollection;
+            Inventory.OnChanged += RedrawCollection;
 
             CancelBuy();
-            status.text = string.Empty;
-            Redraw();
+            CloseCollection();
+            ResetFooter();
 
-            UiKit.Show(root, true);
-            root.BringToFront();
-            root.style.opacity = 0f;
-            UiKit.Fade(root, 1f, ArcadeTheme.TFast);
-            UiKit.Enter(grid, 0.06f);
+            root.SetActive(true);
+            root.transform.SetAsLastSibling();
+            group.alpha = 1f;
+            group.blocksRaycasts = true;
+
+            RefreshShelf();
         }
 
         public void Close()
         {
-            // A chest opening over the store goes with it. Guarded, because GameFlow closes screens
-            // that are not open, and one of those must not cancel a chest playing over another.
+            Unsubscribe();
+            // Guarded: GameFlow closes screens that are not open, and that must not cancel a chest
+            // playing over another one.
             if (IsOpen) ChestOpening.Cancel();
-            Wallet.OnChanged -= Redraw;
-            Inventory.OnChanged -= Redraw;
-            if (root != null) UiKit.Show(root, false);
+
+            if (root != null)
+            {
+                group.blocksRaycasts = false;
+                root.SetActive(false);
+            }
         }
 
         private void OnDestroy()
         {
-            Wallet.OnChanged -= Redraw;
-            Inventory.OnChanged -= Redraw;
+            Unsubscribe();
+        }
+
+        private void Unsubscribe()
+        {
+            Wallet.OnChanged -= RefreshShelf;
+            ShopOffers.OnChanged -= RefreshShelf;
+            Inventory.OnChanged -= RedrawCollection;
         }
 
         private void Back()

@@ -54,6 +54,14 @@ async function loadPod(ctx, league, week, index) {
 async function savePod(ctx, league, week, index, pod) {
   await ctx.cloudSave.setCustomItem(`pod:${league}:${week}:${index}`, pod);
 }
+// A pending or resolved result claim, keyed by a per-match id both players share (see submitResult).
+async function loadMatch(ctx, matchId) {
+  const doc = await ctx.cloudSave.getCustomItem(`match:${matchId}`);
+  return doc || { claims: {}, resolved: false };
+}
+async function saveMatch(ctx, matchId, doc) {
+  await ctx.cloudSave.setCustomItem(`match:${matchId}`, doc);
+}
 // A game-scoped counter of how many pods exist in a league this week, so a new player fills the last
 // non-full pod or opens the next one.
 async function nextPodIndex(ctx, league, week) {
@@ -143,7 +151,9 @@ async function getPod(ctx, playerId, name) {
   return { entries };
 }
 
-async function submitResult(ctx, playerId, name, won) {
+// The actual point application, unchanged from before this player id — factored out so both
+// participants can be credited in one call once submitResult below has corroborated them.
+async function applyDelta(ctx, playerId, name, won) {
   const p = await ensurePlayer(ctx, playerId, name);
   const delta = won ? WIN[p.league] : -LOSS[p.league];
   p.points = Math.max(0, p.points + delta);
@@ -156,7 +166,73 @@ async function submitResult(ctx, playerId, name, won) {
   else pod.members.push({ id: playerId, name: name || "Player", points: p.points });
   await savePod(ctx, p.league, p.week, p.podId, pod);
 
-  return { points: p.points };
+  return p.points;
+}
+
+// How long a claim waits for its corroborating half before it is simply pending forever (never
+// auto-credited on its own — see submitResult).
+const MATCH_CLAIM_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * Records this player's claimed result for one match and credits points ONLY once both
+ * participants have reported it — matching, opposite outcomes, within the claim window.
+ *
+ * Before this, a single call with { won: true } was credited on the spot: nothing connected it to
+ * an actual match, so a modified client could call this endpoint directly, with no opponent, no
+ * relay session and no game running, and farm ranked points forever (see cloudcode/README.md,
+ * "Anti-cheat", and AGENTS.md). Requiring a matching claim from the id named as the opponent raises
+ * that from "one modified client" to "two authenticated UGS identities agreeing with each other" —
+ * a real increase in cost, not a full close. A single account, or two colluding ones, can still
+ * fabricate a matchId and complementary claims with no real match behind them; closing THAT needs an
+ * authoritative match server issuing a signed match token neither client can forge, which this
+ * relay-hosted, host-authoritative topology does not have (the same residual already accepted for
+ * goal-scoring — see AGENTS.md, "a malicious host can cheat freely"). This is documented, not hidden.
+ *
+ * matchId is expected to be the Multiplayer Sessions id both clients already share (assigned by the
+ * service when the session is created, not chosen by either client) — see
+ * Assets/Scripts/Net/OnlineSession.cs (Current.Id) — which is why forging one requires acting as
+ * both participants rather than just picking a string.
+ */
+async function submitResult(ctx, playerId, name, won, matchId, opponentId) {
+  if (!matchId || !opponentId || opponentId === playerId ||
+      matchId.length > 64 || opponentId.length > 64) {
+    return { applied: false, reason: "invalid" };
+  }
+
+  const match = await loadMatch(ctx, matchId);
+
+  if (match.resolved) {
+    return { applied: false, reason: "already-resolved" };
+  }
+
+  if (match.claims[playerId]) {
+    // This player retrying (the client's call is fire-and-forget and may be re-sent). Idempotent.
+    await saveMatch(ctx, matchId, match);
+    return { applied: false, reason: "already-claimed" };
+  }
+
+  match.claims[playerId] = { opponentId, won: !!won, name: name || "Player", ts: Date.now() };
+
+  const theirs = match.claims[opponentId];
+  const corroborated =
+    !!theirs &&
+    theirs.opponentId === playerId &&
+    theirs.won !== !!won && // exactly one winner, exactly one loser
+    Math.abs(theirs.ts - match.claims[playerId].ts) <= MATCH_CLAIM_WINDOW_MS;
+
+  if (!corroborated) {
+    await saveMatch(ctx, matchId, match);
+    return { applied: false, reason: theirs ? "mismatch" : "pending" };
+  }
+
+  // Both sides agree on who won: credit both now, symmetrically, in this one call.
+  const myPoints = await applyDelta(ctx, playerId, name, won);
+  await applyDelta(ctx, opponentId, theirs.name, theirs.won);
+
+  match.resolved = true;
+  await saveMatch(ctx, matchId, match);
+
+  return { applied: true, points: myPoints };
 }
 
 // The weekly lock. Scheduled (see README): ranks every pod of the just-finished week, moves the top
@@ -197,7 +273,8 @@ module.exports = async ({ params, context, logger }) => {
   switch (action) {
     case "getStanding": return getStanding(context, playerId, name);
     case "getPod":      return getPod(context, playerId, name);
-    case "submitResult":return submitResult(context, playerId, name, !!params.won);
+    case "submitResult":return submitResult(context, playerId, name, !!params.won,
+                                            params && params.matchId, params && params.opponentId);
     case "rollover":    return rollover(context); // scheduler-only; protect with an access rule
     default:
       logger.error(`ladder: unknown action ${action}`);

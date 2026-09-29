@@ -65,8 +65,87 @@ namespace TableFootball.Net
         /// The public <c>Name#1234</c>. Empty until signed in, and briefly empty for a brand new
         /// player until the service mints one — <see cref="RefreshAsync"/> is what fills it in.
         /// </summary>
-        public static string DisplayName =>
-            GameServices.IsSignedIn ? AuthenticationService.Instance.PlayerName ?? string.Empty : string.Empty;
+        /// <remarks>
+        /// Falls back to the last name seen on this device, so a slow or failed network call shows the
+        /// player's name rather than a dash. Cleared whenever the device changes hands.
+        /// </remarks>
+        public static string DisplayName
+        {
+            get
+            {
+                string live = GameServices.IsSignedIn ? AuthenticationService.Instance.PlayerName : null;
+                return string.IsNullOrEmpty(live) ? PlayerPrefs.GetString(CachedNameKey, string.Empty) : live;
+            }
+        }
+
+        private const string CachedNameKey = "tf_cached_name";
+
+        /// <summary>Set once the name is one this game picked or the player typed, so the
+        /// server-made default is only ever replaced once.</summary>
+        private const string NameChosenKey = "tf_name_chosen";
+
+        /// <summary>Longest server-made name (before its #tag) left alone.</summary>
+        private const int MaxDefaultNameLength = 12;
+
+        private const int RefreshTimeoutMs = 12000;
+
+        /// <summary>The look of a server-made name (CapitalisedWords, maybe digits), so a long name
+        /// someone typed is never overwritten.</summary>
+        private static readonly Regex GeneratedNameShape = new(@"^([A-Z][a-z]+)+[0-9]*$", RegexOptions.Compiled);
+
+        private static readonly string[] NameFirst =
+            { "Red", "Blue", "Fast", "Bold", "Swift", "Lucky", "Nova", "Blaze", "Cool", "Iron" };
+        private static readonly string[] NameSecond =
+            { "Fox", "Owl", "Bat", "Elk", "Ram", "Yak", "Wolf", "Hawk", "Lynx", "Bear" };
+
+        private static void CacheName()
+        {
+            string live = AuthenticationService.Instance.PlayerName;
+            if (string.IsNullOrEmpty(live)) return;
+
+            PlayerPrefs.SetString(CachedNameKey, live);
+            PlayerPrefs.Save();
+        }
+
+        /// <summary>Forgets the cached name. Called wherever the device stops belonging to one person.</summary>
+        internal static void ClearCachedName()
+        {
+            PlayerPrefs.DeleteKey(CachedNameKey);
+            PlayerPrefs.DeleteKey(NameChosenKey);
+            PlayerPrefs.Save();
+        }
+
+        /// <summary>A short random name such as <c>SwiftFox42</c> — at most 10 characters.</summary>
+        private static string ShortRandomName() =>
+            NameFirst[UnityEngine.Random.Range(0, NameFirst.Length)]
+            + NameSecond[UnityEngine.Random.Range(0, NameSecond.Length)]
+            + UnityEngine.Random.Range(10, 100);
+
+        /// <summary>Awaits a service call for at most <see cref="RefreshTimeoutMs"/>; the SDK call
+        /// itself cannot be cancelled, so on timeout it is left to finish and be ignored.</summary>
+        private static async Task<bool> CompletesInTime(Task task)
+        {
+            Task winner = await Task.WhenAny(task, Task.Delay(RefreshTimeoutMs));
+            if (winner != task) return false;
+
+            await task; // surfaces the SDK's own exception, if any
+            return true;
+        }
+
+        /// <summary>
+        /// <see cref="RefreshAsync"/> with up to three attempts, for boot: a phone that has just
+        /// woken its radio often fails the first call and succeeds a few seconds later.
+        /// </summary>
+        public static async Task<bool> RefreshWithRetryAsync()
+        {
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                if (await RefreshAsync()) return true;
+                await Task.Delay(4000 * (attempt + 1));
+            }
+
+            return false;
+        }
 
         /// <summary>The name without its #tag, for greeting the player in their own UI.</summary>
         public static string ShortName
@@ -90,21 +169,74 @@ namespace TableFootball.Net
                 return Fail("Not signed in", null);
             }
 
+            // Two separate calls, each on its own, so the name reaches the screen as soon as it
+            // arrives instead of waiting on (or being lost with) the account lookup.
             try
             {
-                // Both are round trips. The name is fetched rather than read off the property because
-                // a player who has never had one gets it minted by this call.
-                await AuthenticationService.Instance.GetPlayerNameAsync();
+                // The name is fetched rather than read off the property because a player who has
+                // never had one gets it minted by this call.
+                if (!await CompletesInTime(AuthenticationService.Instance.GetPlayerNameAsync()))
+                {
+                    return Fail("Loading your profile timed out", null);
+                }
 
-                PlayerInfo info = await AuthenticationService.Instance.GetPlayerInfoAsync();
-                HasAccount = info?.Username != null;
+                await ShortenDefaultNameAsync();
+                CacheName();
+                OnChanged?.Invoke();
+            }
+            catch (Exception e)
+            {
+                return Fail("Could not load your profile", e);
+            }
 
+            try
+            {
+                Task<PlayerInfo> infoTask = AuthenticationService.Instance.GetPlayerInfoAsync();
+                if (!await CompletesInTime(infoTask))
+                {
+                    return Fail("Loading your account timed out", null);
+                }
+
+                HasAccount = infoTask.Result?.Username != null;
                 OnChanged?.Invoke();
                 return true;
             }
             catch (Exception e)
             {
-                return Fail("Could not load your profile", e);
+                return Fail("Could not load your account", e);
+            }
+        }
+
+        /// <summary>
+        /// Replaces the service's long generated name (AdjectiveNoun + digits) with a short one, once.
+        /// Skipped if the player has ever named themselves, and on any failure — the long name still works.
+        /// </summary>
+        private static async Task ShortenDefaultNameAsync()
+        {
+            if (PlayerPrefs.GetInt(NameChosenKey, 0) == 1) return;
+
+            string full = AuthenticationService.Instance.PlayerName ?? string.Empty;
+            int hash = full.IndexOf('#');
+            string bare = hash > 0 ? full.Substring(0, hash) : full;
+
+            if (bare.Length == 0) return;
+
+            if (bare.Length <= MaxDefaultNameLength || !GeneratedNameShape.IsMatch(bare))
+            {
+                PlayerPrefs.SetInt(NameChosenKey, 1);
+                return;
+            }
+
+            try
+            {
+                if (await CompletesInTime(AuthenticationService.Instance.UpdatePlayerNameAsync(ShortRandomName())))
+                {
+                    PlayerPrefs.SetInt(NameChosenKey, 1);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"Could not shorten the default name: {e.Message}");
             }
         }
 
@@ -133,6 +265,8 @@ namespace TableFootball.Net
             try
             {
                 await AuthenticationService.Instance.UpdatePlayerNameAsync(name.Trim());
+                PlayerPrefs.SetInt(NameChosenKey, 1);
+                CacheName();
                 OnChanged?.Invoke();
                 return true;
             }
@@ -251,6 +385,7 @@ namespace TableFootball.Net
                 RankedRewards.ResetLocal();
                 Progression.DailyQuests.ResetForNewPlayer();
                 Progression.PlayerXp.ResetForNewPlayer();
+                ClearCachedName();
                 FriendsHub.Reset();
 
                 // The local record is now blank; pull the incoming player's cloud save into it, so
@@ -319,6 +454,7 @@ namespace TableFootball.Net
                 RankedRewards.ResetLocal();
                 Progression.DailyQuests.ResetForNewPlayer();
                 Progression.PlayerXp.ResetForNewPlayer();
+                ClearCachedName();
 
                 // A player with no identity at all cannot host, join or be added, and nothing in the
                 // menu would explain why. Replacing it immediately keeps the game in a working state.

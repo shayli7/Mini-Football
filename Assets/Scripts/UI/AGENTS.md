@@ -23,7 +23,7 @@ screen, control, or visual.
 ## Two UI systems, mid-migration
 
 The front end is moving from uGUI (the `Canvas` built by `TableFootballUI`) to **UI Toolkit**, one
-screen at a time, so it can match the design canvas closely. Moved so far: **`StartScreen`**, **`StoreMenu`**,
+screen at a time, so it can match the design canvas closely. Moved so far: **`StartScreen`**,
 **`MainMenu`**, the **`GameMenu`** overlay (pause, leave confirmation and Settings; its pause button
 stays uGUI with the score strip), **`ChestOpening`** and **`QuestsMenu`**. Everything else is still
 uGUI and follows the rest of this guide.
@@ -58,10 +58,10 @@ Two rules that fail silently:
   underneath it, so any overlap between the two hides one side first, until both have moved.
   (Settings used to do this over the main menu; `GameMenu`'s overlay is UI Toolkit now and simply
   brings itself to the front.)
-  The chest opening (`ChestOpening`, UI Toolkit) plays over the uGUI level path the same way: the
-  path fades its `CanvasGroup` out while the chest plays and back in when the player collects.
+  The chest opening (`ChestOpening`, UI Toolkit) plays over the uGUI level path and store the same
+  way: each fades its `CanvasGroup` out while the chest plays and back in when the player collects.
 - **Chest opening** — `ChestOpening.Play(tier, item, coins, onClosed)` is the one place a chest is
-  opened on screen, for any caller (the level path and the store's Chests tab): drop, wait for a tap, charge, burst, prize. The roll has already
+  opened on screen, for any caller (the level path, and the store's bought and daily chests): drop, wait for a tap, charge, burst, prize. The roll has already
   been granted by `ChestLoot.Open` before it plays; it is presentation only.
 
 ## The look — black, blue and gold

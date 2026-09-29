@@ -75,28 +75,14 @@ namespace TableFootball.Net
         private static readonly int[] ConsolationCoins = { 150, 350, 700, 1400 };
 
         /// <summary>
-        /// What each tier costs in the store. Set a little under the expected value of what the odds
-        /// give at catalogue prices (about 480, 790, 1260 and 1910), because the player gives up
-        /// choosing; and always above <see cref="ConsolationCoins"/>, so buying chests with a finished
-        /// collection can never turn coins into more coins.
+        /// What each tier costs in the store. A little under the old direct price of a skin at the same
+        /// rarity (300 / 750 / 1600 / 3200), because a chest is a roll rather than a pick.
         /// </summary>
-        private static readonly int[] Prices = { 400, 700, 1100, 1700 };
+        private static readonly int[] StorePrices = { 250, 600, 1400, 3000 };
 
-        /// <summary>The store price of a chest.</summary>
+        /// <summary>The store price of one chest of this tier.</summary>
         public static int Price(ChestTier tier) =>
-            Prices[Mathf.Clamp((int)tier, 0, Prices.Length - 1)];
-
-        /// <summary>
-        /// Buys and opens a chest in one step: spends its price, then rolls and grants. False, with
-        /// nothing spent, when the player cannot afford it.
-        /// </summary>
-        public static bool TryBuy(ChestTier tier, out ChestDrop drop)
-        {
-            drop = default;
-            if (!Wallet.TrySpend(Price(tier))) return false;
-            drop = Open(tier);
-            return true;
-        }
+            StorePrices[Mathf.Clamp((int)tier, 0, StorePrices.Length - 1)];
 
         /// <summary>
         /// Opens one chest: rolls, grants, and reports what happened. Granting is done HERE rather
