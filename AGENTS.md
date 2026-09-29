@@ -172,6 +172,35 @@ the ball can be trapped and dribbled; shots come from an explicit strike impulse
 is genuinely *swinging*. A ball bouncy enough to fly off a figure would fly off every accidental
 touch, and close control would be impossible.
 
+**A still figure cushions the ball; a fast or shallow one blocks or glances it.** In
+`BallController.ApplyContact`, only a hit on a figure's FRONT slows the ball — contact normals are
+classified against the rod's own axes (`|normal · ForwardKickDirection|` ≥ `frontMinAlignment` is a
+front/back face; below that is a side face along the bar, which just knocks the ball on at
+`sideRetention`). A non-swinging figure slows a ball slower than `trapMaxSpeed` that meets
+its front square-on (`trapMinApproach`): the first touch keeps `trapRetention` of its pace, and for
+`trapWindowSeconds` it keeps bleeding speed at `trapSlowdown` (exponential, so it tapers toward rest and
+is never snapped there). Continued contact does NOT refresh the window — nothing pins the ball; the
+pitch's own friction and `rollingDecel` do the rest. Anything faster or at a shallower angle deflects,
+keeping `glanceRetention` for a brush down to `blockRetention` head-on, so a hard shot into a defender
+drops a loose ball instead of ricocheting. History: a hard pin (settle to zero, refreshed while in
+contact) and, before that, a "never fully stops" drift both shipped and were replaced — the pin because
+the ball died dead on contact, the drift because it could not be held. `trapRetention` 0 restores the
+dead stop. Pace is set by `speedCap`, `railRetention` (a ceiling on EVERY rail hit, not just assisted ones) and
+`rollingDecel`; `NetworkedBall` feeds `WallRetention` to the guest's `BallStream`, so changing rail
+retention changes what the guest predicts. `randomnessScale` is the one dial for all contact randomness.
+
+**Retuning a saved value means renaming the field.** `speedCap`, `railRetention`, `trapWindowSeconds`
+and `trapSlowdown` replaced `maxSpeed`, `wallBounceRetention`, `controlWindowSeconds` and
+`controlDamping` for exactly this reason — the scene had the old ones saved (9, 1.0, 0.18, 6) and would
+have shadowed any new default. The orphaned keys in `MainScene.unity` are ignored and dropped on the
+next save.
+
+**Touch precision lives in `RodTouchInput`, never `RodController`.** A drag reads its intent once it has
+travelled `axisDecideDistance`: a slide leaves spin inert until `spinBreakout`, a swing locks the rod
+until `slideBreakout` (anchored so unlocking never jumps). Spin is integrated per frame with a
+speed-dependent gain (`fineSpinGain` slow → full at `fullGainSpeed`), taken from the live speed so a
+hard swipe is never softened; only the release flick uses the smoothed speed.
+
 **Read `RodController.MeasuredSpinSpeed`, not `CurrentSpinVelocity`, to detect a swing** — the latter
 is pinned at zero while a drag drives the angle directly.
 

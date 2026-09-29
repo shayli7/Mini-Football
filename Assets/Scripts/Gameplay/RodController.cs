@@ -45,6 +45,11 @@ namespace TableFootball
         [SerializeField] private float spinAccel = 4400f;
         [Tooltip("Higher settles the spin faster after a flick.")]
         [SerializeField] private float spinDamping = 3f;
+        [Tooltip("Added to Spin Damping (which the scene has saved at 3) so a released flick dies " +
+                 "away in about a third of a second instead of a full one: one decisive swing, not " +
+                 "a windmill that swats whatever the ball does next. Only affects free spin — a " +
+                 "held drag and the AI set the angle directly.")]
+        [SerializeField] private float extraSpinDamping = 4f;
         [SerializeField] private bool invertSpin = false;
 
         [Header("Bar axis (auto-detected from the bar mesh)")]
@@ -433,9 +438,9 @@ namespace TableFootball
             {
                 spinVelocity += spinInput * spinAccel * dt;
             }
-            else if (spinDamping > 0f)
+            else if (spinDamping + extraSpinDamping > 0f)
             {
-                spinVelocity *= Mathf.Exp(-spinDamping * dt);
+                spinVelocity *= Mathf.Exp(-(spinDamping + extraSpinDamping) * dt);
                 if (Mathf.Abs(spinVelocity) < 1f)
                 {
                     spinVelocity = 0f;

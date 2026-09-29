@@ -45,8 +45,40 @@ namespace TableFootball
                  "Spin Speed — clamping well below that is a quiet power cap on every shot.")]
         [SerializeField] private float maxFlick = 1600f;
 
+        [Header("Precision (dead zones and smoothing)")]
+        [Tooltip("How far a drag must travel, as a fraction of screen height, before the game decides " +
+                 "whether it is a slide or a swing. Until then only slide follows the finger.")]
+        [SerializeField] private float axisDecideDistance = 0.02f;
+        [Tooltip("Once a drag has been read as a SLIDE, how far the finger must then move ACROSS the " +
+                 "bar (fraction of screen height) before the figures start to turn. Stops a slide " +
+                 "that drifts sideways from spinning — and kicking — the figures.")]
+        [SerializeField] private float spinBreakout = 0.04f;
+        [Tooltip("Once a drag has been read as a SWING, how far the finger must then move ALONG the " +
+                 "bar (fraction of screen height) before the rod starts sliding. Stops a swipe that " +
+                 "drifts sideways from dragging the ball along the bar.")]
+        [SerializeField] private float slideBreakout = 0.03f;
+        [Tooltip("Spin gain for a slow drag, as a fraction of Spin Degrees Per Screen Height. A slow, " +
+                 "careful movement turns the figures a little (precise aim, gentle touches); a fast " +
+                 "swipe still turns them the full amount, so hard shots are unchanged.")]
+        [Range(0.05f, 1f)]
+        [SerializeField] private float fineSpinGain = 0.45f;
+        [Tooltip("Finger speed, in screen-heights per second, at which spin reaches full gain.")]
+        [SerializeField] private float fullGainSpeed = 2.5f;
+        [Tooltip("Seconds over which finger speed is averaged for the release flick, so one jittery " +
+                 "final frame cannot fire a full-power flick nobody intended.")]
+        [SerializeField] private float flickSmoothing = 0.04f;
+        [Tooltip("Seconds of smoothing on the rod's slide target — removes finger jitter without a " +
+                 "perceptible lag. 0 = the rod snaps to the finger every frame.")]
+        [SerializeField] private float slideSmoothing = 0.025f;
+
         [Header("Debug")]
         [SerializeField] private bool logGrabs = false;
+
+        // How much more the finger must move across the bar than along it for a drag to read as a
+        // swing rather than a slide.
+        private const float SwingDominance = 1.25f;
+
+        private enum DragIntent { Undecided, Slide, Swing }
 
         /// <summary>One finger's grip on one rod. Each drag is independent of the others.</summary>
         private class Grip
@@ -54,9 +86,23 @@ namespace TableFootball
             public RodController Rod;
             public Vector2 PressPosition;
             public float PressSlide01;
-            public float PressSpinAngle;
             public float AcrossNormalised;
             public float AcrossVelocity;
+
+            public DragIntent Intent;
+
+            // Slide: while locked (a swing is under way) the rod holds still and later finger travel
+            // is measured from here, so unlocking never makes it jump.
+            public bool SlideLocked;
+            public float SlideLockN;
+            public float SlideAnchorN;
+            public float SlideEffN;
+            public float SlideSmoothed;
+
+            // Spin: integrated per frame from the finger's movement rather than read as an absolute
+            // offset from the press, so it can carry a speed-dependent gain and a dead zone.
+            public bool SpinActive;
+            public float SpinAngle;
         }
 
         private readonly Dictionary<int, Grip> grips = new Dictionary<int, Grip>();
@@ -257,9 +303,11 @@ namespace TableFootball
                 Rod = rod,
                 PressPosition = position,
                 PressSlide01 = rod.CurrentSlide01,
-                PressSpinAngle = rod.CurrentSpinAngle,
                 AcrossNormalised = 0f,
-                AcrossVelocity = 0f
+                AcrossVelocity = 0f,
+                Intent = DragIntent.Undecided,
+                SlideSmoothed = rod.CurrentSlide01,
+                SpinAngle = rod.CurrentSpinAngle
             };
 
             if (logGrabs)
@@ -281,21 +329,87 @@ namespace TableFootball
             float along = Vector2.Dot(drag, barOnScreen);
             float across = drag.x * barOnScreen.y - drag.y * barOnScreen.x;
 
-            // Slide: back into world metres, so the rod stays under the finger at any zoom.
-            if (pixelsPerMetre > 1f && grip.Rod.SlideRangeMeters > Mathf.Epsilon)
+            // Both axes as a fraction of screen height, so every threshold below feels identical on
+            // any device.
+            float height = Mathf.Max(Screen.height, 1);
+            float alongN = along / height;
+            float acrossN = across / height;
+            float dt = Mathf.Max(Time.deltaTime, 1e-5f);
+
+            // Read the drag's intent once it has travelled far enough to tell. Until then only the
+            // slide follows the finger, and nothing turns the figures: a tap or a wobble is neither.
+            if (grip.Intent == DragIntent.Undecided &&
+                Mathf.Max(Mathf.Abs(alongN), Mathf.Abs(acrossN)) >= axisDecideDistance)
             {
-                float metres = along / pixelsPerMetre;
-                grip.Rod.SetSlide01Immediate(grip.PressSlide01 + metres / grip.Rod.SlideRangeMeters);
+                if (Mathf.Abs(acrossN) > Mathf.Abs(alongN) * SwingDominance)
+                {
+                    // A swing: the rod holds where it is while the figures turn.
+                    grip.Intent = DragIntent.Swing;
+                    grip.SlideLocked = true;
+                    grip.SlideLockN = alongN;
+                    grip.SpinActive = true;
+                }
+                else
+                {
+                    grip.Intent = DragIntent.Slide;
+                }
             }
 
-            // Spin: measured as a fraction of screen height so it feels identical on any device.
-            float acrossNormalised = across / Mathf.Max(Screen.height, 1);
-            float dt = Mathf.Max(Time.deltaTime, 1e-5f);
-            grip.AcrossVelocity = (acrossNormalised - grip.AcrossNormalised) / dt;
-            grip.AcrossNormalised = acrossNormalised;
+            // Slide. A locked slide (mid-swing) stays put until the finger really travels along the
+            // bar; either way the anchor is kept so unlocking continues from where the rod is now
+            // instead of jumping to where the finger has got to.
+            if (grip.SlideLocked && Mathf.Abs(alongN - grip.SlideLockN) >= slideBreakout)
+            {
+                grip.SlideLocked = false;
+            }
+
+            if (grip.SlideLocked)
+            {
+                grip.SlideAnchorN = alongN - grip.SlideEffN;
+            }
+            else
+            {
+                grip.SlideEffN = alongN - grip.SlideAnchorN;
+            }
+
+            // Back into world metres, so the rod stays under the finger at any zoom.
+            if (pixelsPerMetre > 1f && grip.Rod.SlideRangeMeters > Mathf.Epsilon)
+            {
+                float metres = grip.SlideEffN * height / pixelsPerMetre;
+                float target = grip.PressSlide01 + metres / grip.Rod.SlideRangeMeters;
+                grip.SlideSmoothed = slideSmoothing > 0f
+                    ? Mathf.Lerp(grip.SlideSmoothed, target, 1f - Mathf.Exp(-dt / slideSmoothing))
+                    : target;
+                grip.Rod.SetSlide01Immediate(grip.SlideSmoothed);
+            }
+
+            // A slide that later moves properly across the bar becomes a swing as well.
+            if (grip.Intent == DragIntent.Slide && !grip.SpinActive && Mathf.Abs(acrossN) >= spinBreakout)
+            {
+                grip.SpinActive = true;
+                grip.AcrossNormalised = acrossN; // turn from here, not from where the press began
+            }
 
             grip.Rod.SetSpinVelocity(0f);
-            grip.Rod.SetSpinAngle(grip.PressSpinAngle + acrossNormalised * spinDegreesPerScreenHeight);
+
+            if (grip.SpinActive)
+            {
+                float delta = acrossN - grip.AcrossNormalised;
+                float instant = delta / dt;
+
+                // Averaged for the release flick only — see flickSmoothing.
+                float alpha = flickSmoothing > 0f ? 1f - Mathf.Exp(-dt / flickSmoothing) : 1f;
+                grip.AcrossVelocity = Mathf.Lerp(grip.AcrossVelocity, instant, alpha);
+                grip.AcrossNormalised = acrossN;
+
+                // Slow movement turns the figures finely; a fast swipe turns them the full amount.
+                // Gain follows the live speed, not the average, so a hard swipe is never softened
+                // by the average still catching up.
+                float gain = Mathf.Lerp(fineSpinGain, 1f,
+                    Mathf.Clamp01(Mathf.Abs(instant) / Mathf.Max(fullGainSpeed, 1e-3f)));
+                grip.SpinAngle += delta * spinDegreesPerScreenHeight * gain;
+                grip.Rod.SetSpinAngle(grip.SpinAngle);
+            }
         }
 
         private void Release(int pointerId)

@@ -42,11 +42,15 @@ namespace TableFootball
                  "in mid-flight.")]
         [SerializeField] private float linearDrag = 0.02f;
         [SerializeField] private float angularDrag = 0.05f;
-        [Tooltip("Speed cap in m/s, so a hard flick can't fire the ball through the table. Note " +
-                 "this is headroom, not the thing that governs how hard shots are: a figure's foot " +
-                 "moves a few m/s at most, so real shots land far below this. Power comes from " +
-                 "Strike Boost below and from the rod's Max Spin Speed.")]
-        [SerializeField] private float maxSpeed = 12f;
+        [Tooltip("The fastest the ball may ever travel, in m/s. On a ~1.3 m table this sets how quick " +
+                 "the game feels: at 6.5 a full-power shot crosses the table in about 0.2 s — still " +
+                 "fast, but a defender can see it coming. (Renamed from Max Speed so this default " +
+                 "takes effect on the existing scene, where the old field was saved at 9.)")]
+        [SerializeField] private float speedCap = 6.5f;
+        [Tooltip("How fast a rolling ball loses horizontal speed on its own, per second (0.35 = it " +
+                 "sheds about a third of its pace each second). Gives a loose ball time to be " +
+                 "reached and set up instead of coasting across the table forever. 0 = none.")]
+        [SerializeField] private float rollingDecel = 0.35f;
         [Tooltip("Contact precision for this ball. Must be small next to its radius or bounces " +
                  "feel mushy. Set here as well as globally, since the global value only applies " +
                  "to colliders created after it changes.")]
@@ -109,9 +113,12 @@ namespace TableFootball
         [Tooltip("Guarantees a ball leaves a rail at the angle it arrived. Turn off to run on " +
                  "PhysX's own restitution alone.")]
         [SerializeField] private bool wallAssist = true;
-        [Tooltip("Fraction of its speed the ball keeps through an assisted rebound.")]
+        [Tooltip("Fraction of its speed the ball keeps off EVERY rail hit — a ceiling applied to all " +
+                 "rebounds, not only assisted ones, so bank shots lose pace and a ball cannot " +
+                 "ping-pong at full speed. Also what the online guest uses to predict rail bounces. " +
+                 "(Renamed from Wall Bounce Retention, which the scene had saved at 1.0.)")]
         [Range(0f, 1f)]
-        [SerializeField] private float wallBounceRetention = 0.85f;
+        [SerializeField] private float railRetention = 0.7f;
 
         [Header("Contact — skill (how a swing is shaped)")]
         [Tooltip("How much an OFF-CENTRE contact steers the ball. A hit one ball-radius to the side " +
@@ -139,27 +146,37 @@ namespace TableFootball
                  "with power, so soft touches stay exact.")]
         [Range(0f, 0.5f)]
         [SerializeField] private float powerJitter = 0.08f;
+        [Tooltip("One dial for ALL the random variation on contacts (shot spread, power jitter, " +
+                 "pass spread, deflection spread). 1 = the values above as written, 0 = perfectly " +
+                 "repeatable. Kept low so the result is decided by contact point, angle and timing, " +
+                 "not luck.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float randomnessScale = 0.4f;
 
-        [Header("Control window (slow for control — never to a dead stop)")]
-        [Tooltip("Seconds a good, gentle contact settles the ball at the foot so it can be lined up " +
-                 "and played. Kept short on purpose — control is a beat, not a hold. 0 disables it.")]
-        [SerializeField] private float controlWindowSeconds = 0.18f;
-        [Tooltip("How fast, in m/s per second, the ball eases toward the control drift speed while " +
-                 "under control. Higher = it reaches the drift speed sooner.")]
-        [SerializeField] private float controlDamping = 6f;
-        [Tooltip("The slow drift a controlled ball keeps, in m/s. The control window eases the ball " +
-                 "toward THIS speed, never toward zero, so a figure can slow the ball for control but " +
-                 "can never dead-stop it — it always keeps rolling off the foot. Set to 0 only if you " +
-                 "genuinely want a figure to be able to pin the ball still.")]
-        [SerializeField] private float controlMinSpeed = 0.35f;
-        [Tooltip("How close to the rod's bar the ball must stay, in metres, to remain under control. " +
+        [Header("Trapping (a still figure cushions the ball — it slows, it doesn't stop dead)")]
+        [Tooltip("Fraction of its pace a ball keeps the instant a still figure catches it. The rest is " +
+                 "taken off on contact, but it keeps moving — it is slowed, not pinned. 0 = the old " +
+                 "dead stop, 1 = no slowing at all.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float trapRetention = 0.4f;
+        [Tooltip("After that first touch, how fast the ball keeps bleeding speed, per second " +
+                 "(exponential: 3 = it loses about half its remaining pace every quarter second). " +
+                 "It only ever tapers toward rest, never snaps to it, and only lasts for the trap window.")]
+        [SerializeField] private float trapSlowdown = 3f;
+        [Tooltip("Seconds the slowdown lasts after the touch. The window ends early if the rod swings, " +
+                 "the ball is knocked away, or it leaves the foot's neighbourhood. 0 disables " +
+                 "the cushioning.")]
+        [SerializeField] private float trapWindowSeconds = 0.35f;
+        [Tooltip("How close to the rod's bar the ball must stay, in metres, to keep slowing. " +
                  "Leave the neighbourhood and the window ends.")]
         [SerializeField] private float controlRadius = 0.12f;
-        [Tooltip("Only balls already this slow, in m/s, are settled/trapped. It is also the line " +
-                 "between trapping and deflecting: a ball moving faster than this keeps its pace and " +
-                 "glances off a figure (see Figure Retention) instead of being caught. Keep it low, " +
-                 "or a ball rolling across the table dies on the first figure it brushes.")]
-        [SerializeField] private float controlMaxSpeed = 0.7f;
+        [Tooltip("The fastest ball, in m/s, a still figure can cushion. Anything quicker is a block " +
+                 "or a glance (see Figure contact).")]
+        [SerializeField] private float trapMaxSpeed = 2.0f;
+        [Tooltip("How square-on (0..1, 1 = head-on) a ball must meet a still figure to be cushioned " +
+                 "rather than glance off. Below this it deflects.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float trapMinApproach = 0.45f;
 
         [Header("Pass vs shot (bands of the same swing)")]
         [Tooltip("A swing below this spin, in degrees/second (but above Strike Min Spin), is a PASS: " +
@@ -176,16 +193,27 @@ namespace TableFootball
                  "rather than a dead one, so catching a pass is achievable without being automatic.")]
         [SerializeField] private float passReceiveBonus = 0.08f;
 
-        [Header("Figure contact (keep momentum — don't dead-stop, don't rebound live)")]
-        [Tooltip("Fraction of its speed a MOVING ball keeps when it glances or hits a still " +
-                 "(non-swinging) figure, reflected off the contact. High on purpose: a figure should " +
-                 "only slow the ball a bit and deflect it, never swallow it. A glancing brush barely " +
-                 "changes direction and keeps this much speed; a square hit reflects back at it, like " +
-                 "a soft wall. A blocked shot keeps this fraction too, so it rebounds into a loose " +
-                 "second ball. 1 = no pace lost; 0 restores the old dead-absorb (the grippy material " +
-                 "stops the ball). Only balls slower than Control Max Speed are trapped instead.")]
+        [Header("Figure contact (block vs glance)")]
+        [Tooltip("Fraction of its speed a ball keeps when it brushes a still figure at a shallow " +
+                 "angle: a glance keeps rolling.")]
         [Range(0f, 1f)]
-        [SerializeField] private float figureRetention = 0.75f;
+        [SerializeField] private float glanceRetention = 0.8f;
+        [Tooltip("Fraction of its speed a ball keeps when it hits a still figure square-on and is " +
+                 "too fast to trap: a block. Low, so a hard shot into a defender drops a loose ball " +
+                 "nearby for a second chance instead of ricocheting away. Blends up to Glance " +
+                 "Retention as the hit gets shallower.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float blockRetention = 0.3f;
+        [Tooltip("How much a contact must face the figure's FRONT (or back) — the faces pointing " +
+                 "along the kick direction — to count as a front hit. 1 = only dead-on, 0 = every " +
+                 "contact counts. Below this the ball has hit the figure's SIDE (the faces along the " +
+                 "bar) and is not slowed by the cushion or block rules. Only front hits slow the ball.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float frontMinAlignment = 0.6f;
+        [Tooltip("Fraction of its speed a ball keeps when it hits the SIDE of a still figure. High, " +
+                 "so a side hit just knocks the ball on its way: 1 = no slowing at all.")]
+        [Range(0f, 1f)]
+        [SerializeField] private float sideRetention = 0.9f;
         [Tooltip("Random spread on a figure deflection, in degrees, so repeated contacts don't send " +
                  "every ball down the same groove.")]
         [SerializeField] private float figureDeflectSpread = 3f;
@@ -389,10 +417,20 @@ namespace TableFootball
                 return;
             }
 
-            // Cap the speed: a hard enough flick could otherwise beat even continuous detection.
-            if (maxSpeed > 0f && body.linearVelocity.sqrMagnitude > maxSpeed * maxSpeed)
+            // Cap the speed: sets the pace of the whole game, and a hard enough flick could otherwise
+            // beat even continuous detection.
+            if (speedCap > 0f && body.linearVelocity.sqrMagnitude > speedCap * speedCap)
             {
-                body.linearVelocity = body.linearVelocity.normalized * maxSpeed;
+                body.linearVelocity = body.linearVelocity.normalized * speedCap;
+            }
+
+            // Rolling resistance on top of the pitch's friction, so a loose ball runs out of pace
+            // and can be reached rather than coasting across the table indefinitely.
+            if (rollingDecel > 0f)
+            {
+                float keep = Mathf.Exp(-rollingDecel * Time.fixedDeltaTime);
+                Vector3 v = body.linearVelocity;
+                body.linearVelocity = new Vector3(v.x * keep, v.y, v.z * keep);
             }
 
             // Safety net: if the ball escapes the table, carry it back rather than lose it forever.
@@ -700,21 +738,68 @@ namespace TableFootball
                 // Resting or drifting: a rod earns the right to strike again once its swing decays.
                 if (rod == lastStriker) lastStriker = null;
 
-                // A ball still carrying pace is not a touch to be trapped — a still figure should only
-                // slow it a bit and deflect it, not dead-stop it (the grippy material would otherwise
-                // swallow it). Reflecting the pre-impact velocity keeps most of the ball's momentum,
-                // so a glance rolls on and a blocked shot rebounds into a loose second ball. Enter
-                // only: a ball resting in contact must not be re-deflected every step.
-                if (firstContact && figureRetention > 0f && incomingSpeed > controlMaxSpeed)
+                // How square-on the ball meets the figure: 1 = head-on, 0 = a brush along its side.
+                float approach = 0f;
+                Vector3 inDir = Horizontal(lastVelocity);
+                Vector3 n = Horizontal(contactNormal);
+                if (inDir.sqrMagnitude > 1e-6f && n.sqrMagnitude > 1e-6f)
                 {
-                    ApplyFigureDeflection(contactNormal);
-                    RegisterTouch(rod, controlled: false);
+                    approach = Mathf.Clamp01(-Vector3.Dot(inDir.normalized, n.normalized));
+                }
+
+                // Front or side? The figure's faces along the kick direction are its front (and
+                // back); the faces along the bar are its sides. Only a front hit slows the ball — a
+                // side hit just knocks it on its way. The figure's collider is a box turning about
+                // the bar, so a face's normal keeps its horizontal direction whatever the rod's
+                // angle: front faces line up with the kick direction, side faces with the bar.
+                // (A normal that is nearly vertical has no side to speak of and counts as front.)
+                float frontness = 1f;
+                Vector3 kick = Horizontal(rod.ForwardKickDirection);
+                if (n.sqrMagnitude > 1e-6f && kick.sqrMagnitude > 1e-6f)
+                {
+                    frontness = Mathf.Abs(Vector3.Dot(n.normalized, kick.normalized));
+                }
+
+                if (frontness < frontMinAlignment)
+                {
+                    // Enter only — a ball resting against a side must not be re-deflected every step.
+                    if (firstContact)
+                    {
+                        ApplyFigureDeflection(contactNormal, sideRetention);
+                        RegisterTouch(rod, controlled: false);
+                    }
+
                     return;
                 }
 
-                // Genuinely slow: a deliberate trap. Settle it briefly so it can be played on purpose.
-                OpenControlWindow(rod, incomingSpeed);
-                RegisterTouch(rod, controlled: true);
+                // A still figure CUSHIONS a ball that is slow enough and arrives squarely (a very
+                // gentle one whatever the angle): the touch takes most of its pace off, and it keeps
+                // bleeding speed for a moment — but it is slowed, never pinned. Only the first touch
+                // does anything; a ball merely resting against the figure is left to the pitch.
+                bool gentle = incomingSpeed <= trapMaxSpeed * 0.25f;
+                bool cushioned = incomingSpeed <= trapMaxSpeed &&
+                                 (gentle || !firstContact || approach >= trapMinApproach);
+
+                if (cushioned)
+                {
+                    if (firstContact)
+                    {
+                        ApplyFigureDeflection(contactNormal, trapRetention);
+                        OpenControlWindow(rod, incomingSpeed);
+                    }
+
+                    RegisterTouch(rod, controlled: true);
+                    return;
+                }
+
+                // Too fast or too shallow to cushion: a block or a glance. Enter only — a ball already
+                // in contact must not be re-deflected every step.
+                if (firstContact)
+                {
+                    ApplyFigureDeflection(contactNormal, Mathf.Lerp(glanceRetention, blockRetention, approach));
+                    RegisterTouch(rod, controlled: false);
+                }
+
                 return;
             }
 
@@ -737,7 +822,7 @@ namespace TableFootball
 
             // Variation: tight for a pass, growing with power for a shot (that is the risk).
             float spread = isPass ? passSpread : baseSpread + powerSpread * power;
-            dir = ApplySpread(dir, spread);
+            dir = ApplySpread(dir, spread * randomnessScale);
 
             if (isPass)
             {
@@ -821,18 +906,20 @@ namespace TableFootball
             body.AddForce(realigned - h, ForceMode.VelocityChange);
 
             // The explicit power of the swing, with speed jitter that scales with how hard it was hit.
-            float boost = strikeBoost * power * (1f + Random.Range(-1f, 1f) * powerJitter * power);
+            float boost = strikeBoost * power *
+                          (1f + Random.Range(-1f, 1f) * powerJitter * randomnessScale * power);
             body.AddForce(dir * boost, ForceMode.VelocityChange);
         }
 
         /// <summary>
-        /// Deflects a moving ball off a still figure while keeping most of its pace, instead of the
-        /// dead material swallowing it. By the time this runs the material has already killed the
-        /// pace, so — like the wall assist — it works from the pre-impact velocity, reflects it off
-        /// the contact and scales by figureRetention. A glancing brush barely turns and keeps its
-        /// speed; a square hit comes back like a soft wall; a blocked shot rebounds as a loose ball.
+        /// A touch off a still figure: reflects the ball off the contact and keeps
+        /// <paramref name="retention"/> of its pace. By the time this runs the figure's grippy
+        /// material has already killed the pace, so — like the wall assist — it works from the
+        /// pre-impact velocity. Callers pick the retention: trapRetention for a ball gentle enough to
+        /// cushion, otherwise glanceRetention (a brush rolls on) blending down to blockRetention (a
+        /// head-on shot drops as a loose ball near the defender — a second chance, not a ricochet).
         /// </summary>
-        private void ApplyFigureDeflection(Vector3 contactNormal)
+        private void ApplyFigureDeflection(Vector3 contactNormal, float retention)
         {
             Vector3 n = Horizontal(contactNormal);
             Vector3 incoming = Horizontal(lastVelocity);
@@ -844,28 +931,30 @@ namespace TableFootball
             reflected = Horizontal(reflected);
             if (reflected.sqrMagnitude < 1e-6f) return;
 
-            reflected = ApplySpread(reflected.normalized, figureDeflectSpread) * (speed * figureRetention);
+            reflected = ApplySpread(reflected.normalized, figureDeflectSpread * randomnessScale)
+                        * (speed * retention);
             body.linearVelocity = new Vector3(reflected.x, body.linearVelocity.y, reflected.z);
         }
 
-        /// <summary>Opens (or refreshes) the short control window that settles a good touch at the
-        /// foot. A reception of a moving ball gets a little longer than trapping a dead one.</summary>
+        /// <summary>Opens the short window in which a cushioned ball keeps bleeding speed. A
+        /// reception of a moving ball gets a little longer than touching a near-dead one.</summary>
         private void OpenControlWindow(RodController rod, float incomingSpeed)
         {
-            if (controlWindowSeconds <= 0f) return;
-            if (incomingSpeed > controlMaxSpeed) return; // too fast to be a settle
+            if (trapWindowSeconds <= 0f) return;
+            if (incomingSpeed > trapMaxSpeed) return; // too fast to be cushioned
 
-            float window = controlWindowSeconds;
-            if (incomingSpeed > controlMaxSpeed * 0.4f) window += passReceiveBonus; // a reception
+            float window = trapWindowSeconds;
+            if (incomingSpeed > trapMaxSpeed * 0.4f) window += passReceiveBonus; // a reception
             controlRod = rod;
             controlUntil = Time.time + window;
         }
 
         /// <summary>
-        /// While a control window is open, eases the ball toward a slow DRIFT — never toward zero —
-        /// so a good touch is brought under control without ever being dead-stopped: the ball keeps
-        /// rolling off the foot at controlMinSpeed. The window ends the instant the rod swings, the
-        /// ball speeds up (a shot), the ball leaves the rod's neighbourhood, or the timer expires.
+        /// While the window is open, keeps taking pace off the cushioned ball, exponentially — so it
+        /// visibly slows after the touch and tapers toward rest instead of stopping dead or being
+        /// pinned. The window is NOT refreshed by continued contact, so it lapses on its own, and
+        /// ends early the instant the rod swings, the ball is knocked faster than a cushion can
+        /// handle, or it leaves the rod's neighbourhood.
         /// </summary>
         private void TickControl()
         {
@@ -880,9 +969,9 @@ namespace TableFootball
             }
 
             Vector3 h = Horizontal(body.linearVelocity);
-            if (h.magnitude > controlMaxSpeed)
+            if (h.magnitude > trapMaxSpeed)
             {
-                controlRod = null; // it got away or was struck away — not under control any more
+                controlRod = null; // it got away or was struck away — not held any more
                 return;
             }
 
@@ -899,27 +988,9 @@ namespace TableFootball
                 }
             }
 
-            // Ease the SPEED toward the drift floor along the ball's current heading. Crucially this
-            // targets controlMinSpeed, not zero, and works from both sides: it slows a lively touch
-            // for control, and it keeps a stalling ball rolling — so a figure never pins it dead.
-            float speed = h.magnitude;
-            Vector3 dir;
-            if (speed > 1e-4f)
-            {
-                dir = h / speed;
-            }
-            else
-            {
-                // No heading left (grip has stalled it): send it off the foot, away from the bar.
-                Vector3 rel = body.position - controlRod.BarPivot;
-                Vector3 perp = Horizontal(rel - Vector3.Project(rel, axis.normalized));
-                dir = perp.sqrMagnitude > 1e-6f
-                    ? perp.normalized
-                    : Horizontal(controlRod.ForwardKickDirection).normalized;
-            }
-
-            float target = Mathf.MoveTowards(speed, controlMinSpeed, controlDamping * Time.fixedDeltaTime);
-            body.AddForce(dir * target - h, ForceMode.VelocityChange);
+            // Taper the speed along the ball's own heading; it approaches rest but is never snapped there.
+            Vector3 slowed = h * Mathf.Exp(-trapSlowdown * Time.fixedDeltaTime);
+            body.AddForce(slowed - h, ForceMode.VelocityChange);
         }
 
         /// <summary>Lets possession lapse to loose once a team's last touch is old enough — a ball
@@ -1045,12 +1116,23 @@ namespace TableFootball
                 return;
             }
 
-            float expected = -approach * wallBounceRetention;
+            float expected = -approach * railRetention;
             float actual = Vector3.Dot(body.linearVelocity, normal);
 
             if (actual >= expected * 0.5f)
             {
-                return; // PhysX handled it well enough; leave the bounce alone
+                // PhysX handled the bounce, so its angle stands — but no rail hit may hand back more
+                // than railRetention of the pace it arrived with, or a shot ping-pongs at full speed.
+                Vector3 v = body.linearVelocity;
+                Vector3 horizontal = new Vector3(v.x, 0f, v.z);
+                float ceiling = incoming.magnitude * railRetention;
+                if (horizontal.sqrMagnitude > ceiling * ceiling && horizontal.sqrMagnitude > 1e-6f)
+                {
+                    horizontal = horizontal.normalized * ceiling;
+                    body.linearVelocity = new Vector3(horizontal.x, v.y, horizontal.z);
+                }
+
+                return;
             }
 
             Vector3 reflected = Vector3.Reflect(incoming, normal);
@@ -1061,7 +1143,7 @@ namespace TableFootball
                 return;
             }
 
-            Vector3 rebound = reflected.normalized * (incoming.magnitude * wallBounceRetention);
+            Vector3 rebound = reflected.normalized * (incoming.magnitude * railRetention);
             body.linearVelocity = new Vector3(rebound.x, body.linearVelocity.y, rebound.z);
         }
 
