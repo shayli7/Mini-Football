@@ -59,13 +59,6 @@ namespace TableFootball.UI
         private TextMeshProUGUI confirmPrice;
         private ChestTier? pendingBuy;
 
-        // Chest reveal.
-        private GameObject revealPanel;
-        private Transform revealArt;
-        private TextMeshProUGUI revealKicker;
-        private TextMeshProUGUI revealName;
-        private TextMeshProUGUI revealNote;
-
         // Collection (the wardrobe).
         private GameObject collectionPanel;
         private RectTransform gridContent;
@@ -110,7 +103,6 @@ namespace TableFootball.UI
             // Last, in this order: each covers the whole screen and must draw over what is under it.
             BuildCollection(root.transform);
             BuildConfirm(root.transform);
-            BuildReveal(root.transform);
 
             root.SetActive(false);
         }
@@ -561,14 +553,14 @@ namespace TableFootball.UI
                 return;
             }
 
-            ShowReveal(ChestLoot.Open(tier));
+            OpenChest(ChestLoot.Open(tier));
         }
 
         private void ClaimDeal()
         {
             ShopOffers.ClaimDeal(drop =>
             {
-                if (drop.HasValue) ShowReveal(drop.Value);
+                if (drop.HasValue) OpenChest(drop.Value);
                 else Say("The ad didn't finish, so the deal is still yours");
             });
         }
@@ -695,111 +687,26 @@ namespace TableFootball.UI
             if (confirmPanel != null) confirmPanel.SetActive(false);
         }
 
-        // ---------- reveal ----------
+        // ---------- chest opening ----------
 
         /// <summary>
-        /// What came out of a chest, big, with its rarity — the same card the level path shows for its
-        /// milestone chests, so a chest opened anywhere in the game ends the same way.
+        /// Plays the chest opening over the store for a chest that has already been rolled and
+        /// granted. The store fades out and stops taking touches while it runs, then comes back when
+        /// the player collects: the opening is on the UI Toolkit panel and this screen is still on the
+        /// uGUI canvas, and which of the two draws on top is not something to rely on. The level path
+        /// does the same.
         /// </summary>
-        private void BuildReveal(Transform parent)
+        private void OpenChest(ChestDrop drop)
         {
-            revealPanel = UIFactory.Child(parent, "Reveal");
-            UIFactory.Stretch(UIFactory.Rt(revealPanel));
-            UIFactory.ScrimDim(revealPanel.transform, 0.72f);
+            group.alpha = 0f;
+            group.blocksRaycasts = false;
 
-            var panel = UIFactory.Panel(revealPanel.transform, "RevealPanel");
-            var prt = UIFactory.Rt(panel);
-            prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
-            prt.pivot = new Vector2(0.5f, 0.5f);
-            prt.sizeDelta = new Vector2(560f, 560f);
-
-            var col = UIFactory.Child(panel.transform.Find("Fill"), "Col");
-            UIFactory.Stretch(UIFactory.Rt(col), 28f);
-
-            var v = col.AddComponent<VerticalLayoutGroup>();
-            v.spacing = ArcadeTheme.Md;
-            v.childAlignment = TextAnchor.UpperCenter;
-            v.childForceExpandWidth = true;
-            v.childForceExpandHeight = false;
-            v.childControlWidth = true;
-            v.childControlHeight = true;
-
-            revealKicker = UIFactory.Text(col.transform, string.Empty, ArcadeTheme.FsCaption,
-                                          ArcadeTheme.InkMuted, display: false, bold: true,
-                                          upper: true, tracking: 6f);
-            revealKicker.gameObject.AddComponent<LayoutElement>().preferredHeight = 26f;
-
-            var art = UIFactory.Child(col.transform, "Art");
-            art.AddComponent<LayoutElement>().preferredHeight = 240f;
-            revealArt = art.transform;
-
-            revealName = UIFactory.Text(col.transform, string.Empty, ArcadeTheme.FsBody * 1.2f,
-                                        ArcadeTheme.Ink, display: true, bold: true, upper: false,
-                                        tracking: 1f, richText: false);
-            revealName.gameObject.AddComponent<LayoutElement>().preferredHeight = 38f;
-
-            revealNote = UIFactory.Text(col.transform, string.Empty, ArcadeTheme.FsCaption,
-                                        ArcadeTheme.InkMuted, display: false, bold: true, upper: true,
-                                        tracking: 3f, richText: false);
-            revealNote.gameObject.AddComponent<LayoutElement>().preferredHeight = 24f;
-
-            UIFactory.Spacer(col.transform, 6f);
-
-            var buttonRow = UIFactory.Child(col.transform, "ButtonRow");
-            buttonRow.AddComponent<LayoutElement>().preferredHeight = 62f;
-            var bv = buttonRow.AddComponent<VerticalLayoutGroup>();
-            bv.childForceExpandWidth = true;
-            bv.childForceExpandHeight = true;
-            bv.childControlWidth = true;
-            bv.childControlHeight = true;
-            UIFactory.Button(buttonRow.transform, "Nice", MenuButton.Variant.Primary, HideReveal);
-
-            revealPanel.SetActive(false);
-        }
-
-        private void ShowReveal(ChestDrop drop)
-        {
-            if (revealPanel == null) return;
-
-            UIFactory.ClearChildren(revealArt);
-            revealKicker.text = ChestLoot.TierName(drop.Tier).ToUpperInvariant();
-
-            if (drop.Item.Valid)
+            ChestOpening.Play(drop.Tier, drop.Item, drop.Coins, () =>
             {
-                var frame = UIFactory.Child(revealArt, "Frame");
-                var frt = UIFactory.Rt(frame);
-                frt.anchorMin = frt.anchorMax = new Vector2(0.5f, 0.5f);
-                frt.pivot = new Vector2(0.5f, 0.5f);
-                frt.sizeDelta = new Vector2(230f, 230f);
-                UIFactory.CosmeticSwatch(frame.transform, drop.Item);
-
-                Color rarity = UIFactory.RarityColor(drop.Item.Rarity);
-                revealKicker.color = rarity;
-                revealName.text = drop.Item.Name;
-                // Not worn automatically: a random drop changing the ball mid-browse would be a
-                // surprise, not a reward. Collection is one tap away.
-                revealNote.text = $"{CosmeticCatalog.RarityName(drop.Item.Rarity)} " +
-                                  $"{CosmeticCatalog.KindLabel(drop.Item.Kind)}  ·  Wear it from Collection";
-                revealNote.color = rarity;
-            }
-            else
-            {
-                UIFactory.CoinGlyph(revealArt, 200f);
-                revealKicker.color = ArcadeTheme.Coin;
-                revealName.text = $"{drop.Coins} coins";
-                // The one case worth explaining: a chest with nothing left to give is not a bad roll.
-                revealNote.text = "You already own every skin";
-                revealNote.color = ArcadeTheme.InkMuted;
-            }
-
-            revealPanel.SetActive(true);
-            revealPanel.transform.SetAsLastSibling();
-            StartCoroutine(UITween.PopIn(revealArt, ArcadeTheme.TSlow));
-        }
-
-        private void HideReveal()
-        {
-            if (revealPanel != null) revealPanel.SetActive(false);
+                if (!IsOpen) return;
+                group.alpha = 1f;
+                group.blocksRaycasts = true;
+            });
         }
 
         // ---------- collection ----------
@@ -1095,12 +1002,12 @@ namespace TableFootball.UI
             Inventory.OnChanged += RedrawCollection;
 
             CancelBuy();
-            HideReveal();
             CloseCollection();
             ResetFooter();
 
             root.SetActive(true);
             root.transform.SetAsLastSibling();
+            group.alpha = 1f;
             group.blocksRaycasts = true;
 
             RefreshShelf();
@@ -1109,6 +1016,7 @@ namespace TableFootball.UI
         public void Close()
         {
             Unsubscribe();
+            if (IsOpen) ChestOpening.Cancel();
 
             if (root != null)
             {
