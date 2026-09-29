@@ -637,12 +637,24 @@ namespace TableFootball.UI
         // ---------- the chest itself ----------
 
         /// <summary>
-        /// The body or the lid of the chest, drawn with the vector API so it stays crisp at any size.
-        /// Two elements rather than one so the lid can fly off on its own. Wood in the chest's tier
-        /// colour, fittings in gold on every tier — the same reading as the level path's chest glyph.
+        /// The lid or the body of the chest, drawn with the vector API so it stays crisp at any size.
+        /// Two elements rather than one so the lid can fly off on its own.
+        ///
+        /// The drawing is the store card's chest (<see cref="UIFactory.ChestGlyph"/>) rebuilt on
+        /// Painter2D, on the same 100 x 84 design grid and with the same numbers, so the chest a player
+        /// buys and the chest that opens are one object: a domed lid over a planked body, a dark outline,
+        /// two coin-gold straps, a gold band on the seam and a lock plate with a keyhole. Wood in the
+        /// tier's colour, fittings in gold on every tier.
+        ///
+        /// The grid is cut at <see cref="Seam"/>. The lid element holds everything above it and the body
+        /// everything below; a fitting that crosses the seam (the band, the lock, the straps) is drawn
+        /// in both, clipped, so the two halves meet exactly and the lock splits when the lid lifts.
         /// </summary>
         private sealed class ChestPart : VisualElement
         {
+            // Grid y of the lid's top, the seam between lid and body, and the body's bottom.
+            public const float LidTop = 9.5f, Seam = 40f, BodyBottom = 75.5f;
+
             private readonly bool isLid;
             public Color Tint = Color.gray;
 
@@ -658,99 +670,71 @@ namespace TableFootball.UI
                 Rect r = contentRect;
                 if (r.width <= 0f || r.height <= 0f) return;
 
-                var p = ctx.painter2D;
-                Color woodDark = Shade(Tint, 0.42f);
-                Color wood = Shade(Tint, 0.78f);
-                Color trim = ArcadeTheme.Gold;
-                Color trimDark = Shade(ArcadeTheme.Gold, 0.72f);
+                Painter2D p = ctx.painter2D;
+                float u = r.width / 100f;
+                float top = isLid ? LidTop : Seam;
+                float bottom = isLid ? Seam : BodyBottom;
 
-                if (isLid) DrawLid(p, r.width, r.height, woodDark, wood, trim, trimDark);
-                else DrawBody(p, r.width, r.height, woodDark, wood, trim, trimDark);
-            }
+                Color wood = Color.Lerp(Tint, ArcadeTheme.BgDeep, 0.20f); // the body sits in the lid's shade
+                Color dark = Color.Lerp(Tint, ArcadeTheme.BgDeep, 0.45f); // outline and plank seams
+                Color seam = dark.WithAlpha(0.55f);
+                wood.a = dark.a = 1f;
 
-            private static void DrawBody(Painter2D p, float w, float h, Color woodDark, Color wood,
-                                         Color trim, Color trimDark)
-            {
-                Fill(p, woodDark, () => RoundRect(p, 0f, 0f, w, h, 3f, 16f));
-                Fill(p, wood, () => RoundRect(p, 12f, 16f, w - 24f, h - 32f, 6f, 8f));
-
-                // Plank line across the front.
-                p.strokeColor = woodDark;
-                p.lineWidth = 3f;
-                p.BeginPath();
-                p.MoveTo(new Vector2(14f, h * 0.56f));
-                p.LineTo(new Vector2(w - 14f, h * 0.56f));
-                p.Stroke();
-
-                Fill(p, trim, () => RoundRect(p, 0f, 0f, w, 12f, 3f, 2f));
-                Fill(p, trimDark, () => RoundRect(p, 0f, h - 12f, w, 12f, 2f, 10f));
-                foreach (float sx in new[] { 32f, w - 50f })
+                // A rectangle in grid units, clipped to this element's slice of the grid. A corner on a
+                // clipped edge is squared off: it is the cut, not the chest's own corner.
+                void Box(Color c, float x, float y, float w, float h, float rt, float rb)
                 {
-                    Fill(p, trimDark, () => RoundRect(p, sx, 0f, 18f, h, 2f, 3f));
-                    Fill(p, trim, () => RoundRect(p, sx + 3f, 0f, 4f, h - 4f, 1f, 1f));
+                    float y0 = Mathf.Max(y, top);
+                    float y1 = Mathf.Min(y + h, bottom);
+                    if (y1 <= y0) return;
+                    if (y0 > y) rt = 0f;
+                    if (y1 < y + h) rb = 0f;
+
+                    p.fillColor = c;
+                    RoundRect(p, x * u, (y0 - top) * u, w * u, (y1 - y0) * u, rt * u, rb * u);
+                    p.Fill();
                 }
 
-                // Lock plate and keyhole.
-                Fill(p, trim, () => RoundRect(p, w * 0.5f - 22f, 2f, 44f, 50f, 5f, 12f));
-                Fill(p, woodDark, () =>
+                // A gold fitting: a dark-gold edge with the bright face inset inside it.
+                void Fitting(float x, float y, float w, float h, float radius)
                 {
-                    p.BeginPath();
-                    p.Arc(new Vector2(w * 0.5f, 22f), 6f, new Angle(0f, AngleUnit.Degree), new Angle(360f, AngleUnit.Degree));
-                    p.ClosePath();
-                });
-                Fill(p, woodDark, () => RoundRect(p, w * 0.5f - 3f, 24f, 6f, 16f, 1f, 2f));
-            }
-
-            private static void DrawLid(Painter2D p, float w, float h, Color woodDark, Color wood,
-                                        Color trim, Color trimDark)
-            {
-                Fill(p, woodDark, () =>
-                {
-                    p.BeginPath();
-                    p.MoveTo(new Vector2(0f, h));
-                    p.LineTo(new Vector2(0f, 30f));
-                    p.BezierCurveTo(new Vector2(0f, 6f), new Vector2(24f, 0f), new Vector2(56f, 0f));
-                    p.LineTo(new Vector2(w - 56f, 0f));
-                    p.BezierCurveTo(new Vector2(w - 24f, 0f), new Vector2(w, 6f), new Vector2(w, 30f));
-                    p.LineTo(new Vector2(w, h));
-                    p.ClosePath();
-                });
-                Fill(p, wood, () =>
-                {
-                    p.BeginPath();
-                    p.MoveTo(new Vector2(12f, h - 12f));
-                    p.LineTo(new Vector2(12f, 32f));
-                    p.BezierCurveTo(new Vector2(12f, 16f), new Vector2(30f, 11f), new Vector2(58f, 11f));
-                    p.LineTo(new Vector2(w - 58f, 11f));
-                    p.BezierCurveTo(new Vector2(w - 30f, 11f), new Vector2(w - 12f, 16f), new Vector2(w - 12f, 32f));
-                    p.LineTo(new Vector2(w - 12f, h - 12f));
-                    p.ClosePath();
-                });
-
-                foreach (float sx in new[] { 32f, w - 50f })
-                {
-                    Fill(p, trimDark, () => RoundRect(p, sx, 4f, 18f, h - 4f, 3f, 1f));
-                    Fill(p, trim, () => RoundRect(p, sx + 3f, 6f, 4f, h - 8f, 1f, 1f));
+                    Box(ArcadeTheme.CoinDark, x, y, w, h, radius, radius);
+                    float inner = Mathf.Max(0f, radius - 1f);
+                    Box(ArcadeTheme.Coin, x + 1f, y + 1f, w - 2f, h - 2f, inner, inner);
                 }
-                Fill(p, trim, () => RoundRect(p, 0f, h - 14f, w, 14f, 2f, 2f));
-                Fill(p, trim, () => RoundRect(p, w * 0.5f - 16f, h - 26f, 32f, 26f, 6f, 2f));
 
-                // A highlight along the top of the dome.
-                p.strokeColor = new Color(1f, 1f, 1f, 0.2f);
-                p.lineWidth = 3f;
-                p.lineCap = LineCap.Round;
-                p.BeginPath();
-                p.MoveTo(new Vector2(7f, 28f));
-                p.BezierCurveTo(new Vector2(7f, 12f), new Vector2(27f, 6f), new Vector2(56f, 6f));
-                p.LineTo(new Vector2(w - 56f, 6f));
-                p.Stroke();
-            }
+                if (isLid)
+                {
+                    // Outline one grid unit proud of the fill, so it reads as a stroke.
+                    Box(dark, 6.5f, 9.5f, 87f, 32f, 16f, 0f);
+                    // Rounded on top only: the corners that meet the body are square.
+                    Box(Tint, 8f, 11f, 84f, 29f, 15f, 0f);
+                    Box(seam, 10f, 25.25f, 80f, 1.5f, 0f, 0f);
+                }
+                else
+                {
+                    Box(dark, 6.5f, 38.5f, 87f, 37f, 0f, 4f);
+                    Box(wood, 8f, 40f, 84f, 34f, 0f, 3f);
+                    Box(seam, 10f, 51.25f, 80f, 1.5f, 0f, 0f);
+                    Box(seam, 10f, 62.25f, 80f, 1.5f, 0f, 0f);
+                }
 
-            private static void Fill(Painter2D p, Color c, Action path)
-            {
-                p.fillColor = c;
-                path();
-                p.Fill();
+                Fitting(18f, 12f, 9f, 61f, 0f);   // straps
+                Fitting(73f, 12f, 9f, 61f, 0f);
+                Fitting(7f, 37f, 86f, 6f, 1.5f);  // band along the seam
+                Fitting(41f, 33f, 18f, 20f, 2.5f); // lock plate
+
+                if (!isLid)
+                {
+                    // Keyhole: a round head over a short slot. Held just under the seam, so the head is
+                    // never cut by the lid's edge.
+                    Box(ArcadeTheme.OnGold, 48.9f, 44.4f, 2.2f, 5.8f, 1f, 1f);
+                    p.fillColor = ArcadeTheme.OnGold;
+                    p.BeginPath();
+                    p.Arc(new Vector2(50f * u, (42.6f - top) * u), 2.6f * u, Angle.Degrees(0f), Angle.Degrees(360f));
+                    p.ClosePath();
+                    p.Fill();
+                }
             }
 
             /// <summary>A rectangle path with one radius for the top corners and one for the bottom.</summary>
@@ -765,13 +749,6 @@ namespace TableFootball.UI
                 p.ArcTo(new Vector2(x, y + h), new Vector2(x, y), rb);
                 p.ArcTo(new Vector2(x, y), new Vector2(x + w, y), rt);
                 p.ClosePath();
-            }
-
-            private static Color Shade(Color c, float k)
-            {
-                Color s = Color.Lerp(ArcadeTheme.BgDeep, c, k);
-                s.a = 1f;
-                return s;
             }
         }
     }

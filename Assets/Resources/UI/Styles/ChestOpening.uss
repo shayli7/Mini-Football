@@ -52,22 +52,24 @@
     -unity-background-scale-mode: stretch-to-fill;
 }
 
-/* 220 x 196: the lid (76) overlaps the body (130) by 10 at the seam. Scales and squashes from its
-   base, so a landing flattens it onto the floor rather than about its middle. */
+/* 260 x 171.6: the store chest's 100 x 66 grid (lid top to body bottom) at 2.6 units per grid unit.
+   The lid is the top 30.5 grid units and the body the rest, cut at the seam. Scales and squashes from
+   its base, so a landing flattens it onto the floor rather than about its middle. */
 .chest-open__chest {
-    width: 220px;
-    height: 196px;
-    margin-left: -110px;
-    margin-top: -98px;
+    width: 260px;
+    height: 171.6px;
+    margin-left: -130px;
+    margin-top: -86px;
     transform-origin: 50% 100%;
 }
 
+/* The glow leaking out at the seam when the lid lifts. */
 .chest-open__inner {
     position: absolute;
-    left: 22px;
-    right: 22px;
-    top: 56px;
-    height: 26px;
+    left: 26px;
+    right: 26px;
+    top: 66px;
+    height: 20px;
     border-radius: 6px;
 }
 
@@ -75,8 +77,8 @@
     position: absolute;
     left: 0;
     right: 0;
-    bottom: 0;
-    height: 130px;
+    top: 79.3px;
+    height: 92.3px;
     transform-origin: 50% 100%;
 }
 
@@ -85,7 +87,7 @@
     left: 0;
     right: 0;
     top: 0;
-    height: 76px;
+    height: 79.3px;
 }
 
 .chest-open__card {
