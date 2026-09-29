@@ -94,13 +94,22 @@ not new branches inside `RodController`.**
 | `Net/Cosmetics/*` | The catalogue of skins and badges, what is owned and worn, and the chest that rolls them. |
 | `Gameplay/BallSkins`, `BallSkinner` | Turns an equipped ball-skin id into the material the ball wears. Art in `Resources/BallSkins`, source in `Art/Blender`. |
 | `Net/Wallet`, `LevelPath`, `RankedRewards` | Gold coins, the 60-level reward path, and the weekly ranked payout. |
+| `Net/ShopOffers`, `AdService` | The store's daily free chest and coin ads; the one place ads are shown (placeholder today). |
 
-**The rewards economy is four statics and one rule: coins are earned, never bought.** `Wallet` is the
-only balance; exactly two things credit it — `RankedRewards` at the weekly ladder rollover and
-`LevelPath` when a level's reward is claimed — and exactly one thing spends it, the store. Screens
-read these synchronously and redraw on their `OnChanged`, the same shape as `PlayerProgress`.
-`CosmeticCatalog` is the single list of skins; adding one is a row there and nothing else, because
-the store grid, the chest pool and the level path's named rewards all read it.
+**The rewards economy is five statics and one rule: coins are earned, never bought.** `Wallet` is the
+only balance; exactly three things credit it — `RankedRewards` at the weekly ladder rollover,
+`LevelPath` when a level's reward is claimed, and `ShopOffers` for a watched coin ad (capped per
+day) — and exactly one thing spends it, the store. Screens read these synchronously and redraw on
+their `OnChanged`, the same shape as `PlayerProgress`. `CosmeticCatalog` is the single list of skins;
+adding one is a row there and nothing else, because the store's Collection, the chest pool and the
+level path's named rewards all read it.
+
+**The store sells chests, not skins.** Four tiers at `ChestLoot.Price`, plus a free Common-or-Rare
+chest once a day for an ad and a few coin ads a day (`ShopOffers`, device-local day, not reset on a
+player change). Every ad goes through `AdService.ShowRewarded` and nowhere else — today a placeholder
+that succeeds instantly; a real SDK replaces that one file. `CosmeticItem.Price` no longer sells
+anything; it is still what `LevelPath` refunds for a named skin already owned. Skins are equipped from
+the store's Collection overlay, the only place `Inventory.Equip` is called for skins.
 
 **Cloud Save is a sync layer over the six PlayerPrefs stores, never between them and the UI.**
 `Wallet`, `Inventory`, `PlayerProgress`, `LevelPath`, `RankedRewards` and `MatchStats` stay

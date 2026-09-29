@@ -11,9 +11,10 @@ namespace TableFootball.Net
     /// synchronously and redraw rather than polling. A reward lands and the coin pill moves in the
     /// same frame, with nothing to wait on.
     ///
-    /// Coins are EARNED, never bought. Two sources credit this, and they are the only two:
-    /// <see cref="RankedRewards"/> at the weekly ladder rollover, and <see cref="LevelPath"/> when a
-    /// level's reward is claimed. Both call <see cref="Add"/>; nothing else should.
+    /// Coins are EARNED, never bought. Three sources credit this, and they are the only three:
+    /// <see cref="RankedRewards"/> at the weekly ladder rollover, <see cref="LevelPath"/> when a
+    /// level's reward is claimed, and <see cref="ShopOffers"/> for a watched coin ad (a few a day).
+    /// All call <see cref="Add"/>; nothing else should.
     ///
     /// Local and authoritative for this device, like the rest of progression. When a real server owns
     /// the balance this file is where that swap happens and no screen changes.
