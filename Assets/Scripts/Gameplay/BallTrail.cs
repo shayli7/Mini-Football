@@ -130,7 +130,7 @@ namespace TableFootball
 
             // Speed is measured from the TRANSFORM, not the Rigidbody.
             //
-            // On the guest in an online match the ball is kinematic and driven by NetworkTransform,
+            // On the guest in an online match the ball is kinematic and driven by NetworkedBall's sample stream,
             // so its rigidbody velocity is permanently zero — reading that would have left the
             // guest's screen with no trail at all while the host's had one. The transform moves on
             // both machines, which is the only thing that is true of both.

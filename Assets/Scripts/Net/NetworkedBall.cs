@@ -1,84 +1,74 @@
 using System.Collections.Generic;
 using Unity.Collections;
 using Unity.Netcode;
-using Unity.Netcode.Transports.UTP;
 using UnityEngine;
 
 namespace TableFootball.Net
 {
     /// <summary>
-    /// Makes the ball the host's alone.
+    /// Keeps the ball in one simulation and draws it smoothly everywhere else.
     ///
     /// The ball is the one object both players watch closely and the only one whose physics is
-    /// genuinely chaotic, so it is simulated in exactly one place and mirrored everywhere else. A
-    /// NetworkTransform on the same GameObject carries the pose; this component's job is to make sure
-    /// the guest's copy does not also try to simulate it. Two machines running the same Rigidbody
-    /// against slightly different rod positions diverge within a second or two, and the ball ends up
-    /// in a different half of the table on each screen.
+    /// genuinely chaotic, so exactly one machine simulates it at a time — two Rigidbodies run against
+    /// slightly different rod positions diverge within a second. That machine streams
+    /// <see cref="BallSample"/>s (position, velocity, rotation, stamped on the shared
+    /// <see cref="NetClock"/>) every physics step; the other draws them through a
+    /// <see cref="BallStream"/>, which curves smoothly between samples and absorbs uneven arrival.
     ///
-    /// So on the guest the Rigidbody goes kinematic and <see cref="BallController"/> switches off
-    /// wholesale — the speed cap, the fall-through safety net and the dead-ball rescue are all
-    /// decisions about a simulation the guest is not running, and a second opinion on any of them is
-    /// worse than none.
+    /// This replaced NetworkTransform + NetworkRigidbody + a velocity-lead extrapolation. That stack
+    /// drew "whatever arrived last" with no real jitter buffer, so packets bunching up over Relay
+    /// showed as stutter, and the lead — driven by velocity arriving on a separate channel — lurched
+    /// the wrong way at every bounce. It also could not be told to stop writing the transform, which a
+    /// machine that sometimes simulates the ball itself needs.
     ///
-    /// This is also the one place where a ball being physically absent from the guest's simulation
-    /// shows through: no contacts happen there, so no impact sounds do either. They are relayed.
+    /// For now the host always simulates (epoch 0, Red). The sample format, the NotMe routing and
+    /// <see cref="SetSimulating"/> already allow the simulating machine to change, which is what
+    /// lane authority and the away rules build on.
     ///
-    /// One more thing the guest lacks is any ball motion of its own. Its ball is a pose the host
-    /// recorded a round-trip ago, played back by NetworkTransform's interpolation — which also
-    /// deliberately renders a little in the past to stay smooth. The two together read as a laggy,
-    /// floaty ball. Since the host also ships the ball's velocity here, the guest dead-reckons its
-    /// ball forward along that velocity — capped hard, and smoothed on and off — to hide most of the
-    /// delay without ever running a second, divergent simulation. See <see cref="LateUpdate"/>.
+    /// The machine that is not simulating runs no <see cref="BallController"/> at all — the speed cap,
+    /// fall-through net and dead-ball rescue are decisions about a simulation it is not running — so it
+    /// has no contacts and no impact sounds of its own. Those are relayed, and the guest predicts the
+    /// sound of its OWN kicks so they are not a round trip late.
     /// </summary>
+    [DefaultExecutionOrder(100)] // sample after BallController's own FixedUpdate has adjusted the velocity
     [RequireComponent(typeof(BallController))]
     [RequireComponent(typeof(Rigidbody))]
     [DisallowMultipleComponent]
     public class NetworkedBall : NetworkBehaviour
     {
-        [Header("Guest extrapolation (hides network lag on the mirrored ball)")]
-        [Tooltip("How far ahead, in seconds, the guest leads the ball on top of the measured " +
-                 "half round-trip. Set it near the NetworkTransform interpolation buffer so the two " +
-                 "roughly cancel. 0 disables the fixed part and leans on RTT alone.")]
-        [SerializeField] private float interpolationLeadSeconds = 0.04f;
-        [Tooltip("Ceiling on the total lead, in seconds, so a spike in ping can't fling the ball " +
-                 "far ahead of where the host actually has it.")]
-        [SerializeField] private float maxLeadSeconds = 0.12f;
-        [Tooltip("Hard cap on how far ahead the ball may be drawn, in metres. This is the real " +
-                 "safety net against rubber-banding: a fast shot changes direction on a bounce, and " +
-                 "whatever we led it by has to be small enough to snap back invisibly. Keep it a few " +
-                 "ball-widths at most.")]
-        [SerializeField] private float maxLeadDistance = 0.12f;
-        [Tooltip("How sharply the lead eases in and out, per second. Stops the ball popping the " +
-                 "instant it starts or stops moving. Higher = snappier, lower = softer.")]
-        [SerializeField] private float leadSharpness = 25f;
+        [Header("Drawing the mirrored ball")]
+        [Tooltip("Longest the ball may be carried forward past the newest sample when samples run out, " +
+                 "in seconds. Past this it holds still rather than guess further.")]
+        [SerializeField] private float maxExtrapolation = 0.06f;
+        [Tooltip("A correction smaller than this, in metres, is smoothed out; a larger one snaps.")]
+        [SerializeField] private float errorSnapDistance = 0.05f;
+        [Tooltip("How long a smoothed correction takes to fade, in seconds.")]
+        [SerializeField] private float errorDecay = 0.06f;
+
+        [Header("Temporary diagnostics")]
+        [Tooltip("Log stream health every two seconds on the machine drawing the mirrored ball.")]
+        [SerializeField] private bool logStreamStats = true;
 
         private BallController ball;
         private Rigidbody body;
         private SphereCollider sphere;
 
-        /// <summary>World radius of the ball, so a lead can be stopped a ball's width short of a wall.</summary>
+        /// <summary>World radius of the ball.</summary>
         private float ballRadius = 0.02f;
 
-        /// <summary>Reused by the lead's clearance check so it never allocates. Eight is far more
-        /// than the ball can have in front of it along one line.</summary>
-        private readonly RaycastHit[] leadHits = new RaycastHit[8];
+        private BallStream stream;
 
-        /// <summary>
-        /// The host's live ball velocity, in m/s, so the guest can lead its mirrored ball along it.
-        /// Server-written, everyone-read: only the host simulates the ball, so only the host knows.
-        /// </summary>
-        private readonly NetworkVariable<Vector3> netVelocity = new(
-            Vector3.zero,
-            NetworkVariableReadPermission.Everyone,
-            NetworkVariableWritePermission.Server);
+        /// <summary>Whether THIS machine is running the ball's physics right now.</summary>
+        private bool simulating = true;
 
-        /// <summary>The lead currently applied to the guest's transform, eased toward its target and
-        /// re-based on NetworkTransform's fresh pose every frame, so it never accumulates.</summary>
-        private Vector3 appliedLead;
+        /// <summary>Set by <see cref="BallController.Teleported"/>; the next sample carries the flag.</summary>
+        private bool pendingTeleport;
 
-        /// <summary>Below this change, in m/s, the host does not bother re-publishing its velocity.</summary>
-        private const float VelocityEpsilon = 0.01f;
+        /// <summary>The simulation term. Constant until authority can change hands.</summary>
+        private uint epoch;
+
+        private int seenClockSnaps = -1;
+        private float nextStatsLog;
 
         /// <summary>
         /// How far outside the ball's own surface a local rod counts as touching it, in metres. The
@@ -98,12 +88,16 @@ namespace TableFootball.Net
         /// <summary>Floor for the above, so a 0 ms LAN still gives predictions time to be matched.</summary>
         private const float MinPredictionLifetime = 0.25f;
 
+        /// <summary>A relayed impact older than this, in seconds, is dropped: a sound that late would
+        /// land on a moment the player has already watched go by.</summary>
+        private const float StaleImpactSeconds = 0.35f;
+
         /// <summary>Reused by the touch test so it never allocates.</summary>
         private readonly Collider[] touchResults = new Collider[8];
 
         /// <summary>
         /// When the guest predicted its own hits, newest last. Each entry is waiting to cancel one
-        /// relayed impact from the host — see <see cref="PlayImpactRpc"/>.
+        /// relayed impact from the host — see <see cref="BallImpactRpc"/>.
         /// </summary>
         private readonly List<float> predictedImpacts = new List<float>();
 
@@ -165,27 +159,31 @@ namespace TableFootball.Net
 
             ApplyNetSkin();
 
-            if (IsServer)
+            // A leftover NetworkTransform would go on writing this transform every frame on the guest.
+            // The sample stream still wins (it draws later in the frame), but the two are doing one job
+            // twice and the stale one costs bandwidth — say so rather than leave it silently.
+            if (GetComponent<Unity.Netcode.Components.NetworkTransform>() != null)
             {
-                // The host simulates as it always has. Relay each contact to the guest, who has no
-                // way of knowing one happened.
-                ball.Impact += OnHostImpact;
-                return;
+                Debug.LogWarning($"{name}: still carries a NetworkTransform. The ball is synced by " +
+                                 "NetworkedBall's sample stream now — remove NetworkRigidbody, then " +
+                                 "NetworkTransform, from the Ball.", this);
             }
 
-            // Kinematic first: NetworkTransform writes this transform every tick, and PhysX would
-            // otherwise treat each of those writes as a teleport and fight it with its own solve.
-            body.isKinematic = true;
-            body.linearVelocity = Vector3.zero;
-            body.angularVelocity = Vector3.zero;
-            ball.enabled = false;
+            stream = new BallStream(body, ballRadius, ball.WallRetention, maxExtrapolation,
+                                    errorSnapDistance, errorDecay);
+            epoch = 0;
+            seenClockSnaps = -1;
 
-            // BallController.ApplyPhysics turned this on for a Rigidbody that PhysX drives. Left on
-            // here, it is a second smoother fighting NetworkTransform's own interpolation over the
-            // same transform, with no fresh physics pose of its own to interpolate toward on a
-            // kinematic body — the two disagreeing is what reads as the ball moving unpredictably on
-            // the guest's screen.
-            body.interpolation = RigidbodyInterpolation.None;
+            if (IsServer)
+            {
+                ball.Impact += OnLocalImpact;
+                ball.Teleported += OnTeleported;
+                SetSimulating(true);
+            }
+            else
+            {
+                SetSimulating(false);
+            }
         }
 
         public override void OnNetworkDespawn()
@@ -200,22 +198,45 @@ namespace TableFootball.Net
                 skinner.ClearOverride();
             }
 
-            if (IsServer)
+            ball.Impact -= OnLocalImpact;
+            ball.Teleported -= OnTeleported;
+
+            // Hand the ball back to local physics on both machines, or the local match after an online
+            // one starts with a ball nothing on the table can move.
+            SetSimulating(true);
+
+            stream?.Reset();
+            predictedImpacts.Clear();
+            touchingLocalRod = false;
+        }
+
+        /// <summary>
+        /// Switches this machine between simulating the ball and drawing someone else's simulation of
+        /// it. The ONLY place that changes the body's kinematic flag, its interpolation and
+        /// <see cref="BallController"/>'s enabled state — always together, because they are not
+        /// independent: Unity delivers collision callbacks to disabled scripts too, so a dynamic ball
+        /// with BallController switched off would still run its strike logic.
+        /// </summary>
+        private void SetSimulating(bool on)
+        {
+            simulating = on;
+
+            if (on)
             {
-                ball.Impact -= OnHostImpact;
+                body.isKinematic = false;
+                ball.enabled = true;
+                body.interpolation = RigidbodyInterpolation.Interpolate;
+                return;
             }
 
-            // Hand the ball back to local physics, on both machines. The guest left it kinematic
-            // with BallController switched off, and Netcode's own AutoSetKinematicOnDespawn parks it
-            // kinematic again on the way out — for the host too, which never went kinematic itself.
-            // Without this, the local match after an online one starts with a ball that nothing on
-            // the table can move. This component sits after NetworkRigidbody on the GameObject, so
-            // this runs after that and is the state the ball keeps.
-            body.isKinematic = false;
-            body.interpolation = RigidbodyInterpolation.Interpolate;
-            ball.enabled = true;
+            // Velocities first, while the body is still dynamic — a kinematic body has none to set.
+            body.linearVelocity = Vector3.zero;
+            body.angularVelocity = Vector3.zero;
+            ball.enabled = false;
+            body.isKinematic = true;
 
-            appliedLead = Vector3.zero;
+            // Nothing for PhysX to interpolate between on a body it does not move: the stream draws it.
+            body.interpolation = RigidbodyInterpolation.None;
         }
 
         private void OnSkinChanged(FixedString64Bytes previous, FixedString64Bytes current)
@@ -246,96 +267,157 @@ namespace TableFootball.Net
             }
         }
 
-        /// <summary>Host only: publish the ball's velocity so the guest can lead its mirror by it.
-        /// Runs on the physics clock, which is also the network tick rate here, so this is at most one
-        /// packet per tick and only when the velocity has actually changed.</summary>
+        private void OnTeleported()
+        {
+            pendingTeleport = true;
+        }
+
+        // ── sending ────────────────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// The simulating machine streams the ball every physics step. Stamped with the step's own time
+        /// on the shared clock, so several steps run back to back at the start of one frame keep their
+        /// true spacing on the other side.
+        /// </summary>
         private void FixedUpdate()
         {
-            if (!IsSpawned || !IsServer)
+            if (!IsSpawned || !simulating)
             {
                 return;
             }
 
-            Vector3 v = body.linearVelocity;
-            if ((v - netVelocity.Value).sqrMagnitude >= VelocityEpsilon * VelocityEpsilon)
+            var flags = BallSampleFlags.None;
+            if (pendingTeleport) flags |= BallSampleFlags.Teleport;
+            if (ball.IsBeingCarried) flags |= BallSampleFlags.Carried;
+            pendingTeleport = false;
+
+            var sample = new BallSample
             {
-                netVelocity.Value = v;
-            }
+                Time = NetClock.SharedFixedNow,
+                Pos = body.position,
+                Vel = body.isKinematic ? Vector3.zero : body.linearVelocity,
+                AngVel = body.isKinematic ? Vector3.zero : body.angularVelocity,
+                Rot = body.rotation,
+                Epoch = epoch,
+                AuthorityTeam = (byte)OnlineMatchDirector.LocalTeam,
+                Flags = flags,
+            };
+
+            BallSampleRpc(sample);
         }
 
         /// <summary>
-        /// Guest only: lead the mirrored ball along the host's velocity to hide the round-trip.
-        ///
-        /// Runs in LateUpdate, after NetworkTransform has written this frame's interpolated (and
-        /// deliberately slightly stale) pose to the transform. Because the lead is re-derived from
-        /// that fresh pose every frame — read the transform, add the offset — it can never drift or
-        /// accumulate: when the ball is at rest the host's velocity is ~0, so the offset eases to zero
-        /// and the ball sits exactly where the host says it is.
-        ///
-        /// The offset is capped in both time and distance, and eased on and off, because this is NOT a
-        /// simulation: it is a straight-line guess. A bounce reverses the true velocity in one tick,
-        /// so whatever we led the ball by has to be small enough to correct itself invisibly the
-        /// moment the host's next velocity arrives.
+        /// Unreliable: a lost sample is simply skipped by the curve, whereas a reliable one would hold
+        /// up every sample behind it until it was resent — the stall that used to show as a freeze
+        /// followed by a jump. NotMe, so the same call works whichever machine is simulating.
         /// </summary>
-        private void LateUpdate()
+        [Rpc(SendTo.NotMe, Delivery = RpcDelivery.Unreliable)]
+        private void BallSampleRpc(BallSample sample, RpcParams rpcParams = default)
         {
-            if (!IsSpawned || IsServer)
+            // Only the simulating machine may move the ball. Today that is always the host.
+            if (simulating || rpcParams.Receive.SenderClientId != NetworkManager.ServerClientId)
             {
                 return;
             }
 
-            float lead = Mathf.Min(maxLeadSeconds, interpolationLeadSeconds + HalfRttSeconds());
-            Vector3 targetLead = Vector3.ClampMagnitude(netVelocity.Value * lead, maxLeadDistance);
+            if (sample.Epoch < epoch)
+            {
+                return;
+            }
 
-            // Never lead the ball past something it is about to hit. This is what makes the guess
-            // safe at a contact, which is the one place a straight line is certainly WRONG: led
-            // blindly, the ball is drawn into the figure it is about to bounce off, and when the
-            // host's reversed velocity arrives the lead flips sign — a correction of twice the lead,
-            // landing exactly on the touch. Stopping the lead at the surface means there is no
-            // overshoot left to take back, so the bounce simply happens.
-            float clearance = ClearanceAhead(targetLead);
-            targetLead = Vector3.ClampMagnitude(targetLead, clearance);
+            // Until the shared clock is known, arrival times cannot be compared with sample times —
+            // and lateness measured against a clock that is about to jump would poison the buffer.
+            if (!NetClock.Synced)
+            {
+                return;
+            }
 
-            float k = leadSharpness > 0f ? 1f - Mathf.Exp(-leadSharpness * Time.deltaTime) : 1f;
-            appliedLead = Vector3.Lerp(appliedLead, targetLead, k);
-
-            transform.position += appliedLead;
-
-            // After the lead, so the guess is made against the ball the player can actually SEE. The
-            // lead exists to put the drawn ball where the host already has it; predicting against the
-            // un-led pose would fire the sound behind the picture.
-            PredictOwnImpact();
+            stream.Add(sample, NetClock.SharedNow);
         }
+
+        // ── drawing ────────────────────────────────────────────────────────────────────────────────
+
+        private void LateUpdate()
+        {
+            if (!IsSpawned || simulating || stream == null)
+            {
+                return;
+            }
+
+            if (NetClock.SnapCount != seenClockSnaps)
+            {
+                seenClockSnaps = NetClock.SnapCount;
+                stream.ResetTiming();
+            }
+
+            if (!stream.HasSamples)
+            {
+                return;
+            }
+
+            double now = NetClock.SharedNow;
+            stream.UpdateDelay(now);
+
+            if (stream.Sample(now - stream.RenderDelay, Time.unscaledDeltaTime,
+                              out Vector3 pos, out _, out Quaternion rot))
+            {
+                // Both the transform (what is drawn) and the kinematic body (what physics queries such
+                // as the own-kick touch test see) — physics does not pick up transform writes until its
+                // next step, and the touch test runs this frame.
+                transform.SetPositionAndRotation(pos, rot);
+                body.position = pos;
+                body.rotation = rot;
+            }
+
+            PredictOwnImpact();
+            LogStreamStats();
+        }
+
+        /// <summary>TEMPORARY: stream health every two seconds, to confirm the stutter is gone and to
+        /// tune the buffer. Remove once Phase A is confirmed on device.</summary>
+        private void LogStreamStats()
+        {
+            if (!logStreamStats || Time.unscaledTime < nextStatsLog)
+            {
+                return;
+            }
+
+            nextStatsLog = Time.unscaledTime + 2f;
+
+            if (stream.Frames > 0)
+            {
+                Debug.Log($"[BallStream] frames={stream.Frames} starved={stream.StarvedFrames} " +
+                          $"received={stream.Received} lateDrops={stream.LateDrops} " +
+                          $"depth={stream.DepthSum / stream.Frames * 1000.0:F0}ms " +
+                          $"delay={stream.RenderDelay * 1000.0:F0}ms rtt={NetClock.Rtt * 1000.0:F0}ms");
+            }
+
+            stream.Frames = stream.StarvedFrames = stream.Received = stream.LateDrops = 0;
+            stream.DepthSum = 0;
+        }
+
+        // ── sounds ─────────────────────────────────────────────────────────────────────────────────
 
         /// <summary>
         /// Sounds the guest's own kicks the moment they look like they happen, instead of a round trip
         /// later.
         ///
         /// The guest never simulates the ball, so no contact is generated on this machine and every
-        /// impact arrives relayed from the host — a full RTT after the swing that caused it. For the
+        /// impact arrives relayed — a full round trip after the swing that caused it. For the
         /// opponent's hits that is fine: they are somebody else's action and there is nothing to
-        /// compare the delay against. For the player's OWN kick it is the single most damning thing in
-        /// the build, because the ear is far better at spotting a late confirmation of your own action
-        /// than the eye is at spotting a late ball. It reads as input lag even when the picture is
-        /// right.
+        /// compare the delay against. For the player's OWN kick it reads as input lag even when the
+        /// picture is right, because the ear is far better at spotting a late confirmation of your own
+        /// action than the eye is at spotting a late ball.
         ///
-        /// So the guest guesses, but only about itself. It watches for its own rods meeting the ball
-        /// and plays on the leading edge of that — matching the host, which raises its own impact from
-        /// OnCollisionEnter and so also fires once per contact rather than throughout it. The host
-        /// remains the authority: this only decides WHEN a sound is heard, never what the ball does.
-        ///
-        /// Every guess is recorded, and <see cref="PlayImpactRpc"/> cancels one relayed impact against
-        /// it, so a correct prediction is heard exactly once. A wrong one is never heard at all — it
-        /// just expires unmatched.
+        /// So the guest guesses, but only about itself: it plays on the leading edge of its own rod
+        /// meeting the ball, matching the simulating machine, which raises its impact from
+        /// OnCollisionEnter and so also fires once per contact. Every guess is recorded, and
+        /// <see cref="BallImpactRpc"/> cancels one relayed impact against it, so a correct prediction
+        /// is heard exactly once and a wrong one never — it just expires unmatched.
         /// </summary>
         private void PredictOwnImpact()
         {
-            if (ball == null)
-            {
-                return;
-            }
-
-            bool touching = TryFindOwnRodTouch(out RodController rod, out float speed);
+            bool touching = TryFindOwnRodTouch(out float speed);
 
             // Leading edge only. A ball resting against a foot is one contact, not one per frame.
             if (touching && !touchingLocalRod && speed >= ball.QuietImpactSpeed)
@@ -343,7 +425,7 @@ namespace TableFootball.Net
                 float strength = Mathf.InverseLerp(ball.QuietImpactSpeed, ball.LoudImpactSpeed, speed);
                 GameSfx.PlayBallHit(strength);
                 Haptics.Play(strength);
-                predictedImpacts.Add(Time.time);
+                predictedImpacts.Add(Time.unscaledTime);
             }
 
             touchingLocalRod = touching;
@@ -352,19 +434,15 @@ namespace TableFootball.Net
 
         /// <summary>
         /// Looks for one of THIS player's own rods against the ball, and estimates how hard the
-        /// meeting is.
-        ///
-        /// The speed estimate is the ball's own pace plus the foot's, because either alone gets a
-        /// common case wrong: a still figure meeting a driven ball is loud, and a whipped figure
-        /// meeting a still ball is loud, and only their sum describes both. The foot's speed is worked
-        /// out from how far the ball sits off the bar's centreline — that distance IS the radius the
-        /// foot is sweeping at the contact, so it needs no configuring and stays right for any figure
-        /// on any rod.
+        /// meeting is: the ball's own pace plus the foot's, because either alone gets a common case
+        /// wrong — a still figure meeting a driven ball is loud, and so is a whipped figure meeting a
+        /// still ball. The foot's speed comes from how far the ball sits off the bar's centreline,
+        /// which IS the radius the foot sweeps at the contact.
         /// </summary>
-        private bool TryFindOwnRodTouch(out RodController rod, out float speed)
+        private bool TryFindOwnRodTouch(out float speed)
         {
-            rod = null;
             speed = 0f;
+            RodController rod = null;
 
             int count = Physics.OverlapSphereNonAlloc(transform.position, ballRadius + TouchSkin,
                                                       touchResults, ~0, QueryTriggerInteraction.Ignore);
@@ -383,13 +461,11 @@ namespace TableFootball.Net
 
                 // Only this player's rods. The opponent's hits are their action, not ours, and
                 // guessing at them would just add wrong sounds to ones that already arrive correctly.
-                if (candidate == null || candidate.Team != OnlineMatchDirector.LocalTeam)
+                if (candidate != null && candidate.Team == OnlineMatchDirector.LocalTeam)
                 {
-                    continue;
+                    rod = candidate;
+                    break;
                 }
-
-                rod = candidate;
-                break;
             }
 
             if (rod == null)
@@ -397,11 +473,8 @@ namespace TableFootball.Net
                 return false;
             }
 
-            float ballSpeed = netVelocity.Value.magnitude;
-
-            // Distance from the bar's centreline out to the ball — the radius the foot sweeps at.
-            Vector3 axis = rod.BarAxis;
             float footSpeed = 0f;
+            Vector3 axis = rod.BarAxis;
             if (axis.sqrMagnitude > 1e-6f)
             {
                 axis.Normalize();
@@ -410,16 +483,15 @@ namespace TableFootball.Net
                 footSpeed = Mathf.Abs(rod.MeasuredSpinSpeed) * Mathf.Deg2Rad * radius;
             }
 
-            speed = ballSpeed + footSpeed;
+            speed = stream.LastVelocity.magnitude + footSpeed;
             return true;
         }
 
-        /// <summary>Drops guesses the host never confirmed, so they cannot silence a later real hit.</summary>
+        /// <summary>Drops guesses never confirmed, so they cannot silence a later real hit.</summary>
         private void ExpirePredictions()
         {
-            float lifetime = Mathf.Max(MinPredictionLifetime,
-                                       HalfRttSeconds() * 2f * PredictionLifetimeRtts);
-            float cutoff = Time.time - lifetime;
+            float lifetime = Mathf.Max(MinPredictionLifetime, (float)NetClock.Rtt * PredictionLifetimeRtts);
+            float cutoff = Time.unscaledTime - lifetime;
 
             // Oldest first, so stopping at the first live entry is safe.
             while (predictedImpacts.Count > 0 && predictedImpacts[0] < cutoff)
@@ -428,78 +500,30 @@ namespace TableFootball.Net
             }
         }
 
-        /// <summary>
-        /// How far the ball may be carried along <paramref name="lead"/> before it would reach a
-        /// surface, measured from the authoritative pose the transform currently holds. Everything on
-        /// the table — figures, bars, rails — exists on the guest as an ordinary collider, so this is
-        /// a plain query against the local scene and needs nothing from the host.
-        /// </summary>
-        private float ClearanceAhead(Vector3 lead)
+        /// <summary>The simulating machine heard a contact itself; pass it on.</summary>
+        private void OnLocalImpact(float strength, bool struckRod)
         {
-            float distance = lead.magnitude;
-            if (distance < 1e-4f)
-            {
-                return 0f;
-            }
-
-            Vector3 direction = lead / distance;
-            int count = Physics.RaycastNonAlloc(transform.position, direction, leadHits,
-                                                distance + ballRadius, ~0, QueryTriggerInteraction.Ignore);
-
-            float nearest = distance;
-            for (int i = 0; i < count; i++)
-            {
-                Collider hit = leadHits[i].collider;
-
-                // The ray starts at the ball's own centre, so its own collider is the one thing in
-                // front of it that must never count.
-                if (hit == null || hit.attachedRigidbody == body)
-                {
-                    continue;
-                }
-
-                nearest = Mathf.Min(nearest, Mathf.Max(0f, leadHits[i].distance - ballRadius));
-            }
-
-            return nearest;
-        }
-
-        /// <summary>Half the measured round-trip to the host, in seconds — the part of the lag that
-        /// varies with the connection. Zero if the transport can't report it.</summary>
-        private float HalfRttSeconds()
-        {
-            if (NetworkManager == null)
-            {
-                return 0f;
-            }
-
-            if (NetworkManager.NetworkConfig.NetworkTransport is UnityTransport transport)
-            {
-                return transport.GetCurrentRtt(NetworkManager.ServerClientId) * 0.0005f; // ms → s, halved
-            }
-
-            return 0f;
-        }
-
-        private void OnHostImpact(float strength, bool struckRod)
-        {
-            PlayImpactRpc(strength, struckRod);
+            BallImpactRpc(NetClock.SharedNow, strength, struckRod);
         }
 
         /// <summary>
-        /// NotServer, because the host already played this sound locally the moment the contact
-        /// happened — <see cref="BallController"/> does that itself, and the event that got us here
-        /// fires immediately after it.
+        /// NotMe, because the simulating machine already played this sound the moment the contact
+        /// happened. Unreliable and timestamped: a lost thump costs nothing, and a late one is dropped
+        /// rather than played over a moment the player has already watched go by.
         /// </summary>
-        [Rpc(SendTo.NotServer)]
-        private void PlayImpactRpc(float strength, bool struckRod)
+        [Rpc(SendTo.NotMe, Delivery = RpcDelivery.Unreliable)]
+        private void BallImpactRpc(double time, float strength, bool struckRod)
         {
+            if (NetClock.Synced && NetClock.SharedNow - time > StaleImpactSeconds)
+            {
+                return;
+            }
+
             if (struckRod)
             {
-                // This may be the host confirming a hit the guest already sounded for itself, a full
-                // round trip ago — see PredictOwnImpact. Cancel it against the oldest outstanding
-                // guess rather than thumping twice for one kick. Only rod hits are ever predicted, so
-                // wall thuds below are always played as they arrive.
+                // This may confirm a hit the guest already sounded for itself — see
+                // PredictOwnImpact. Cancel it against the oldest outstanding guess rather than thumping
+                // twice for one kick. Only rod hits are ever predicted, so wall thuds always play.
                 ExpirePredictions();
                 if (predictedImpacts.Count > 0)
                 {
@@ -508,7 +532,7 @@ namespace TableFootball.Net
                 }
 
                 GameSfx.PlayBallHit(strength);
-                Haptics.Play(strength); // the guest feels its own hits too
+                Haptics.Play(strength);
             }
             else
             {

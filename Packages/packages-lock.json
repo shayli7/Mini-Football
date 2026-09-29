@@ -149,6 +149,34 @@
         "com.unity.modules.uielements": "1.0.0"
       }
     },
+    "com.unity.multiplayer.center.quickstart": {
+      "version": "1.1.2",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {
+        "com.unity.modules.uielements": "1.0.0",
+        "com.unity.multiplayer.center": "1.0.0"
+      },
+      "url": "https://packages.unity.com"
+    },
+    "com.unity.multiplayer.playmode": {
+      "version": "1.6.3",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {
+        "com.unity.nuget.newtonsoft-json": "2.0.2"
+      },
+      "url": "https://packages.unity.com"
+    },
+    "com.unity.multiplayer.widgets": {
+      "version": "1.0.5",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {
+        "com.unity.services.multiplayer": "1.0.0"
+      },
+      "url": "https://packages.unity.com"
+    },
     "com.unity.netcode.gameobjects": {
       "version": "2.13.1",
       "depth": 0,
@@ -304,7 +332,7 @@
       "url": "https://packages.unity.com"
     },
     "com.unity.services.multiplayer": {
-      "version": "2.3.0",
+      "version": "2.3.3",
       "depth": 0,
       "source": "registry",
       "dependencies": {
@@ -312,7 +340,7 @@
         "com.unity.collections": "2.6.7",
         "com.unity.services.qos": "1.4.1",
         "com.unity.services.core": "1.18.0",
-        "com.unity.services.wire": "1.4.4",
+        "com.unity.services.wire": "1.5.1",
         "com.unity.services.deployment": "1.7.2",
         "com.unity.nuget.newtonsoft-json": "3.2.2",
         "com.unity.modules.unitywebrequest": "1.0.0",
@@ -333,8 +361,20 @@
       },
       "url": "https://packages.unity.com"
     },
+    "com.unity.services.vivox": {
+      "version": "16.12.1",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {
+        "com.unity.modules.audio": "1.0.0",
+        "com.unity.services.core": "1.15.1",
+        "com.unity.settings-manager": "1.0.3",
+        "com.unity.nuget.newtonsoft-json": "3.0.2"
+      },
+      "url": "https://packages.unity.com"
+    },
     "com.unity.services.wire": {
-      "version": "1.4.4",
+      "version": "1.5.1",
       "depth": 1,
       "source": "registry",
       "dependencies": {
@@ -342,6 +382,13 @@
         "com.unity.nuget.newtonsoft-json": "3.2.1",
         "com.unity.services.authentication": "2.7.4"
       },
+      "url": "https://packages.unity.com"
+    },
+    "com.unity.settings-manager": {
+      "version": "2.1.0",
+      "depth": 1,
+      "source": "registry",
+      "dependencies": {},
       "url": "https://packages.unity.com"
     },
     "com.unity.shadergraph": {

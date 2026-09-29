@@ -72,6 +72,16 @@ namespace TableFootball
                  "their defaults in code would do nothing to this table. New fields have no saved " +
                  "value, so their defaults are what actually take effect.")]
         [SerializeField] private DifficultyRange blockErrorHandicap = new DifficultyRange(0.05f, 0f);
+        [Tooltip("Subtracted from every rod's TrackTightness (how fully it shadows the ball's " +
+                 "lateral position), 0 at Hard. Per RodDifficulty's own note, this is the single " +
+                 "most important number on a five-man rod — how tightly it shadows the ball IS " +
+                 "whether the opponent can get through at all — so loosening it is the most direct " +
+                 "way to make the wall beatable at Easy/Normal without touching Hard.")]
+        [SerializeField] private DifficultyRange trackTightnessHandicap = new DifficultyRange(0.15f, 0f);
+        [Tooltip("Subtracted from every rod's HandSpeed multiplier (its 'hands'), 0 at Hard. A rod " +
+                 "that physically cannot slide across in time is beatable no matter how well it " +
+                 "reads the game — this slows it further at low/medium difficulty.")]
+        [SerializeField] private DifficultyRange handSpeedHandicap = new DifficultyRange(0.20f, 0f);
         [Tooltip("How often each rod's aim error is re-rolled, in seconds. The magnitude comes " +
                  "from each rod's own difficulty block; this is only the cadence.")]
         [SerializeField] private float aimErrorInterval = 0.6f;
@@ -897,6 +907,10 @@ namespace TableFootball
                 // their code defaults no longer reach this table.
                 limits.ReactionDelay += Mathf.Max(reactionHandicap.Evaluate(difficulty01), 0f);
                 limits.BlockAlignmentError += Mathf.Max(blockErrorHandicap.Evaluate(difficulty01), 0f);
+                limits.TrackTightness = Mathf.Clamp01(
+                    limits.TrackTightness - Mathf.Max(trackTightnessHandicap.Evaluate(difficulty01), 0f));
+                limits.HandSpeed = Mathf.Max(
+                    limits.HandSpeed - Mathf.Max(handSpeedHandicap.Evaluate(difficulty01), 0f), 0.05f);
 
                 // The midfield is the wall the player struggles to break. Give it a little extra
                 // give — a wider aimable gap and a lower chance of reading the attack — without

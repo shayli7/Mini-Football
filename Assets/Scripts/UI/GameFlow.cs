@@ -65,6 +65,29 @@ namespace TableFootball.UI
         /// <summary>Set from a session callback, acted on in <see cref="Update"/>.</summary>
         private bool opponentLeft;
 
+        /// <summary>
+        /// Wall-clock moment this device was suspended mid online match, or default when it was not.
+        /// Wall clock, not Unity's: Unity's clocks do not advance while Android has the app suspended,
+        /// and the length of that suspension is exactly what has to be measured.
+        /// </summary>
+        private System.DateTime suspendedAtUtc;
+
+        /// <summary>
+        /// When this device last came back from a suspension its opponent could have noticed, in
+        /// realtime — see <see cref="ResumeGraceSeconds"/>.
+        /// </summary>
+        private float resumedAt = float.NegativeInfinity;
+
+        /// <summary>Set on return from a suspension long enough to cost the match; acted on in Update.</summary>
+        private bool forfeitOwnAbsence;
+
+        /// <summary>
+        /// An opponent vanishing this soon after WE come back is our absence catching up with us, not
+        /// their departure: the connection died while we were suspended and is only now being reported.
+        /// Taking a forfeit win for it would reward the player who left.
+        /// </summary>
+        private const float ResumeGraceSeconds = 5f;
+
         /// <summary>Which door the account screen was entered by, so Back can retrace it.</summary>
         private bool profileFromFriends;
 
@@ -244,6 +267,7 @@ namespace TableFootball.UI
             // players can actually see each other.
             OnlineMatchDirector.OnMatchShouldStart += StartOnlineMatch;
             OnlineMatchDirector.OnOpponentGone += HandleOpponentGone;
+            OnlineMatchDirector.OnHostSilentChanged += HandleHostSilentChanged;
             OnlineMatchDirector.OnRematchStarting += HandleRematchStarting;
             OnlineMatchDirector.OnRematchDeclined += HandleRematchDeclined;
 
@@ -296,6 +320,7 @@ namespace TableFootball.UI
 
             OnlineMatchDirector.OnMatchShouldStart -= StartOnlineMatch;
             OnlineMatchDirector.OnOpponentGone -= HandleOpponentGone;
+            OnlineMatchDirector.OnHostSilentChanged -= HandleHostSilentChanged;
             OnlineMatchDirector.OnRematchStarting -= HandleRematchStarting;
             OnlineMatchDirector.OnRematchDeclined -= HandleRematchDeclined;
 
@@ -375,6 +400,16 @@ namespace TableFootball.UI
             }
         }
 
+        /// <summary>The host's phone stopped or came back. Only the HUD cares; the match state does
+        /// not change until the host is gone for good, which arrives as <see cref="HandleOpponentGone"/>.</summary>
+        private void HandleHostSilentChanged(bool silent)
+        {
+            if (hud != null)
+            {
+                hud.SetOpponentPaused(silent && IsPlaying);
+            }
+        }
+
         private void HandleSessionLeft()
         {
             // LeaveAsync raises this on the way out too, so without the flag the player who quit
@@ -392,9 +427,32 @@ namespace TableFootball.UI
         /// </summary>
         private void Update()
         {
+            // Our own absence first, so a disconnect it caused is never read as the opponent quitting.
+            // ReturnToMenu records a walked-out online match as a loss and leaves the session — which
+            // is what reaches the opponent as a disconnect and their forfeit win, so exactly one player
+            // wins. Without this, a player back from a long suspension found their opponent "gone" and
+            // was awarded the match: both players won, and a losing host could power off and wait.
+            bool ownAbsence = forfeitOwnAbsence
+                              || (opponentLeft && Time.realtimeSinceStartup - resumedAt < ResumeGraceSeconds);
+            if (ownAbsence)
+            {
+                forfeitOwnAbsence = false;
+                opponentLeft = false;
+                resumedAt = float.NegativeInfinity;
+
+                if (IsPlaying)
+                {
+                    Debug.Log("Online: this device was away too long — the match is forfeited.");
+                    ReturnToMenu();
+                }
+            }
+
             if (opponentLeft)
             {
                 opponentLeft = false;
+
+                // The wait is over either way; don't leave the notice hanging over the result.
+                if (hud != null) hud.SetOpponentPaused(false);
 
                 // The same departure means two different things depending on when it lands. Mid-match
                 // it is a forfeit and this player wins it; while a rematch is being decided the match
@@ -458,6 +516,39 @@ namespace TableFootball.UI
             if (paused)
             {
                 FlushPlayTime();
+
+                if (IsPlaying && onlineMatch)
+                {
+                    suspendedAtUtc = System.DateTime.UtcNow;
+                }
+
+                return;
+            }
+
+            if (suspendedAtUtc == default)
+            {
+                return;
+            }
+
+            double away = (System.DateTime.UtcNow - suspendedAtUtc).TotalSeconds;
+            suspendedAtUtc = default;
+
+            if (!IsPlaying || !onlineMatch)
+            {
+                return;
+            }
+
+            // Online, a suspended phone is a player who stopped playing — and if it was the host, a
+            // match that stopped for both. Gone long enough that the opponent will have given up (see
+            // OnlineMatchDirector.AbsenceLimitSeconds), it is this player who loses. Shorter than that,
+            // play simply resumes, but a disconnect reported in the next few seconds is still ours.
+            if (away >= OnlineMatchDirector.SelfForfeitSeconds)
+            {
+                forfeitOwnAbsence = true;
+            }
+            else if (away >= OnlineMatchDirector.SilenceNoticeSeconds)
+            {
+                resumedAt = Time.realtimeSinceStartup;
             }
         }
 

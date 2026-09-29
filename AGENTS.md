@@ -94,13 +94,22 @@ not new branches inside `RodController`.**
 | `Net/Cosmetics/*` | The catalogue of skins and badges, what is owned and worn, and the chest that rolls them. |
 | `Gameplay/BallSkins`, `BallSkinner` | Turns an equipped ball-skin id into the material the ball wears. Art in `Resources/BallSkins`, source in `Art/Blender`. |
 | `Net/Wallet`, `LevelPath`, `RankedRewards` | Gold coins, the 60-level reward path, and the weekly ranked payout. |
+| `Net/ShopOffers`, `AdService` | The store's daily free chest and coin ads; the one place ads are shown (placeholder today). |
 
-**The rewards economy is four statics and one rule: coins are earned, never bought.** `Wallet` is the
-only balance; exactly two things credit it — `RankedRewards` at the weekly ladder rollover and
-`LevelPath` when a level's reward is claimed — and exactly one thing spends it, the store. Screens
-read these synchronously and redraw on their `OnChanged`, the same shape as `PlayerProgress`.
-`CosmeticCatalog` is the single list of skins; adding one is a row there and nothing else, because
-the store grid, the chest pool and the level path's named rewards all read it.
+**The rewards economy is five statics and one rule: coins are earned, never bought.** `Wallet` is the
+only balance; exactly three things credit it — `RankedRewards` at the weekly ladder rollover,
+`LevelPath` when a level's reward is claimed, and `ShopOffers` for a watched coin ad (capped per
+day) — and exactly one thing spends it, the store. Screens read these synchronously and redraw on
+their `OnChanged`, the same shape as `PlayerProgress`. `CosmeticCatalog` is the single list of skins;
+adding one is a row there and nothing else, because the store's Collection, the chest pool and the
+level path's named rewards all read it.
+
+**The store sells chests, not skins.** Four tiers at `ChestLoot.Price`, plus a free Common-or-Rare
+chest once a day for an ad and a few coin ads a day (`ShopOffers`, device-local day, not reset on a
+player change). Every ad goes through `AdService.ShowRewarded` and nowhere else — today a placeholder
+that succeeds instantly; a real SDK replaces that one file. `CosmeticItem.Price` no longer sells
+anything; it is still what `LevelPath` refunds for a named skin already owned. Skins are equipped from
+the store's Collection overlay, the only place `Inventory.Equip` is called for skins.
 
 **Cloud Save is a sync layer over the six PlayerPrefs stores, never between them and the UI.**
 `Wallet`, `Inventory`, `PlayerProgress`, `LevelPath`, `RankedRewards` and `MatchStats` stay
@@ -230,13 +239,16 @@ after `RodController.Awake` caches the rest pose, and Awake order between compon
 guaranteed. A zero axis collapses every rod to depth 0, so the AI locks onto one rod forever — with
 no error anywhere.
 
-**Netcode's `NetworkRigidbody` forces the ball kinematic from its own `Awake`, with no session
-running.** It sits after `BallController` on the Ball, so it overwrites `ApplyPhysics`'s
-`isKinematic = false` and every *local* match gets a ball that no figure can move — the ball still
-rests correctly on the pitch and every collider is present, enabled and correctly sized, so this
-presents as a collider bug and is not one. `BallController.Start` re-asserts the dynamic body after
-all Awakes; `NetworkedBall.OnNetworkDespawn` does the same on the way out of an online match, where
-`AutoSetKinematicOnDespawn` freezes the ball on **both** machines, host included.
+**The Ball carries no `NetworkTransform` or `NetworkRigidbody` — do not add them back.** The ball is
+synced by `NetworkedBall`'s own sample stream (see Online below). Both components caused real bugs
+while they were there: `NetworkRigidbody` forces the body kinematic from its own `Awake`, with no
+session running, so every *local* match got a ball no figure could move (it presents as a collider
+bug and is not one), and `AutoSetKinematicOnDespawn` froze it again on the way out of an online
+match. `BallController.Start` still re-asserts the dynamic body after all Awakes as a guard.
+`NetworkedBall.SetSimulating` is the **only** place allowed to change the ball's `isKinematic`,
+Rigidbody interpolation and `BallController.enabled` online, and it changes all three together:
+Unity delivers collision callbacks to *disabled* scripts, so a dynamic ball with `BallController`
+switched off still runs its strike logic.
 
 **Figure colliders are extended down to the pitch** in `TablePhysicsBuilder`; a collider fitted to
 the mesh inherits the model's gap above the pitch and the ball rolls under the players.
@@ -253,9 +265,22 @@ is invisible to it and every sound falls back to the synthesised one — the fal
 as designed is what makes this hard to spot.
 
 **Online:** the guest's ball is kinematic with `BallController` switched off wholesale; goal triggers
-are **disabled on the guest** (a NetworkTransform-driven ball still fires `OnTriggerEnter`, and the
+are **disabled on the guest** (a transform-driven kinematic ball still fires `OnTriggerEnter`, and the
 guest would score a second private goal off the host's); and teams are **derived from `IsHost`**
 rather than negotiated, because a message can be lost or arrive late and `IsHost` cannot.
+
+**The ball is a sample stream on a shared clock, not a NetworkTransform.** The simulating machine
+sends a `BallSample` (position, velocity, rotation) every physics step, unreliable, stamped with
+`NetClock` time — the host's unscaled clock, which the guest estimates by ping/pong. The other machine
+draws it through `BallStream`: slightly in the past by an adaptive buffer sized from measured arrival
+jitter, on a cubic Hermite curve through positions *and* velocities so bounces stay sharp, and swept
+forward (stopping at any rod) only when samples run out. Drawing "whatever arrived last" is what made
+the guest's ball stutter, because samples reach it unevenly over Relay. Unreliable is deliberate: a
+lost sample is skipped by the curve, a reliable one would stall every sample behind it. A kick-off or
+reset is flagged `Teleport` so the mirror snaps instead of sliding across the pitch.
+
+**`TickRate` is set in code** (`OnlineSession.ConfigureNetcode`, 100 Hz to match the physics step),
+not on the scene's `NetworkManager`: an Editor save once silently wrote the old scene value back.
 `NetworkedRod` sends two floats — slide and spin angle — rather than a `NetworkTransform`, which
 would cost three times the bandwidth and whose interpolation would fight `RodController`'s own
 `ApplyPose` for the same transform every frame.
@@ -364,7 +389,7 @@ top-down by `Art/Blender/make_backgrounds.py --floors` at 4 m across to match th
 The floor draws unlit, so the brightness baked into that image is all the player gets.
 
 **`BallTrail` measures speed from the TRANSFORM, never the Rigidbody.** On the guest in an online
-match the ball is kinematic and driven by NetworkTransform, so its rigidbody velocity is permanently
+match the ball is kinematic and driven by NetworkedBall's sample stream, so its rigidbody velocity is permanently
 zero — gating the trail on that gives the host a trail and the guest none. The transform moves on
 both machines. Trail and particle materials come from `SkinMaterials.CreateTrailMaterial`, which
 tries unlit shaders first (only those honour the vertex colours that make a trail FADE) and falls

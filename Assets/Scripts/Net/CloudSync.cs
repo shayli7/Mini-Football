@@ -59,9 +59,23 @@ namespace TableFootball.Net
         /// enough that a player who earns something and closes the app has almost always flushed.</summary>
         private const float DebounceSeconds = 4f;
 
+        /// <summary>Ceiling on the wait between failed flushes, in unscaled seconds.</summary>
+        private const float MaxRetrySeconds = 120f;
+
         private static bool dirty;
         private static float lastDirtyTime;
         private static bool flushing;
+
+        /// <summary>
+        /// Earliest time a failed flush may be retried, and how long the next failure will wait. A
+        /// failure used to leave the debounce already expired, so the runner retried on the very next
+        /// frame — once per HTTP round trip, forever. With the <c>progress</c> script undeployed that
+        /// was several requests and SDK error logs (each with a captured stack trace) per second for
+        /// the whole session. Doubling up to <see cref="MaxRetrySeconds"/> keeps a transient outage
+        /// cheap to recover from and a permanent one quiet.
+        /// </summary>
+        private static float nextRetryTime;
+        private static float retryDelay = DebounceSeconds;
 
         /// <summary>Set across a load and a player-change so a flush triggered mid-hydration cannot
         /// push a half-applied document back up. The dirty flag survives, so the flush still happens
@@ -133,11 +147,12 @@ namespace TableFootball.Net
             Ensure();
         }
 
-        /// <summary>Whether the runner should flush this frame: dirty, idle past the debounce, not
-        /// already flushing, not suspended, and actually signed in.</summary>
+        /// <summary>Whether the runner should flush this frame: dirty, idle past the debounce, past
+        /// any backoff from a failed flush, not already flushing, not suspended, and signed in.</summary>
         internal static bool ShouldFlush() =>
             dirty && !flushing && !suspendFlush && GameServices.IsSignedIn
-            && Time.unscaledTime - lastDirtyTime >= DebounceSeconds;
+            && Time.unscaledTime - lastDirtyTime >= DebounceSeconds
+            && Time.unscaledTime >= nextRetryTime;
 
         // ── Load ───────────────────────────────────────────────────────────────────────────────
 
@@ -234,11 +249,15 @@ namespace TableFootball.Net
                 {
                     ApplyLocal(accepted);
                 }
+
+                retryDelay = DebounceSeconds;
             }
             catch (Exception e)
             {
                 dirty = true; // keep it pending so the next attempt retries
-                Debug.LogWarning($"CloudSync flush failed, will retry: {e.Message}");
+                nextRetryTime = Time.unscaledTime + retryDelay;
+                Debug.LogWarning($"CloudSync flush failed, retrying in {retryDelay:0}s: {e.Message}");
+                retryDelay = Mathf.Min(retryDelay * 2f, MaxRetrySeconds);
             }
             finally
             {

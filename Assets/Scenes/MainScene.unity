@@ -7152,7 +7152,7 @@ MonoBehaviour:
     spacingBias: 0.45
     difficulty:
       reactionDelay:
-        atEasy: 0.5
+        atEasy: 0.6
         atHard: 0.07
         response:
           serializedVersion: 2
@@ -7179,7 +7179,7 @@ MonoBehaviour:
           m_PostInfinity: 2
           m_RotationOrder: 4
       predictionAccuracy:
-        atEasy: 0.35
+        atEasy: 0.4
         atHard: 0.9
         response:
           serializedVersion: 2
@@ -7206,7 +7206,7 @@ MonoBehaviour:
           m_PostInfinity: 2
           m_RotationOrder: 4
       aimError:
-        atEasy: 0.05
+        atEasy: 0.07
         atHard: 0.009
         response:
           serializedVersion: 2
@@ -7260,7 +7260,7 @@ MonoBehaviour:
           m_PostInfinity: 2
           m_RotationOrder: 4
       spinPower:
-        atEasy: 0.85
+        atEasy: 0.8
         atHard: 1.08
         response:
           serializedVersion: 2
@@ -7314,7 +7314,7 @@ MonoBehaviour:
           m_PostInfinity: 2
           m_RotationOrder: 4
       decisionQuality:
-        atEasy: 0.35
+        atEasy: 0.3
         atHard: 0.95
         response:
           serializedVersion: 2
@@ -7341,7 +7341,7 @@ MonoBehaviour:
           m_PostInfinity: 2
           m_RotationOrder: 4
       unforcedErrorRate:
-        atEasy: 0.16
+        atEasy: 0.2
         atHard: 0.01
         response:
           serializedVersion: 2
@@ -7368,7 +7368,7 @@ MonoBehaviour:
           m_PostInfinity: 2
           m_RotationOrder: 4
       blockReadChance:
-        atEasy: 0.2
+        atEasy: 0.1
         atHard: 0.9
         response:
           serializedVersion: 2
@@ -7395,7 +7395,7 @@ MonoBehaviour:
           m_PostInfinity: 2
           m_RotationOrder: 4
       blockAlignmentError:
-        atEasy: 0.1
+        atEasy: 0.15
         atHard: 0.008
         response:
           serializedVersion: 2
@@ -7449,8 +7449,8 @@ MonoBehaviour:
           m_PostInfinity: 2
           m_RotationOrder: 4
       offBallShade:
-        atEasy: 0.15
-        atHard: 0.45
+        atEasy: 0.1
+        atHard: 0.4
         response:
           serializedVersion: 2
           m_Curve:
@@ -7935,6 +7935,7 @@ MonoBehaviour:
   uiClickClip: {fileID: 0}
   countdownTickClip: {fileID: 0}
   countdownGoClip: {fileID: 0}
+  questClip: {fileID: 0}
   menuMusicClip: {fileID: 8300000, guid: 679c6b027fd25470286fe5f199c0d44b, type: 3}
   menuMusicVolume: 0.3
   ballHitVolume: 2.6
@@ -7944,6 +7945,7 @@ MonoBehaviour:
   whistleVolume: 0.45
   uiVolume: 0.5
   countdownVolume: 0.55
+  questVolume: 0.5
   voices: 10
 --- !u!114 &3271520834897452825
 MonoBehaviour:

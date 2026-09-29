@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Unity.Netcode;
 using Unity.Services.Multiplayer;
 using UnityEngine;
 
@@ -285,10 +286,32 @@ namespace TableFootball.Net
 
             if (await GameServices.EnsureSignedInAsync())
             {
+                ConfigureNetcode();
                 return true;
             }
 
             return Fail("Could not reach the server", null);
+        }
+
+        /// <summary>Network ticks per second — matched to the 100 Hz physics step (TablePhysicsSettings).</summary>
+        private const uint TickRate = 100;
+
+        /// <summary>
+        /// Netcode settings that must hold for every session, applied before the session starts
+        /// NetworkManager.
+        ///
+        /// Set here in code rather than on the scene's NetworkManager because the scene value has
+        /// already been silently reverted once — an Editor save wrote the old 50 back over it, so the
+        /// 100 Hz tick that testing assumed was never actually running. Both players pass through this
+        /// same line, which also matters: Netcode rejects a client whose config does not match the host's.
+        /// </summary>
+        private static void ConfigureNetcode()
+        {
+            NetworkManager manager = NetworkManager.Singleton;
+            if (manager != null && !manager.IsListening)
+            {
+                manager.NetworkConfig.TickRate = TickRate;
+            }
         }
 
         private static void Adopt(ISession session)

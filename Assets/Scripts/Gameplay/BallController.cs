@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace TableFootball
@@ -84,6 +85,18 @@ namespace TableFootball
         [Tooltip("After this many nudges fail to free it, the ball is returned to the centre spot.")]
         [SerializeField] private int nudgesBeforeReset = 3;
         [SerializeField] private bool logRescues = true;
+
+        [Header("Stall rule")]
+        [Tooltip("Seconds a team may keep the ball in its own back zone (behind its goalie and " +
+                 "defence rods) after touching it, before the opponent is given a free shot. Rail " +
+                 "bounces do not reset it; the ball leaving the zone or the opponent touching it do. " +
+                 "0 disables the rule.")]
+        [SerializeField] private float stallLimitSeconds = 10f;
+        [Tooltip("The HUD countdown is shown for this many seconds before the limit.")]
+        [SerializeField] private float stallWarnSeconds = 4f;
+        [Tooltip("How far in front of the opponent's attack rod the free-shot ball lands, toward the " +
+                 "offending team's goal, in metres.")]
+        [SerializeField] private float freeShotOffset = 0.05f;
 
         [Header("Striking — where shot power comes from")]
         [Tooltip("Extra speed in m/s added by a full-power swing, on top of what the figure's own " +
@@ -271,6 +284,20 @@ namespace TableFootball
         private float pickupElapsed;
         private Vector3 pickupStart;
         private Quaternion pickupStartRot;
+        private Vector3 pickupTarget;
+        private bool pickupLandsAtHome;
+
+        // The stall rule. Each team's back zone and free-shot spot are measured once in Start from
+        // the rods themselves, as a depth along longAxis; zonesReady stays false if they cannot be.
+        private bool zonesReady;
+        private Team lowTeam;           // the team whose goal is at the low end of longAxis
+        private float lowZoneEdge;      // lowTeam's back zone is depth < this
+        private float highZoneEdge;     // the other team's back zone is depth > this
+        private float lowFreeShotDepth; // where the ball lands when lowTeam stalls
+        private float highFreeShotDepth;
+        private Team? stallTeam;
+        private float stallTime;
+        private int stallShown;         // last whole second announced; 0 when no warning is up
 
         // Possession, tracked authoritatively from real contact rather than inferred from distance.
         private Team? lastTouchTeam;
@@ -298,6 +325,14 @@ namespace TableFootball
         public event System.Action PossessionChanged;
 
         /// <summary>
+        /// The stall rule's countdown, for the HUD. (team, seconds) while a team's warning is up, once
+        /// per whole second; (team, 0) the moment it is penalised and the free shot is awarded; (null,
+        /// 0) when a warning is withdrawn. Online it is raised on the host by the rule itself and on
+        /// the guest by <see cref="ReportStall"/>, so the HUD listens in one place either way.
+        /// </summary>
+        public event System.Action<Team?, int> StallChanged;
+
+        /// <summary>
         /// Raised on every audible impact, with its strength 0..1 and whether a rod was struck rather
         /// than the table. Exists for the online relay — see the call site in OnCollisionEnter.
         /// </summary>
@@ -320,6 +355,25 @@ namespace TableFootball
 
         /// <inheritdoc cref="QuietImpactSpeed"/>
         public float LoudImpactSpeed => loudImpactSpeed;
+
+        /// <summary>The speed cap in force on this ball, in m/s — the value saved on the component, not
+        /// the code default. Online, a sample claiming more than this is not a hard shot but a lie.</summary>
+        public float MaxSpeed => speedCap;
+
+        /// <summary>Fraction of speed kept through a rail rebound, so a projection of the ball past a
+        /// wall slows the way the real ball does.</summary>
+        public float WallRetention => railRetention;
+
+        /// <summary>True while the ball is being carried back after a fall-through, during which its
+        /// motion is scripted rather than simulated.</summary>
+        public bool IsBeingCarried => pickupActive;
+
+        /// <summary>
+        /// Raised after <see cref="ResetBall"/> has placed the ball. A mirrored copy must SNAP to a
+        /// placed ball: drawing a smooth curve from where it was to the centre spot would show the
+        /// ball sliding across the pitch through every figure in the way.
+        /// </summary>
+        public event System.Action Teleported;
 
         private void Awake()
         {
@@ -366,7 +420,52 @@ namespace TableFootball
                     break;
                 }
             }
+
+            MeasureStallZones();
         }
+
+        /// <summary>
+        /// Finds each team's back zone and free-shot spot from where the rods actually sit, so the
+        /// stall rule is right whichever way round the table is and whichever team is which. Sorted
+        /// goal to goal, the rods run goalie, defence, then the OPPONENT's attack rod at each end: the
+        /// back zone ends halfway between the last two, and the free shot lands just in front of that
+        /// attack rod. Anything else and the rule switches itself off rather than guess.
+        /// </summary>
+        private void MeasureStallZones()
+        {
+            zonesReady = false;
+            if (longAxis.sqrMagnitude < 1e-6f) return;
+
+            var rods = new List<RodController>();
+            foreach (RodController rod in FindObjectsByType<RodController>(FindObjectsSortMode.None))
+            {
+                if (rod != null && rod.BarAxis.sqrMagnitude > 1e-6f) rods.Add(rod);
+            }
+
+            rods.Sort((a, b) => Depth(a.BarPivot).CompareTo(Depth(b.BarPivot)));
+            int n = rods.Count;
+
+            bool valid = n >= 6
+                && rods[0].Team == rods[1].Team && rods[2].Team != rods[0].Team
+                && rods[n - 1].Team == rods[n - 2].Team && rods[n - 3].Team != rods[n - 1].Team
+                && rods[0].Team != rods[n - 1].Team;
+            if (!valid)
+            {
+                Debug.LogWarning($"{name}: could not work out each team's back zone from the rods — " +
+                                 "the stall rule is off.", this);
+                return;
+            }
+
+            lowTeam = rods[0].Team;
+            lowZoneEdge = (Depth(rods[1].BarPivot) + Depth(rods[2].BarPivot)) * 0.5f;
+            highZoneEdge = (Depth(rods[n - 2].BarPivot) + Depth(rods[n - 3].BarPivot)) * 0.5f;
+            lowFreeShotDepth = Depth(rods[2].BarPivot);
+            highFreeShotDepth = Depth(rods[n - 3].BarPivot);
+            zonesReady = true;
+        }
+
+        /// <summary>How far along the goal-to-goal axis a point sits.</summary>
+        private float Depth(Vector3 p) => Vector3.Dot(p, longAxis);
 
         /// <summary>Pushes the inspector values onto the Rigidbody and the ball's material.</summary>
         [ContextMenu("Apply physics settings")]
@@ -441,6 +540,7 @@ namespace TableFootball
             }
 
             TickRescue(Time.fixedDeltaTime);
+            if (TickStall(Time.fixedDeltaTime)) return; // the free-shot carry owns the ball now
             TickControl();
             TickPossession();
 
@@ -457,8 +557,17 @@ namespace TableFootball
         /// were, since a ball leaving the table is the one case that specifically reads as "lost and
         /// found," not "play stopped."
         /// </summary>
-        private void BeginPickup()
+        private void BeginPickup() => BeginPickup(homePosition, landsAtHome: true);
+
+        /// <summary>
+        /// The same carry to any spot. Landing at home finishes in <see cref="ResetBall"/>, exactly as
+        /// the fall-through always has; landing anywhere else (the stall rule's free shot) sets the
+        /// ball down there, still and loose.
+        /// </summary>
+        private void BeginPickup(Vector3 target, bool landsAtHome)
         {
+            pickupTarget = target;
+            pickupLandsAtHome = landsAtHome;
             pickupActive = true;
             pickupElapsed = 0f;
             pickupStart = transform.position;
@@ -486,7 +595,7 @@ namespace TableFootball
             float p = pickupDuration > 0f ? Mathf.Clamp01(pickupElapsed / pickupDuration) : 1f;
             float eased = Mathf.SmoothStep(0f, 1f, p);
 
-            Vector3 pos = Vector3.Lerp(pickupStart, homePosition, eased);
+            Vector3 pos = Vector3.Lerp(pickupStart, pickupTarget, eased);
             pos.y += Mathf.Sin(p * Mathf.PI) * pickupLiftHeight; // peaks at the midpoint, zero at both ends
             Quaternion rot = Quaternion.Slerp(pickupStartRot, homeRotation, eased);
 
@@ -497,8 +606,115 @@ namespace TableFootball
             {
                 pickupActive = false;
                 body.isKinematic = false;
-                ResetBall(); // lands exactly on the centre spot and clears every reset-adjacent flag
+
+                if (pickupLandsAtHome)
+                {
+                    ResetBall(); // lands exactly on the centre spot and clears every reset-adjacent flag
+                    return;
+                }
+
+                // Set down still and loose. No Teleported: the mirror watched the carry, so it is
+                // already where the ball is.
+                body.position = pickupTarget;
+                body.rotation = homeRotation;
+                body.linearVelocity = Vector3.zero;
+                body.angularVelocity = Vector3.zero;
+                stillTime = 0f;
+                ClearTouchState();
             }
+        }
+
+        /// <summary>
+        /// The stall rule. A team that touched the ball last and keeps it in its own back zone —
+        /// typically bouncing it between its defence and the rail to run the clock down, which the
+        /// dead-ball rescue never sees because the ball never stops — gets a countdown, then the
+        /// opponent gets a free shot: the ball is carried to just in front of their attack rod.
+        /// Returns true when it has just started that carry.
+        /// </summary>
+        private bool TickStall(float dt)
+        {
+            Team? team = null;
+            if (zonesReady && rescueActive && stallLimitSeconds > 0f && lastTouchTeam.HasValue)
+            {
+                float depth = Depth(body.position);
+                Team highTeam = lowTeam == Team.Red ? Team.Blue : Team.Red;
+                if (lastTouchTeam.Value == lowTeam && depth < lowZoneEdge) team = lowTeam;
+                else if (lastTouchTeam.Value == highTeam && depth > highZoneEdge) team = highTeam;
+            }
+
+            if (team != stallTeam)
+            {
+                ClearStall();
+                stallTeam = team;
+            }
+
+            if (team == null) return false;
+
+            stallTime += dt;
+            float left = stallLimitSeconds - stallTime;
+
+            if (left <= 0f)
+            {
+                bool low = team.Value == lowTeam;
+                float shotDepth = low ? lowFreeShotDepth - freeShotOffset : highFreeShotDepth + freeShotOffset;
+                Vector3 spot = homePosition + longAxis * (shotDepth - Depth(homePosition));
+
+                if (logRescues)
+                {
+                    Debug.Log($"{name}: {team.Value} held the ball in its own zone for " +
+                              $"{stallLimitSeconds:0.#}s — free shot to the opponent.", this);
+                }
+
+                stallTeam = null;
+                stallTime = 0f;
+                stallShown = 0;
+                StallChanged?.Invoke(team, 0);
+                BeginPickup(spot, landsAtHome: false);
+                return true;
+            }
+
+            if (left <= stallWarnSeconds)
+            {
+                int secs = Mathf.CeilToInt(left);
+                if (secs != stallShown)
+                {
+                    stallShown = secs;
+                    StallChanged?.Invoke(team, secs);
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>Stops the stall countdown, withdrawing the warning if one is on screen.</summary>
+        private void ClearStall()
+        {
+            stallTeam = null;
+            stallTime = 0f;
+            if (stallShown != 0)
+            {
+                stallShown = 0;
+                StallChanged?.Invoke(null, 0);
+            }
+        }
+
+        /// <summary>
+        /// Raises <see cref="StallChanged"/> on a machine that is not running the rule — the online
+        /// guest, whose own BallController is switched off and only mirrors the host's warning.
+        /// </summary>
+        public void ReportStall(Team? team, int secondsLeft) => StallChanged?.Invoke(team, secondsLeft);
+
+        /// <summary>Forgets who touched the ball: nobody is in control and nobody touched it last.</summary>
+        private void ClearTouchState()
+        {
+            controlRod = null;
+            lastStriker = null;
+            if (controllingTeam != null)
+            {
+                controllingTeam = null;
+                PossessionChanged?.Invoke();
+            }
+            lastTouchTeam = null;
         }
 
         /// <summary>
@@ -1179,6 +1395,8 @@ namespace TableFootball
                 PossessionChanged?.Invoke();
             }
             lastTouchTeam = null;
+
+            Teleported?.Invoke();
         }
 
         /// <summary>Re-captures the current position as the reset point.</summary>

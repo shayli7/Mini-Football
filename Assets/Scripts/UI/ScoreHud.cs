@@ -24,6 +24,7 @@ namespace TableFootball.UI
 
         private CanvasGroup flashCg;
         private CanvasGroup goalPopupCg;
+        private CanvasGroup opponentPausedCg;
         private TextMeshProUGUI goalPopupText;
         private Coroutine goalPopupRoutine;
         private Image flashImg;
@@ -125,7 +126,53 @@ namespace TableFootball.UI
             {
                 if (banner != null) banner.SetActive(false);
                 HideGoalPopup();
+                SetOpponentPaused(false);
             }
+        }
+
+        /// <summary>
+        /// Online, guest only: says the host's phone has stopped, so a ball frozen mid-pitch reads as
+        /// a pause rather than a bug. The host's app IS the simulation — nothing on this machine can
+        /// move the ball until it returns. Shown and cleared by <c>OnlineMatchDirector</c>'s heartbeat.
+        /// </summary>
+        public void SetOpponentPaused(bool paused)
+        {
+            if (opponentPausedCg != null)
+            {
+                opponentPausedCg.alpha = paused ? 1f : 0f;
+            }
+        }
+
+        /// <summary>
+        /// The "OPPONENT PAUSED" notice. Built like the GOAL! popup — its own CanvasGroup, centred over
+        /// the empty middle of the table — and, like it, never takes the pointer: RodTouchInput asks
+        /// whether a touch is over UI, and a notice that blocked raycasts would leave every rod dead
+        /// for exactly the stretch the player is waiting to resume.
+        /// </summary>
+        private void BuildOpponentPaused(Transform root)
+        {
+            var go = UIFactory.Child(root, "OpponentPaused");
+            UIFactory.Stretch(UIFactory.Rt(go));
+            opponentPausedCg = go.AddComponent<CanvasGroup>();
+            opponentPausedCg.alpha = 0f;
+            opponentPausedCg.blocksRaycasts = false;
+            opponentPausedCg.interactable = false;
+
+            var title = UIFactory.Text(go.transform, "Opponent paused", 64f, ArcadeTheme.Ink,
+                                       display: true, bold: true, upper: true, tracking: 4f);
+            var titleRt = UIFactory.Rt(title.gameObject);
+            titleRt.anchorMin = titleRt.anchorMax = titleRt.pivot = new Vector2(0.5f, 0.5f);
+            titleRt.sizeDelta = new Vector2(1000f, 90f);
+            titleRt.anchoredPosition = new Vector2(0f, 30f);
+
+            var sub = UIFactory.Text(go.transform, "Waiting for them to come back", 30f, ArcadeTheme.InkMuted,
+                                     bold: false);
+            var subRt = UIFactory.Rt(sub.gameObject);
+            subRt.anchorMin = subRt.anchorMax = subRt.pivot = new Vector2(0.5f, 0.5f);
+            subRt.sizeDelta = new Vector2(1000f, 50f);
+            subRt.anchoredPosition = new Vector2(0f, -40f);
+
+            go.transform.SetAsLastSibling();
         }
 
         /// <summary>Stops any running GOAL! popup and clears it. Used when the HUD leaves or a match restarts.</summary>
@@ -146,6 +193,7 @@ namespace TableFootball.UI
 
             BuildFlash(canvasRoot);
             BuildGoalPopup(canvasRoot);
+            BuildOpponentPaused(canvasRoot);
             BuildHud(canvasRoot);
             BuildSuddenDeath(canvasRoot);
             BuildBanner(canvasRoot);

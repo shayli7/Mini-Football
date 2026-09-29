@@ -2172,14 +2172,23 @@ namespace TableFootball.UI
         }
 
         /// <summary>
-        /// A treasure chest in its tier's colour: body, lid, a band down the front and a coin-gold
-        /// clasp. Drawn rather than imported like everything else here, and sized entirely from
-        /// <paramref name="size"/> so the same chest works as a 40px reward chip and a 140px reveal.
+        /// A treasure chest in its tier's colour, seen from the front: a domed lid over a planked
+        /// body, a dark outline, two coin-gold straps, a gold band along the seam and a lock plate
+        /// with a keyhole. Drawn rather than imported like everything else here, and sized entirely
+        /// from <paramref name="size"/> so the same chest works as a 38px reward chip and a 160px
+        /// store card.
+        ///
+        /// Laid out on a 100 x 84 design grid (the store mock-up's chest), scaled so the grid's width
+        /// is <paramref name="size"/>. The root stays size x size, so callers that reserved a square
+        /// cell for the old chest need no change.
         /// </summary>
         public static GameObject ChestGlyph(Transform parent, ChestTier tier, float size = 64f)
         {
             Color tint = ChestColor(tier);
-            Color dark = Color.Lerp(tint, ArcadeTheme.BgDeep, 0.45f);
+            Color wood = Color.Lerp(tint, ArcadeTheme.BgDeep, 0.20f);  // the body sits in the lid's shade
+            Color dark = Color.Lerp(tint, ArcadeTheme.BgDeep, 0.45f);  // outline and plank seams
+            Color seam = dark.WithAlpha(0.55f);
+            float u = size / 100f;
 
             var root = Child(parent, "Chest");
             var rrt = Rt(root);
@@ -2187,40 +2196,61 @@ namespace TableFootball.UI
             rrt.pivot = new Vector2(0.5f, 0.5f);
             rrt.sizeDelta = new Vector2(size, size);
 
-            // Body: the lower box.
-            var body = Child(root.transform, "Body");
-            RoundedImage(body, Mathf.Max(3, Mathf.RoundToInt(size * 0.09f)), dark, false);
-            var brt = Rt(body);
-            brt.anchorMin = brt.anchorMax = new Vector2(0.5f, 0.5f);
-            brt.pivot = new Vector2(0.5f, 0.5f);
-            brt.sizeDelta = new Vector2(size * 0.80f, size * 0.44f);
-            brt.anchoredPosition = new Vector2(0f, -size * 0.16f);
+            Transform t = root.transform;
 
-            // Lid: brighter, and wider than the body so it overhangs — the one detail that stops a
-            // chest reading as a plain box with a line across it.
-            var lid = Child(root.transform, "Lid");
-            RoundedImage(lid, Mathf.Max(3, Mathf.RoundToInt(size * 0.11f)), tint, false);
-            var lrt = Rt(lid);
-            lrt.anchorMin = lrt.anchorMax = new Vector2(0.5f, 0.5f);
-            lrt.pivot = new Vector2(0.5f, 0.5f);
-            lrt.sizeDelta = new Vector2(size * 0.88f, size * 0.34f);
-            lrt.anchoredPosition = new Vector2(0f, size * 0.14f);
+            // Outline first, one grid unit proud of the lid and body, so it reads as a stroke.
+            ChestPart(t, "LidOutline", dark, 6.5f, 9.5f, 87f, 32f, 16f, u);
+            ChestPart(t, "BodyOutline", dark, 6.5f, 38.5f, 87f, 37f, 4f, u);
 
-            // The band down the front, and the clasp where it meets the lid. Coin gold on every tier:
-            // the fittings are the same on all four chests, only the wood changes.
-            Rod(root.transform, ArcadeTheme.Coin, new Vector2(0f, -size * 0.10f),
-                size * 0.62f, size * 0.11f, 90f);
-            var clasp = Child(root.transform, "Clasp");
-            RoundedImage(clasp, 3, ArcadeTheme.Coin, false);
-            var crt = Rt(clasp);
-            crt.anchorMin = crt.anchorMax = new Vector2(0.5f, 0.5f);
-            crt.pivot = new Vector2(0.5f, 0.5f);
-            crt.sizeDelta = new Vector2(size * 0.20f, size * 0.16f);
-            crt.anchoredPosition = new Vector2(0f, -size * 0.02f);
-            Dot(clasp.transform, ArcadeTheme.CoinDark, Vector2.zero, size * 0.07f);
+            // Lid: rounded on top only. A rounded box, then a square one over its lower half so the
+            // corners that meet the body are square — the band covers the join.
+            ChestPart(t, "Lid", tint, 8f, 11f, 84f, 29f, 15f, u);
+            ChestPart(t, "LidBase", tint, 8f, 25f, 84f, 15f, 0f, u);
+            ChestPart(t, "LidPlank", seam, 10f, 25.25f, 80f, 1.5f, 0f, u);
+
+            ChestPart(t, "Body", wood, 8f, 40f, 84f, 34f, 3f, u);
+            ChestPart(t, "Plank1", seam, 10f, 51.25f, 80f, 1.5f, 0f, u);
+            ChestPart(t, "Plank2", seam, 10f, 62.25f, 80f, 1.5f, 0f, u);
+
+            // Fittings, coin gold on every tier: only the wood changes between chests. Each is a
+            // dark-gold edge with the bright face inset inside it.
+            ChestFitting(t, "StrapL", 18f, 12f, 9f, 61f, 0f, u);
+            ChestFitting(t, "StrapR", 73f, 12f, 9f, 61f, 0f, u);
+            ChestFitting(t, "Band", 7f, 37f, 86f, 6f, 1.5f, u);
+            ChestFitting(t, "Lock", 41f, 33f, 18f, 20f, 2.5f, u);
+
+            // Keyhole: a round head over a short slot.
+            ChestPart(t, "KeyholeSlot", ArcadeTheme.OnGold, 48.9f, 42f, 2.2f, 6f, 1f, u);
+            Dot(t, ArcadeTheme.OnGold, GridToLocal(50f, 41f, u), 5.6f * u);
 
             return root;
         }
+
+        /// <summary>One rectangle of <see cref="ChestGlyph"/>, given in its 100 x 84 design grid.</summary>
+        private static Image ChestPart(Transform parent, string name, Color color,
+                                       float x, float y, float w, float h, float radius, float u)
+        {
+            var go = Child(parent, name);
+            var img = RoundedImage(go, Mathf.Max(1, Mathf.RoundToInt(radius * u)), color, false);
+            var rt = Rt(go);
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(w * u, h * u);
+            rt.anchoredPosition = GridToLocal(x + w * 0.5f, y + h * 0.5f, u);
+            return img;
+        }
+
+        /// <summary>A gold fitting on the chest: <see cref="ArcadeTheme.CoinDark"/> edge, coin face.</summary>
+        private static void ChestFitting(Transform parent, string name,
+                                         float x, float y, float w, float h, float radius, float u)
+        {
+            ChestPart(parent, name + "Edge", ArcadeTheme.CoinDark, x, y, w, h, radius, u);
+            ChestPart(parent, name, ArcadeTheme.Coin, x + 1f, y + 1f, w - 2f, h - 2f,
+                      Mathf.Max(0f, radius - 1f), u);
+        }
+
+        /// <summary>The chest grid is y-down with its centre at (50, 42); the UI is y-up from the centre.</summary>
+        private static Vector2 GridToLocal(float x, float y, float u) => new Vector2((x - 50f) * u, (42f - y) * u);
 
         /// <summary>
         /// A league badge: a ring in the tier's metal with the ranked cup inside it.

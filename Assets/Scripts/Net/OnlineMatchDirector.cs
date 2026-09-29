@@ -73,6 +73,45 @@ namespace TableFootball.Net
         /// </summary>
         private const float ClockPublishSeconds = 0.25f;
 
+        /// <summary>How often the guest measures the round trip for <see cref="NetClock"/>.</summary>
+        private const float ClockPingSeconds = 0.25f;
+
+        /// <summary>Guest only: when the next clock ping goes out, in unscaled time.</summary>
+        private float nextClockPing;
+
+        /// <summary>
+        /// How long the guest waits in silence before deciding the host is not coming back, and wins
+        /// by forfeit.
+        ///
+        /// The host's phone IS the match — it alone simulates the ball — so when its screen goes off
+        /// and Android suspends it, the ball freezes for both players and nothing the guest's machine
+        /// does can move it. There is no host migration in this topology. What can be decided is how
+        /// long that freeze lasts: long enough to cover a phone call or a quick unlock, short of the
+        /// transport's own 30 s disconnect, which is how long the guest used to stare at a dead ball.
+        /// </summary>
+        public const float AbsenceLimitSeconds = 20f;
+
+        /// <summary>
+        /// How long a player may be suspended before they forfeit on their OWN return. Deliberately
+        /// shorter than <see cref="AbsenceLimitSeconds"/>: the player who stayed measures the silence
+        /// (plus latency and a heartbeat interval), the player who left measures their own absence, and
+        /// if the two thresholds were equal a return right on the line could have BOTH players
+        /// decide they had won. The gap guarantees the returning player always gives up first.
+        /// </summary>
+        public const float SelfForfeitSeconds = AbsenceLimitSeconds - 2f;
+
+        /// <summary>
+        /// Silence, in seconds, after which the guest is told the host has paused. Several heartbeat
+        /// intervals, so one late packet over Relay never flashes the notice.
+        /// </summary>
+        public const float SilenceNoticeSeconds = 1f;
+
+        /// <summary>
+        /// Raised on the guest when the host goes silent (true) and when it is heard from again
+        /// (false), so the HUD can explain a frozen ball rather than leave it looking like a bug.
+        /// </summary>
+        public static event Action<bool> OnHostSilentChanged;
+
         /// <summary>How many times the guest asks before giving up and saying so.</summary>
         private const int ReadyAttempts = 20;
 
@@ -101,6 +140,29 @@ namespace TableFootball.Net
 
         /// <summary>When the host next puts the clock on the wire, in unscaled time.</summary>
         private float nextClockPublish;
+
+        /// <summary>
+        /// Proof of life from the host, bumped with every clock publish.
+        ///
+        /// The clock itself cannot serve: a NetworkVariable only sends when its value CHANGES, and the
+        /// clock stands still through every goal celebration and at full time — so silence on it means
+        /// nothing. A counter changes every time it is written, so it arrives four times a second for
+        /// as long as the host's app is actually running, and stops the moment Android suspends it.
+        /// </summary>
+        private readonly NetworkVariable<int> heartbeat = new(
+            0,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+
+        /// <summary>Guest only: when the host was last heard from, in unscaled time.</summary>
+        private float lastHeartbeat;
+
+        /// <summary>Guest only: nothing is measured until the host has been heard from once, so the
+        /// connection handshake can never read as the host having paused.</summary>
+        private bool heartbeatSeen;
+
+        private bool hostSilent;
+        private bool gaveUpOnHost;
 
         /// <summary>
         /// The TABLE's cosmetics for this match, chosen by the host.
@@ -185,6 +247,24 @@ namespace TableFootball.Net
 
             instance = this;
 
+            // Neither phone may sleep during an online match. The host's is the simulation, so its
+            // screen timing out freezes the ball for both players; the guest's timing out leaves its
+            // rods dead to the host. A player mid-rally touches the screen constantly and never hits
+            // the timer — it is the waits (a goal celebration, a rematch vote, a player reading the
+            // banner) where it fires. Restored in OnNetworkDespawn.
+            Screen.sleepTimeout = SleepTimeout.NeverSleep;
+
+            // The host's clock is the shared clock; the guest starts measuring its offset from scratch.
+            if (IsServer)
+            {
+                NetClock.BecomeReference();
+            }
+            else
+            {
+                NetClock.Reset();
+                nextClockPing = 0f;
+            }
+
             ConfigureTable();
 
             // The table's cosmetics, published by the host and worn by BOTH sides — the host wears
@@ -240,6 +320,11 @@ namespace TableFootball.Net
 
             // The guest takes the clock from the host from here on, rather than running its own.
             clock.OnValueChanged += OnClockChanged;
+
+            heartbeatSeen = false;
+            hostSilent = false;
+            gaveUpOnHost = false;
+            heartbeat.OnValueChanged += OnHeartbeat;
             if (match != null && clock.Value > 0f)
             {
                 match.SyncClock(clock.Value);
@@ -356,7 +441,18 @@ namespace TableFootball.Net
             if (!IsServer)
             {
                 clock.OnValueChanged -= OnClockChanged;
+                heartbeat.OnValueChanged -= OnHeartbeat;
+
+                // Clear a notice still showing when the session ends, or it survives into the menu.
+                if (hostSilent)
+                {
+                    hostSilent = false;
+                    OnHostSilentChanged?.Invoke(false);
+                }
             }
+
+            Screen.sleepTimeout = SleepTimeout.SystemSetting;
+            NetClock.Reset();
 
             // Whatever comes next — a local match, a match against the AI — runs its own clock again.
             if (match != null)
@@ -393,8 +489,27 @@ namespace TableFootball.Net
         /// </summary>
         private void Update()
         {
-            if (!IsSpawned || !IsServer || match == null)
+            if (!IsSpawned)
             {
+                return;
+            }
+
+            // Before the match check: the shared clock is needed from the first ball sample, which can
+            // arrive before any match is under way.
+            if (!IsServer && Time.unscaledTime >= nextClockPing)
+            {
+                nextClockPing = Time.unscaledTime + ClockPingSeconds;
+                ClockPingRpc(Time.unscaledTimeAsDouble);
+            }
+
+            if (match == null)
+            {
+                return;
+            }
+
+            if (!IsServer)
+            {
+                WatchHost();
                 return;
             }
 
@@ -405,6 +520,83 @@ namespace TableFootball.Net
 
             nextClockPublish = Time.unscaledTime + ClockPublishSeconds;
             clock.Value = match.TimeRemaining;
+            heartbeat.Value++;
+        }
+
+        /// <summary>
+        /// Guest only: notices the host going quiet. Unscaled time, because the guest may be sitting
+        /// in its own pause menu at timeScale 0 and the host's silence still has to be measured.
+        ///
+        /// Two thresholds. At <see cref="SilenceNoticeSeconds"/> the guest is told the host has
+        /// paused. At <see cref="AbsenceLimitSeconds"/> it stops waiting and takes the match through
+        /// exactly the path a real disconnect takes, so a host who never comes back ends the match the
+        /// same way one who quit does. Each fires once per silence.
+        /// </summary>
+        private void WatchHost()
+        {
+            if (!heartbeatSeen)
+            {
+                return;
+            }
+
+            float silence = Time.unscaledTime - lastHeartbeat;
+
+            if (!hostSilent && silence >= SilenceNoticeSeconds)
+            {
+                hostSilent = true;
+                OnHostSilentChanged?.Invoke(true);
+            }
+
+            if (!gaveUpOnHost && silence >= AbsenceLimitSeconds)
+            {
+                gaveUpOnHost = true;
+                Debug.Log($"Online: no word from the host for {AbsenceLimitSeconds:0}s — treating it as gone.");
+                OnOpponentGone?.Invoke();
+            }
+        }
+
+        /// <summary>Guest only: the host is alive. Clears the paused notice if it was showing.</summary>
+        private void OnHeartbeat(int previous, int current)
+        {
+            lastHeartbeat = Time.unscaledTime;
+            heartbeatSeen = true;
+
+            if (hostSilent)
+            {
+                hostSilent = false;
+                OnHostSilentChanged?.Invoke(false);
+            }
+        }
+
+        /// <summary>
+        /// Coming back from our OWN suspension. The guest's clock jumps forward across the time it was
+        /// away, so the silence measured on the first frame back is this machine's absence, not the
+        /// host's — restart the measurement rather than flash "opponent paused" at a returning player.
+        /// Whether that absence cost the match is <c>GameFlow</c>'s call, not this one's.
+        /// </summary>
+        private void OnApplicationPause(bool paused)
+        {
+            if (!paused)
+            {
+                lastHeartbeat = Time.unscaledTime;
+            }
+        }
+
+        /// <summary>
+        /// Guest → host: "my clock read this when I sent it". Unreliable — a lost ping is just one
+        /// fewer measurement, and a resent one would carry a round trip that includes the resend.
+        /// </summary>
+        [Rpc(SendTo.Server, Delivery = RpcDelivery.Unreliable)]
+        private void ClockPingRpc(double guestSent)
+        {
+            ClockPongRpc(guestSent, Time.unscaledTimeAsDouble);
+        }
+
+        /// <summary>Host → guest: the ping echoed back with the host's clock at arrival. See NetClock.</summary>
+        [Rpc(SendTo.NotServer, Delivery = RpcDelivery.Unreliable)]
+        private void ClockPongRpc(double guestSent, double hostTime)
+        {
+            NetClock.OnPong(guestSent, hostTime);
         }
 
         /// <summary>Guest only: the host's clock arriving.</summary>

@@ -75,6 +75,16 @@ namespace TableFootball.Net
         private static readonly int[] ConsolationCoins = { 150, 350, 700, 1400 };
 
         /// <summary>
+        /// What each tier costs in the store. A little under the old direct price of a skin at the same
+        /// rarity (300 / 750 / 1600 / 3200), because a chest is a roll rather than a pick.
+        /// </summary>
+        private static readonly int[] StorePrices = { 250, 600, 1400, 3000 };
+
+        /// <summary>The store price of one chest of this tier.</summary>
+        public static int Price(ChestTier tier) =>
+            StorePrices[Mathf.Clamp((int)tier, 0, StorePrices.Length - 1)];
+
+        /// <summary>
         /// Opens one chest: rolls, grants, and reports what happened. Granting is done HERE rather
         /// than by the caller, so a drop that is shown on screen is always a drop that was actually
         /// banked — the two cannot come apart.
