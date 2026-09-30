@@ -210,6 +210,19 @@ until `slideBreakout` (anchored so unlocking never jumps). Spin is integrated pe
 speed-dependent gain (`fineSpinGain` slow → full at `fullGainSpeed`), taken from the live speed so a
 hard swipe is never softened; only the release flick uses the smoothed speed.
 
+**The stall rule lives on the ball, because the dead-ball rescue cannot see a stall.** A leading team
+bouncing the ball between its own defence and the rail never lets it stop, so `TickRescue` never
+fires. `BallController.TickStall` counts instead while the ball is in a team's back zone (goalie +
+defence, edge halfway to the opponent's 3-bar) **and** that team touched it last; rails are not
+touches, so they do not reset it — leaving the zone, an opponent touch or a reset does. Zones come
+from the rods sorted along the goal-to-goal axis in `Start` (goalie, defence, then the opponent's
+attack rod at each end), never from team or list order; if that shape is not found the rule logs and
+switches itself off. At `stallLimitSeconds` the opponent gets a free shot: the fall-through pickup
+carry takes the ball to `freeShotOffset` in front of their attack rod and sets it down loose. It is
+paused whenever the rescue is (`SetRescueActive`), and it runs only where the ball is simulated —
+online the host raises `StallChanged` and `OnlineMatchDirector.StallRpc` replays it on the guest
+through `ReportStall`, for the HUD pill only.
+
 **Read `RodController.MeasuredSpinSpeed`, not `CurrentSpinVelocity`, to detect a swing** — the latter
 is pinned at zero while a drag drives the angle directly.
 

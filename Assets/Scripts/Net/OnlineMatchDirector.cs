@@ -231,10 +231,12 @@ namespace TableFootball.Net
         private bool restartFromMessage;
 
         private MatchManager match;
+        private BallController ball;
 
         private void Awake()
         {
             match = FindAnyObjectByType<MatchManager>();
+            ball = FindAnyObjectByType<BallController>();
         }
 
         public override void OnNetworkSpawn()
@@ -314,6 +316,9 @@ namespace TableFootball.Net
                     match.GoalScored += OnHostGoal;
                     match.MatchRestarted += OnHostRestart;
                 }
+
+                // The stall rule runs only where the ball is simulated; the guest just shows it.
+                if (ball != null) ball.StallChanged += OnHostStall;
 
                 return;
             }
@@ -436,6 +441,11 @@ namespace TableFootball.Net
             {
                 match.GoalScored -= OnHostGoal;
                 match.MatchRestarted -= OnHostRestart;
+            }
+
+            if (IsServer && ball != null)
+            {
+                ball.StallChanged -= OnHostStall;
             }
 
             if (!IsServer)
@@ -1004,6 +1014,22 @@ namespace TableFootball.Net
             if (match != null)
             {
                 match.ScoreGoal(redScored ? Team.Red : Team.Blue);
+            }
+        }
+
+        private void OnHostStall(Team? team, int secondsLeft) =>
+            StallRpc((sbyte)(team.HasValue ? (int)team.Value : -1), (byte)Mathf.Clamp(secondsLeft, 0, 255));
+
+        /// <summary>
+        /// Mirrors the host's stall countdown on the guest. Reliable, unlike the ball samples: a lost
+        /// "warning withdrawn" would leave a countdown on the guest's screen for a stall that ended.
+        /// </summary>
+        [Rpc(SendTo.NotServer)]
+        private void StallRpc(sbyte team, byte secondsLeft)
+        {
+            if (ball != null)
+            {
+                ball.ReportStall(team < 0 ? (Team?)null : (Team)team, secondsLeft);
             }
         }
 

@@ -1386,15 +1386,9 @@ namespace TableFootball
             stillTime = 0f;
             nudges = 0;
 
-            // A reset ball is a loose ball again.
-            controlRod = null;
-            lastStriker = null;
-            if (controllingTeam != null)
-            {
-                controllingTeam = null;
-                PossessionChanged?.Invoke();
-            }
-            lastTouchTeam = null;
+            // A reset ball is a loose ball again, and nobody is stalling with it.
+            ClearTouchState();
+            ClearStall();
 
             Teleported?.Invoke();
         }
