@@ -6,29 +6,39 @@ using UnityEngine;
 namespace TableFootball.Net
 {
     /// <summary>
-    /// Keeps the ball in one simulation and draws it smoothly everywhere else.
+    /// Keeps the ball in one simulation at a time and draws it everywhere else.
     ///
     /// The ball is the one object both players watch closely and the only one whose physics is
-    /// genuinely chaotic, so exactly one machine simulates it at a time — two Rigidbodies run against
+    /// genuinely chaotic, so exactly one machine simulates it at any moment — two Rigidbodies run against
     /// slightly different rod positions diverge within a second. That machine streams
     /// <see cref="BallSample"/>s (position, velocity, rotation, stamped on the shared
-    /// <see cref="NetClock"/>) every physics step; the other draws them through a
-    /// <see cref="BallStream"/>, which curves smoothly between samples and absorbs uneven arrival.
+    /// <see cref="NetClock"/>) every physics step; the other draws them through a <see cref="BallStream"/>.
     ///
-    /// This replaced NetworkTransform + NetworkRigidbody + a velocity-lead extrapolation. That stack
-    /// drew "whatever arrived last" with no real jitter buffer, so packets bunching up over Relay
-    /// showed as stutter, and the lead — driven by velocity arriving on a separate channel — lurched
-    /// the wrong way at every bounce. It also could not be told to stop writing the transform, which a
-    /// machine that sometimes simulates the ball itself needs.
+    /// <b>Lane authority.</b> WHICH machine simulates follows the ball down the table. The rows alternate
+    /// by team, so the ball's position mostly decides whose figures can touch it (see
+    /// <see cref="BallLanes"/>). Whoever owns the lane the ball is in simulates it, with the real
+    /// <see cref="BallController"/> — so every player's OWN traps, blocks, passes and shots happen on
+    /// their own phone, instantly, judged exactly as they saw them, however long the round trip. The
+    /// other player draws that simulation projected forward to the present, and sees the opponent's
+    /// touches arrive one trip late, as a forward jump.
     ///
-    /// For now the host always simulates (epoch 0, Red). The sample format, the NotMe routing and
-    /// <see cref="SetSimulating"/> already allow the simulating machine to change, which is what
-    /// lane authority and the away rules build on.
+    /// The hand over, per simulation "term" (<c>epoch</c>, which only ever grows):
+    /// - The simulating machine hands off once its ball is a little way into the other team's lane and
+    ///   nothing of its own has touched it for a moment — mid-gap, where no figure can reach the ball,
+    ///   so its motion over the trip is predictable. It sends the state reliably and starts drawing.
+    /// - The other machine does not wait for that: the moment the ball it DRAWS (projected to now)
+    ///   enters its own lane, it starts simulating provisionally from what the player sees. When the
+    ///   hand over arrives it keeps going if the two agree, rebases if they do not, and aborts if the
+    ///   old simulator's samples show the ball never came.
+    /// - The host is the referee: it takes the ball back at every goal and kick-off, when the guest goes
+    ///   silent, and when the guest's samples fail <see cref="AuthorityValidator"/>; and it judges goals
+    ///   in the guest's simulation from the guest's real path (<see cref="GoalJudge"/>).
     ///
-    /// The machine that is not simulating runs no <see cref="BallController"/> at all — the speed cap,
-    /// fall-through net and dead-ball rescue are decisions about a simulation it is not running — so it
-    /// has no contacts and no impact sounds of its own. Those are relayed, and the guest predicts the
-    /// sound of its OWN kicks so they are not a round trip late.
+    /// With lane authority switched off (the host's <c>laneAuthority</c> field) the host simulates
+    /// throughout and the guest draws slightly in the past through an adaptive buffer.
+    ///
+    /// A machine not simulating runs no <see cref="BallController"/> at all; its contacts and sounds
+    /// come from whichever machine is.
     /// </summary>
     [DefaultExecutionOrder(100)] // sample after BallController's own FixedUpdate has adjusted the velocity
     [RequireComponent(typeof(BallController))]
@@ -38,25 +48,83 @@ namespace TableFootball.Net
     {
         [Header("Drawing the mirrored ball")]
         [Tooltip("Longest the ball may be carried forward past the newest sample when samples run out, " +
-                 "in seconds. Past this it holds still rather than guess further.")]
+                 "in seconds, when drawing in the past (lane authority off).")]
         [SerializeField] private float maxExtrapolation = 0.06f;
-        [Tooltip("A correction smaller than this, in metres, is smoothed out; a larger one snaps.")]
-        [SerializeField] private float errorSnapDistance = 0.05f;
-        [Tooltip("How long a smoothed correction takes to fade, in seconds.")]
-        [SerializeField] private float errorDecay = 0.06f;
+        // Renamed from errorSnapDistance (0.05) / errorDecay (0.06) so the scene's saved values cannot
+        // shadow these. At 0.05 m nearly every correction of a ball drawn at the present snapped — an
+        // opponent's pass or shot arrives 15–85 cm off the guess — which is what read as teleporting.
+        [Tooltip("A correction smaller than this, in metres, glides into place; only a larger one snaps. " +
+                 "Kick-offs and resets always snap.")]
+        [SerializeField] private float correctionSnapDistance = 0.5f;
+        [Tooltip("How fast a correction glides away, in seconds (time constant: ~95% gone after three " +
+                 "of these). Lower is snappier, higher is smoother but the ball trails further behind " +
+                 "where it really is — 0.1 already read as a delayed ball.")]
+        [SerializeField] private float correctionBlendTime = 0.05f;
+
+        [Header("Delay buffer (lane authority off only)")]
+        [Tooltip("Least buffer above the fastest arrival, in seconds.")]
+        [SerializeField] private float bufferMin = 0.01f;
+        [Tooltip("Most buffer above the fastest arrival, in seconds. Lower = less delay, more frames " +
+                 "drawn by projection when updates arrive late.")]
+        [SerializeField] private float bufferMax = 0.035f;
+        [Tooltip("Fraction of updates the buffer waits for (0.5–0.99). The late remainder is projected " +
+                 "rather than waited for. Lower = less delay, more small corrections.")]
+        [Range(0.5f, 0.99f)]
+        [SerializeField] private float bufferCoverage = 0.85f;
+
+        [Header("Lane authority (the HOST's settings are the ones used)")]
+        [Tooltip("Whoever owns the lane the ball is in simulates it, so each player's own touches are " +
+                 "instant. Off: the host simulates throughout.")]
+        [SerializeField] private bool laneAuthority = true;
+        [Tooltip("How far into a lane the ball must be before that lane's owner takes it, in metres. Keeps " +
+                 "a ball sitting on a boundary from changing hands back and forth.")]
+        [SerializeField] private float laneHysteresis = 0.01f;
+        [Tooltip("How long the ball must stay in the other team's lane before it is handed over, in seconds.")]
+        [SerializeField] private float handoffDwell = 0.02f;
+        [Tooltip("How long since this simulation's last figure touch before the ball may be handed over, in " +
+                 "seconds — never mid-contact.")]
+        [SerializeField] private float ownContactDwell = 0.03f;
+        [Tooltip("A provisional start this close to the hand over's state is kept as is, in metres.")]
+        [SerializeField] private float rebaseDistance = 0.04f;
+        [Tooltip("…and this close in speed, in m/s.")]
+        [SerializeField] private float rebaseSpeed = 0.5f;
+        [Tooltip("Grace after a provisional start before the old simulator's samples can cancel it, in seconds.")]
+        [SerializeField] private float abortGrace = 0.08f;
+        [Tooltip("Longest the drawn ball may be projected forward, in seconds. Past this the stream is " +
+                 "treated as stale, and no provisional start is made from it.")]
+        [SerializeField] private float maxPresentHorizon = 0.25f;
+        [Tooltip("Host: how long the guest may go silent while simulating before the host takes the ball, " +
+                 "in seconds.")]
+        [SerializeField] private float silenceTakeover = 0.5f;
+        [Tooltip("Host: how long the guest may keep simulating a ball that is deep in a Red lane, in seconds.")]
+        [SerializeField] private float maxOverstay = 0.15f;
+
+        [Header("Touch claims (lane authority)")]
+        [Tooltip("How close one of this player's own figures must come to a ball they are only DRAWING " +
+                 "before they claim its simulation, in metres. Facing rows reach a few centimetres past " +
+                 "the lane boundary, and without a claim a touch there waited a round trip.")]
+        [SerializeField] private float claimSkin = 0.008f;
+        [Tooltip("How long the simulating machine waits for its own figures to leave the ball before it " +
+                 "lets a claim lapse, in seconds.")]
+        [SerializeField] private float claimWindow = 0.12f;
+        [Tooltip("After a claim that came to nothing, how long before this machine may claim again, in " +
+                 "seconds — so two figures on one ball cannot pass it back and forth every frame.")]
+        [SerializeField] private float claimCooldown = 0.3f;
 
         [Header("Temporary diagnostics")]
-        [Tooltip("Log stream health every two seconds on the machine drawing the mirrored ball.")]
+        [Tooltip("Log stream and authority health every two seconds.")]
         [SerializeField] private bool logStreamStats = true;
 
         private BallController ball;
         private Rigidbody body;
         private SphereCollider sphere;
+        private MatchManager match;
 
         /// <summary>World radius of the ball.</summary>
         private float ballRadius = 0.02f;
 
         private BallStream stream;
+        private BallLanes lanes;
 
         /// <summary>Whether THIS machine is running the ball's physics right now.</summary>
         private bool simulating = true;
@@ -64,11 +132,51 @@ namespace TableFootball.Net
         /// <summary>Set by <see cref="BallController.Teleported"/>; the next sample carries the flag.</summary>
         private bool pendingTeleport;
 
-        /// <summary>The simulation term. Constant until authority can change hands.</summary>
-        private uint epoch;
+        // ── authority state ──
+        private uint latestEpoch;
+        private Team latestAuthority = Team.Red;
+        private bool latestEpochSampleSeen;
+        private bool provisional;
+        private uint provisionalFromEpoch;
+        private double provisionalStart;
+        private float provisionalStartRealtime;
+        private Vector3 provisionalPos, provisionalVel;
+        private float inOtherLaneSince = -1f;
+        private bool provisionalClaim;
+        private bool claimPending;
+        private float claimDeadline;
+        private float claimCooldownUntil;
+        private BallSampleFlags termFlags;
+        private float termFlagsUntil;
 
+        // ── host referee ──
+        private GoalJudge goalJudge;
+        private AuthorityValidator validator;
+        private Bounds tableBounds;
+        private BallSample prevGuestSample;
+        private bool hasPrevGuestSample;
+        private float lastGuestSampleRealtime;
+
+        /// <summary>The host's lane-authority switch, so both machines run the same mode.</summary>
+        private readonly NetworkVariable<bool> netLaneAuthority = new(
+            false,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+
+        private bool LaneMode => netLaneAuthority.Value;
+
+        /// <summary>How far past a lane boundary the other team's figures can reach — the only band in
+        /// which a touch claim means anything. The measured reach is approximate, hence the margin.</summary>
+        private float ClaimBand => (lanes != null ? lanes.WorstOverlap : 0f) + 0.02f;
+        private static Team Me => OnlineMatchDirector.LocalTeam;
+        private static Team Other => Me == Team.Red ? Team.Blue : Team.Red;
+
+        // ── diagnostics ──
         private int seenClockSnaps = -1;
         private float nextStatsLog;
+        private int statFrames, statHandoffs, statTakeovers, statProvisional, statConfirmed, statRebases,
+                    statAborts, statForced, statGoalsJudged, statClaims;
+        private string lastForceReason = string.Empty;
 
         /// <summary>
         /// How far outside the ball's own surface a local rod counts as touching it, in metres. The
@@ -92,12 +200,16 @@ namespace TableFootball.Net
         /// land on a moment the player has already watched go by.</summary>
         private const float StaleImpactSeconds = 0.35f;
 
+        /// <summary>How long a forced or reset term marks its samples, so a guest that missed the
+        /// reliable message still learns of it from the stream.</summary>
+        private const float TermFlagSeconds = 0.5f;
+
         /// <summary>Reused by the touch test so it never allocates.</summary>
         private readonly Collider[] touchResults = new Collider[8];
 
         /// <summary>
         /// When the guest predicted its own hits, newest last. Each entry is waiting to cancel one
-        /// relayed impact from the host — see <see cref="BallImpactRpc"/>.
+        /// relayed impact — see <see cref="BallImpactRpc"/>.
         /// </summary>
         private readonly List<float> predictedImpacts = new List<float>();
 
@@ -111,8 +223,8 @@ namespace TableFootball.Net
         /// A cosmetic both players look at the whole match has to be one ball, not two — each player
         /// seeing their own would make every shot look different on the two screens, and a skin with
         /// a trail would disagree about where the trail is. The host owns it for the same reason it
-        /// owns the ball's physics: it is the machine whose answer is already authoritative, so
-        /// nothing has to be negotiated.
+        /// owns the table: it is the machine whose answer is already authoritative, so nothing has to
+        /// be negotiated.
         ///
         /// Server-written, everyone-read, and a fixed string rather than a free one because Netcode
         /// needs a bounded size on the wire. Catalogue ids are short by design ("ball.golden"); an id
@@ -159,9 +271,8 @@ namespace TableFootball.Net
 
             ApplyNetSkin();
 
-            // A leftover NetworkTransform would go on writing this transform every frame on the guest.
-            // The sample stream still wins (it draws later in the frame), but the two are doing one job
-            // twice and the stale one costs bandwidth — say so rather than leave it silently.
+            // A leftover NetworkTransform would go on writing this transform every frame on the guest,
+            // fighting the stream — say so rather than leave it silently.
             if (GetComponent<Unity.Netcode.Components.NetworkTransform>() != null)
             {
                 Debug.LogWarning($"{name}: still carries a NetworkTransform. The ball is synced by " +
@@ -169,15 +280,50 @@ namespace TableFootball.Net
                                  "NetworkTransform, from the Ball.", this);
             }
 
+            match = FindAnyObjectByType<MatchManager>();
+            var table = FindAnyObjectByType<TableReferences>();
+            lanes = BallLanes.Build(table, ballRadius, transform.position.y);
+
             stream = new BallStream(body, ballRadius, ball.WallRetention, maxExtrapolation,
-                                    errorSnapDistance, errorDecay);
-            epoch = 0;
+                                    correctionSnapDistance, correctionBlendTime, bufferMin, bufferMax,
+                                    bufferCoverage);
+
+            latestEpoch = 0;
+            latestAuthority = Team.Red;
+            latestEpochSampleSeen = false;
+            provisional = false;
+            provisionalClaim = false;
+            claimPending = false;
+            claimCooldownUntil = 0f;
+            inOtherLaneSince = -1f;
             seenClockSnaps = -1;
+
+            // Both machines can simulate now, so both relay what their simulation hears and both mark
+            // their placed balls; each handler checks whether this machine is the one simulating.
+            ball.Impact += OnLocalImpact;
+            ball.Teleported += OnTeleported;
 
             if (IsServer)
             {
-                ball.Impact += OnLocalImpact;
-                ball.Teleported += OnTeleported;
+                netLaneAuthority.Value = laneAuthority && lanes.Valid;
+
+                goalJudge = new GoalJudge(ballRadius);
+                tableBounds = MeasureTable(table);
+                // "Deep" in a Red lane starts past the band Blue's figures can reach: inside it the guest
+                // may be simulating legitimately, off a touch claim.
+                validator = new AuthorityValidator(ball.MaxSpeed, tableBounds, lanes,
+                                                   laneHysteresis + ClaimBand, maxOverstay);
+                hasPrevGuestSample = false;
+
+                // The referee takes the ball back whenever play is reset, so every kick-off starts on
+                // the host whatever was happening when the goal went in.
+                if (match != null)
+                {
+                    match.GoalScored += OnHostGoal;
+                    match.MatchRestarted += OnHostReset;
+                    match.KickedOff += OnHostReset;
+                }
+
                 SetSimulating(true);
             }
             else
@@ -201,10 +347,21 @@ namespace TableFootball.Net
             ball.Impact -= OnLocalImpact;
             ball.Teleported -= OnTeleported;
 
+            if (match != null)
+            {
+                match.GoalScored -= OnHostGoal;
+                match.MatchRestarted -= OnHostReset;
+                match.KickedOff -= OnHostReset;
+            }
+
             // Hand the ball back to local physics on both machines, or the local match after an online
             // one starts with a ball nothing on the table can move.
+            ball.EndSimulating();
             SetSimulating(true);
 
+            provisional = false;
+            provisionalClaim = false;
+            claimPending = false;
             stream?.Reset();
             predictedImpacts.Clear();
             touchingLocalRod = false;
@@ -239,6 +396,50 @@ namespace TableFootball.Net
             body.interpolation = RigidbodyInterpolation.None;
         }
 
+        /// <summary>Starts simulating mid-play from a known state.</summary>
+        private void BeginSimulatingAt(Vector3 pos, Quaternion rot, Vector3 vel, Vector3 angVel, Team? lastTouch)
+        {
+            SetSimulating(true);
+            transform.SetPositionAndRotation(pos, rot);
+            body.position = pos;
+            body.rotation = rot;
+            body.linearVelocity = vel;
+            body.angularVelocity = angVel;
+            ball.BeginSimulatingFrom(vel, lastTouch);
+            inOtherLaneSince = -1f;
+            pendingTeleport = false;
+        }
+
+        /// <summary>Stops simulating; the ball is drawn from <paramref name="seed"/> on until the other
+        /// machine's samples arrive, if one is given.</summary>
+        private void StopSimulating(BallSample? seed)
+        {
+            ball.EndSimulating();
+            SetSimulating(false);
+            inOtherLaneSince = -1f;
+
+            if (seed.HasValue)
+            {
+                stream.Seed(seed.Value);
+            }
+        }
+
+        /// <summary>This machine's ball as a sample, before anything changes its body.</summary>
+        private BallSample Snapshot(double time)
+        {
+            return new BallSample
+            {
+                Time = time,
+                Pos = body.position,
+                Vel = body.isKinematic ? Vector3.zero : body.linearVelocity,
+                AngVel = body.isKinematic ? Vector3.zero : body.angularVelocity,
+                Rot = body.rotation,
+                Epoch = latestEpoch,
+                AuthorityTeam = (byte)Me,
+                LastTouch = BallSample.Encode(ball.LastTouchTeam),
+            };
+        }
+
         private void OnSkinChanged(FixedString64Bytes previous, FixedString64Bytes current)
         {
             ApplyNetSkin();
@@ -267,17 +468,23 @@ namespace TableFootball.Net
             }
         }
 
+        /// <summary>Only a ball simulated here is "placed" here: the drawn copy is reset too when the
+        /// mirrored MatchManager resets, and flagging that would make this machine's next real sample a
+        /// spurious snap.</summary>
         private void OnTeleported()
         {
-            pendingTeleport = true;
+            if (simulating)
+            {
+                pendingTeleport = true;
+            }
         }
 
-        // ── sending ────────────────────────────────────────────────────────────────────────────────
+        // ── sending, and handing off ───────────────────────────────────────────────────────────────
 
         /// <summary>
-        /// The simulating machine streams the ball every physics step. Stamped with the step's own time
-        /// on the shared clock, so several steps run back to back at the start of one frame keep their
-        /// true spacing on the other side.
+        /// The simulating machine streams the ball every physics step, stamped with the step's own
+        /// time on the shared clock — so several steps run back to back at the start of one frame keep
+        /// their true spacing on the other side — then checks whether the ball has left its lanes.
         /// </summary>
         private void FixedUpdate()
         {
@@ -286,24 +493,136 @@ namespace TableFootball.Net
                 return;
             }
 
+            // Until the shared clock is known this machine cannot say when anything happened.
+            if (!NetClock.Synced)
+            {
+                return;
+            }
+
             var flags = BallSampleFlags.None;
             if (pendingTeleport) flags |= BallSampleFlags.Teleport;
             if (ball.IsBeingCarried) flags |= BallSampleFlags.Carried;
+            if (provisional) flags |= BallSampleFlags.Provisional;
+            if (Time.unscaledTime < termFlagsUntil) flags |= termFlags;
             pendingTeleport = false;
 
-            var sample = new BallSample
-            {
-                Time = NetClock.SharedFixedNow,
-                Pos = body.position,
-                Vel = body.isKinematic ? Vector3.zero : body.linearVelocity,
-                AngVel = body.isKinematic ? Vector3.zero : body.angularVelocity,
-                Rot = body.rotation,
-                Epoch = epoch,
-                AuthorityTeam = (byte)OnlineMatchDirector.LocalTeam,
-                Flags = flags,
-            };
-
+            BallSample sample = Snapshot(NetClock.SharedFixedNow);
+            sample.Flags = flags;
             BallSampleRpc(sample);
+
+            if (LaneMode && !provisional)
+            {
+                CheckHandoff(sample);
+            }
+        }
+
+        /// <summary>
+        /// Hands the ball to the other player once it is a little way into their lane, has stayed there
+        /// for a moment, and nothing here has touched it for a moment — mid-gap, where no figure on
+        /// either side can reach it, so the trip it takes to arrive changes nothing.
+        /// </summary>
+        private void CheckHandoff(BallSample current)
+        {
+            if (match == null || !match.PlayLive || ball.IsBeingCarried)
+            {
+                inOtherLaneSince = -1f;
+                claimPending = false;
+                return;
+            }
+
+            // A figure of this machine's own still on the ball counts as contact even before the
+            // collision registers a touch — that touch is this player's to play, here. Wider than the
+            // claim distance, so a ball just claimed is not handed straight back while the claiming
+            // figure hovers at the edge of it, to be claimed again a moment later.
+            bool ownContact = Time.time - ball.LastTouchTime < ownContactDwell
+                              || RodWithin(body.position, claimSkin * 1.5f, Me) != null;
+
+            // The other player's figure is on the ball: let it go the moment ours is off it.
+            if (claimPending)
+            {
+                if (Time.unscaledTime > claimDeadline)
+                {
+                    claimPending = false;
+                }
+                else if (!ownContact)
+                {
+                    claimPending = false;
+                    HandOff(Other, current);
+                    return;
+                }
+            }
+
+            Team owner = lanes.OwnerAt(body.position, out float depth);
+            if (owner == Me || depth < laneHysteresis || ownContact)
+            {
+                inOtherLaneSince = -1f;
+                return;
+            }
+
+            float now = Time.fixedUnscaledTime;
+            if (inOtherLaneSince < 0f)
+            {
+                inOtherLaneSince = now;
+                return;
+            }
+
+            if (now - inOtherLaneSince >= handoffDwell)
+            {
+                HandOff(owner, current);
+            }
+        }
+
+        private void HandOff(Team to, BallSample current)
+        {
+            claimPending = false;
+
+            BallSample handoff = current;
+            handoff.Epoch = latestEpoch + 1;
+            handoff.AuthorityTeam = (byte)to;
+            handoff.Flags = BallSampleFlags.Handoff;
+
+            latestEpoch = handoff.Epoch;
+            latestAuthority = to;
+            latestEpochSampleSeen = false;
+
+            StopSimulating(handoff);
+
+            if (IsServer)
+            {
+                // The guest's real path starts where the host's ended; the silence clock starts now.
+                prevGuestSample = handoff;
+                hasPrevGuestSample = true;
+                lastGuestSampleRealtime = Time.unscaledTime;
+                validator.Reset();
+            }
+
+            BallHandoffRpc(handoff);
+            statHandoffs++;
+        }
+
+        /// <summary>
+        /// The other player's figure is on the ball this machine is simulating, in the band where both
+        /// teams' figures reach. Handed over as soon as this machine's own figures are off it (see
+        /// <see cref="CheckHandoff"/>), through the ordinary hand over, so the claimant's provisional
+        /// start is confirmed exactly as a lane crossing's would be. Reliable: one per claim.
+        /// </summary>
+        [Rpc(SendTo.NotMe)]
+        private void ClaimRpc(uint epoch, RpcParams rpcParams = default)
+        {
+            if (!LaneMode || !FromOtherPlayer(rpcParams) || !simulating || provisional || epoch != latestEpoch + 1)
+            {
+                return;
+            }
+
+            // Only where the claimant's figures can actually reach. Anywhere deeper is a claim no rod
+            // could make, so a modified client cannot pull the ball across the table with it.
+            if (lanes.OwnerAt(body.position, out float depth) == Me && depth > ClaimBand)
+            {
+                return;
+            }
+
+            claimPending = true;
+            claimDeadline = Time.unscaledTime + claimWindow;
         }
 
         /// <summary>
@@ -312,27 +631,429 @@ namespace TableFootball.Net
         /// followed by a jump. NotMe, so the same call works whichever machine is simulating.
         /// </summary>
         [Rpc(SendTo.NotMe, Delivery = RpcDelivery.Unreliable)]
-        private void BallSampleRpc(BallSample sample, RpcParams rpcParams = default)
+        private void BallSampleRpc(BallSample s, RpcParams rpcParams = default)
         {
-            // Only the simulating machine may move the ball. Today that is always the host.
-            if (simulating || rpcParams.Receive.SenderClientId != NetworkManager.ServerClientId)
+            // Until the shared clock is known, arrival times cannot be compared with sample times.
+            if (stream == null || !NetClock.Synced || !FromOtherPlayer(rpcParams))
             {
                 return;
             }
 
-            if (sample.Epoch < epoch)
+            double now = NetClock.SharedNow;
+
+            if (!LaneMode)
+            {
+                if (!simulating && s.Epoch >= latestEpoch)
+                {
+                    stream.Add(s, now);
+                }
+
+                return;
+            }
+
+            // A term the host forced or reset outranks whatever the guest was doing, even if the
+            // reliable message saying so has not landed yet.
+            if (!IsServer && s.Epoch > latestEpoch &&
+                (s.Has(BallSampleFlags.Forced) || s.Has(BallSampleFlags.Reset)))
+            {
+                ApplyHostTerm(s.Epoch);
+            }
+
+            // While starting provisionally, the old simulator's samples are still drawn from (in case
+            // of an abort) — and are the evidence for one: a late sample showing the ball NOT in this
+            // player's lane means it never came, so the provisional start is cancelled.
+            if (provisional && s.Epoch == provisionalFromEpoch)
+            {
+                // Still proof of life: an abort hands the host straight back to watching the guest.
+                if (IsServer) lastGuestSampleRealtime = Time.unscaledTime;
+
+                stream.Add(s, now);
+
+                // Not for a touch claim: the ball is MEANT to be in the other lane then, and the claim
+                // is settled by the hand over arriving or by the timeout in Update.
+                if (!provisionalClaim && !s.Has(BallSampleFlags.Handoff) && s.Time > provisionalStart + abortGrace &&
+                    lanes.OwnerAt(s.Pos, out _) != Me)
+                {
+                    AbortProvisional();
+                }
+
+                return;
+            }
+
+            // Only the current term's simulator is drawn, and never while simulating here — a newer
+            // term from the other machine is their provisional start, which counts once handed over.
+            if (simulating || s.Epoch != latestEpoch)
             {
                 return;
             }
 
-            // Until the shared clock is known, arrival times cannot be compared with sample times —
-            // and lateness measured against a clock that is about to jump would poison the buffer.
-            if (!NetClock.Synced)
+            if (IsServer && !WatchGuestSample(s))
             {
                 return;
             }
 
-            stream.Add(sample, NetClock.SharedNow);
+            if (stream.Add(s, now))
+            {
+                latestEpochSampleSeen = true;
+            }
+        }
+
+        /// <summary>
+        /// The hand over: reliable, because exactly one of them is sent per term and losing it would
+        /// leave nobody simulating.
+        /// </summary>
+        [Rpc(SendTo.NotMe)]
+        private void BallHandoffRpc(BallSample s, RpcParams rpcParams = default)
+        {
+            if (!LaneMode || stream == null || !FromOtherPlayer(rpcParams) || s.AuthorityTeam != (byte)Me)
+            {
+                return;
+            }
+
+            if (IsServer)
+            {
+                // Only the guest's own term can be handed back, and only to the very next one.
+                bool expected = (latestAuthority == Team.Blue && s.Epoch == latestEpoch + 1)
+                                || (provisional && s.Epoch == latestEpoch);
+                if (!expected)
+                {
+                    return;
+                }
+
+                if (!tableBounds.Contains(s.Pos))
+                {
+                    HostTakeTerm(BallSampleFlags.Forced, "hand over placed the ball off the table");
+                    return;
+                }
+
+                s.Vel = Vector3.ClampMagnitude(s.Vel, ball.MaxSpeed);
+            }
+
+            double now = NetClock.SharedNow;
+
+            if (provisional && s.Epoch == latestEpoch)
+            {
+                ConfirmProvisional(s, now);
+                return;
+            }
+
+            if (!simulating && s.Epoch > latestEpoch)
+            {
+                latestEpoch = s.Epoch;
+                latestAuthority = Me;
+                latestEpochSampleSeen = true;
+
+                stream.ProjectState(s, (float)(now - s.Time), out Vector3 p, out Vector3 v);
+                BeginSimulatingAt(p, s.Rot, v, s.AngVel, s.LastTouchTeam);
+                statTakeovers++;
+            }
+        }
+
+        // ── provisional start ──────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Starts simulating the moment the ball THIS player sees enters their own lane, rather than
+        /// waiting a trip for the hand over. Without it, the first touch after the ball crosses into a
+        /// player's lane — which is most touches, since the lane boundary is barely outside a figure's
+        /// reach — would wait for the network.
+        /// </summary>
+        private void TryProvisional(double now, float horizon)
+        {
+            if (!CanStartProvisional(now, out BallSample newest))
+            {
+                return;
+            }
+
+            if (!stream.StateAt(now, horizon, out Vector3 p, out Vector3 v, out Quaternion r))
+            {
+                return;
+            }
+
+            if (lanes.OwnerAt(p, out float depth) != Me || depth < laneHysteresis)
+            {
+                return;
+            }
+
+            StartProvisional(now, p, v, r, newest, false);
+        }
+
+        /// <summary>
+        /// A touch claim: one of this player's own figures is on the ball they are only drawing, in the
+        /// band where both teams' figures reach past the lane boundary. Without it that touch was judged
+        /// on the other phone against a copy of the figure one trip old, and came back a full round trip
+        /// late — the ball sat still under the player's own foot, then jumped. Instead this machine starts
+        /// simulating at once, as for a lane crossing, and asks the other to hand over
+        /// (<see cref="ClaimRpc"/>), which it does as soon as its own figures are off the ball.
+        /// </summary>
+        private void TryClaim(double now, float horizon)
+        {
+            if (Time.unscaledTime < claimCooldownUntil || !CanStartProvisional(now, out BallSample newest))
+            {
+                return;
+            }
+
+            // In this player's own lane the ordinary provisional start decides; deep in the other
+            // lane no figure of theirs can reach.
+            if (lanes.OwnerAt(transform.position, out float depth) != Me && depth > ClaimBand)
+            {
+                return;
+            }
+
+            // Tested against the ball as drawn, which is the ball the player is aiming at. Not when an
+            // opponent's figure is on it too: the simulating machine would keep the ball for its own
+            // touch, the claim would time out, and the ball would snap back to where it was.
+            if (RodWithin(transform.position, claimSkin, Me) == null ||
+                RodWithin(transform.position, claimSkin, Other) != null)
+            {
+                return;
+            }
+
+            if (!stream.StateAt(now, horizon, out Vector3 p, out Vector3 v, out Quaternion r))
+            {
+                return;
+            }
+
+            StartProvisional(now, p, v, r, newest, true);
+            ClaimRpc(latestEpoch);
+            statClaims++;
+        }
+
+        private bool CanStartProvisional(double now, out BallSample newest)
+        {
+            newest = default;
+
+            if (provisional || simulating || latestAuthority == Me || !latestEpochSampleSeen)
+            {
+                return false;
+            }
+
+            if (match == null || !match.PlayLive || !stream.HasSamples)
+            {
+                return false;
+            }
+
+            // A scripted carry, or a stream gone quiet: nothing safe to start from.
+            newest = stream.Newest;
+            return !newest.Has(BallSampleFlags.Carried) && now - newest.Time <= maxPresentHorizon;
+        }
+
+        private void StartProvisional(double now, Vector3 p, Vector3 v, Quaternion r, in BallSample newest, bool claim)
+        {
+            provisionalFromEpoch = latestEpoch;
+            latestEpoch++;
+            latestAuthority = Me;
+            provisional = true;
+            provisionalClaim = claim;
+            provisionalStart = now;
+            provisionalStartRealtime = Time.unscaledTime;
+            provisionalPos = p;
+            provisionalVel = v;
+
+            BeginSimulatingAt(p, r, v, newest.AngVel, newest.LastTouchTeam);
+            statProvisional++;
+        }
+
+        /// <summary>
+        /// The hand over arrived for a term this machine already started. If the old simulator's state
+        /// agrees with where this one started, carry on — the player's touches since then stand.
+        /// Otherwise something touched the ball on the other side just before it crossed, and this
+        /// machine rebases onto the true state.
+        /// </summary>
+        private void ConfirmProvisional(BallSample handoff, double now)
+        {
+            provisional = false;
+            provisionalClaim = false;
+            statConfirmed++;
+
+            // Compare at the same moment: whichever of the two is earlier is carried to the later.
+            Vector3 theirs, theirsVel, mine, mineVel;
+            if (handoff.Time <= provisionalStart)
+            {
+                stream.ProjectState(handoff, (float)(provisionalStart - handoff.Time), out theirs, out theirsVel);
+                mine = provisionalPos;
+                mineVel = provisionalVel;
+            }
+            else
+            {
+                var start = new BallSample { Time = provisionalStart, Pos = provisionalPos, Vel = provisionalVel };
+                stream.ProjectState(start, (float)(handoff.Time - provisionalStart), out mine, out mineVel);
+                theirs = handoff.Pos;
+                theirsVel = handoff.Vel;
+            }
+
+            if ((theirs - mine).magnitude <= rebaseDistance && (theirsVel - mineVel).magnitude <= rebaseSpeed)
+            {
+                return;
+            }
+
+            stream.ProjectState(handoff, (float)(now - handoff.Time), out Vector3 p, out Vector3 v);
+            BeginSimulatingAt(p, handoff.Rot, v, handoff.AngVel, handoff.LastTouchTeam);
+            statRebases++;
+        }
+
+        /// <summary>The provisional start was wrong — the ball never came. Back to drawing.</summary>
+        private void AbortProvisional()
+        {
+            if (provisionalClaim)
+            {
+                claimCooldownUntil = Time.unscaledTime + claimCooldown;
+            }
+
+            provisional = false;
+            provisionalClaim = false;
+            latestEpoch = provisionalFromEpoch;
+            latestAuthority = Other;
+            latestEpochSampleSeen = true;
+            StopSimulating(null); // the stream still holds the other machine's samples
+            if (IsServer) lastGuestSampleRealtime = Time.unscaledTime;
+            statAborts++;
+        }
+
+        // ── the host as referee ────────────────────────────────────────────────────────────────────
+
+        private void OnHostGoal(Team scorer) => HostTakeTerm(BallSampleFlags.Reset, null);
+
+        private void OnHostReset() => HostTakeTerm(BallSampleFlags.Reset, null);
+
+        /// <summary>
+        /// The host takes the ball for a new term, overriding whatever the guest is doing: at every goal
+        /// and kick-off, and when the guest goes silent or fails validation. Two epochs on, so the term
+        /// outranks any provisional start the guest may have made in the meantime.
+        /// </summary>
+        private void HostTakeTerm(BallSampleFlags reason, string why)
+        {
+            if (!IsServer || !LaneMode || stream == null)
+            {
+                return;
+            }
+
+            latestEpoch += 2;
+            latestAuthority = Team.Red;
+            latestEpochSampleSeen = false;
+            provisional = false;
+            provisionalClaim = false;
+            claimPending = false;
+            termFlags = reason;
+            termFlagsUntil = Time.unscaledTime + TermFlagSeconds;
+
+            if (!simulating)
+            {
+                double now = NetClock.SharedNow;
+                if (stream.HasSamples && stream.StateAt(now, PresentHorizon(), out Vector3 p, out Vector3 v,
+                                                        out Quaternion r))
+                {
+                    BeginSimulatingAt(p, r, v, stream.Newest.AngVel, stream.Newest.LastTouchTeam);
+                }
+                else
+                {
+                    BeginSimulatingAt(body.position, body.rotation, Vector3.zero, Vector3.zero, null);
+                }
+            }
+
+            validator.Reset();
+            hasPrevGuestSample = false;
+            ForceAuthorityRpc(latestEpoch);
+
+            if (reason == BallSampleFlags.Forced)
+            {
+                statForced++;
+                lastForceReason = why ?? string.Empty;
+                Debug.LogWarning($"[BallAuthority] host took the ball back: {why}");
+            }
+        }
+
+        [Rpc(SendTo.NotServer)]
+        private void ForceAuthorityRpc(uint epoch)
+        {
+            ApplyHostTerm(epoch);
+        }
+
+        /// <summary>Guest: the host has started a new term. Whatever this machine was simulating stops.</summary>
+        private void ApplyHostTerm(uint epoch)
+        {
+            // The host's terms always skip two epochs, so they outrank a provisional start here too.
+            if (!LaneMode || epoch <= latestEpoch)
+            {
+                return;
+            }
+
+            bool wasSimulating = simulating;
+            BallSample seed = Snapshot(NetClock.SharedNow);
+
+            provisional = false;
+            provisionalClaim = false;
+            claimPending = false;
+            latestEpoch = epoch;
+            latestAuthority = Team.Red;
+            latestEpochSampleSeen = false;
+
+            if (wasSimulating)
+            {
+                StopSimulating(seed);
+            }
+        }
+
+        /// <summary>
+        /// Host: checks one sample of the guest's simulation and referees it. False when the sample
+        /// ended the guest's term (a goal, or a failed check) and should not be drawn.
+        /// </summary>
+        private bool WatchGuestSample(in BallSample s)
+        {
+            lastGuestSampleRealtime = Time.unscaledTime;
+
+            if (validator.Check(s, NetClock.SharedNow))
+            {
+                HostTakeTerm(BallSampleFlags.Forced, validator.LastReason);
+                return false;
+            }
+
+            if (hasPrevGuestSample && !s.Has(BallSampleFlags.Teleport) && match != null && match.PlayLive &&
+                goalJudge.Crossed(prevGuestSample.Pos, s.Pos, out Team scorer))
+            {
+                hasPrevGuestSample = false;
+                statGoalsJudged++;
+
+                // GoalScored takes the ball back for the kick-off (OnHostGoal) and the director relays
+                // the goal to the guest, exactly as for a goal on the host's own trigger.
+                match.ScoreGoal(scorer);
+                return false;
+            }
+
+            prevGuestSample = s;
+            hasPrevGuestSample = true;
+            return true;
+        }
+
+        private bool FromOtherPlayer(RpcParams rpcParams)
+        {
+            bool fromHost = rpcParams.Receive.SenderClientId == NetworkManager.ServerClientId;
+            return IsServer ? !fromHost : fromHost;
+        }
+
+        /// <summary>The playing area plus the goal mouths, generously — for spotting a ball claimed to be
+        /// somewhere it cannot be, not for refereeing.</summary>
+        private Bounds MeasureTable(TableReferences table)
+        {
+            var b = new Bounds(transform.position, Vector3.zero);
+            if (table != null)
+            {
+                foreach (RodController rod in table.RedRods) Encapsulate(ref b, rod);
+                foreach (RodController rod in table.BlueRods) Encapsulate(ref b, rod);
+            }
+
+            b.Encapsulate(transform.position + Vector3.down * 0.15f);
+            b.Encapsulate(transform.position + Vector3.up * 0.3f);
+            b.Expand(new Vector3(0.5f, 0f, 0.5f));
+            return b;
+        }
+
+        private static void Encapsulate(ref Bounds b, RodController rod)
+        {
+            if (rod == null) return;
+            foreach (Collider c in rod.GetComponentsInChildren<Collider>())
+            {
+                if (c != null) b.Encapsulate(c.bounds);
+            }
         }
 
         // ── drawing ────────────────────────────────────────────────────────────────────────────────
@@ -356,10 +1077,25 @@ namespace TableFootball.Net
             }
 
             double now = NetClock.SharedNow;
-            stream.UpdateDelay(now);
+            double renderTime;
+            float horizon;
 
-            if (stream.Sample(now - stream.RenderDelay, Time.unscaledDeltaTime,
-                              out Vector3 pos, out _, out Quaternion rot))
+            if (LaneMode)
+            {
+                // The present: the ball where the other player's simulation has it now, as far as can
+                // be told. A provisional start begins from exactly this picture.
+                renderTime = now;
+                horizon = PresentHorizon();
+            }
+            else
+            {
+                stream.UpdateDelay(now);
+                renderTime = now - stream.RenderDelay;
+                horizon = maxExtrapolation;
+            }
+
+            if (stream.Sample(renderTime, Time.unscaledDeltaTime, horizon, out Vector3 pos, out _,
+                              out Quaternion rot))
             {
                 // Both the transform (what is drawn) and the kinematic body (what physics queries such
                 // as the own-kick touch test see) — physics does not pick up transform writes until its
@@ -369,13 +1105,67 @@ namespace TableFootball.Net
                 body.rotation = rot;
             }
 
-            PredictOwnImpact();
-            LogStreamStats();
+            if (LaneMode)
+            {
+                TryProvisional(now, horizon);
+                TryClaim(now, horizon);
+            }
+
+            if (!simulating)
+            {
+                PredictOwnImpact();
+            }
         }
 
-        /// <summary>TEMPORARY: stream health every two seconds, to confirm the stutter is gone and to
-        /// tune the buffer. Remove once Phase A is confirmed on device.</summary>
-        private void LogStreamStats()
+        private void Update()
+        {
+            if (!IsSpawned || stream == null)
+            {
+                return;
+            }
+
+            statFrames++;
+
+            if (LaneMode)
+            {
+                // A claim is answered within one round trip plus however long the other player's own
+                // figure stays on the ball; a lane crossing waits for the other side's hand over.
+                float limit = provisionalClaim
+                    ? Mathf.Max(0.15f, RttSeconds() + claimWindow + 0.05f)
+                    : Mathf.Max(0.3f, RttSeconds() * 2f + 0.1f);
+                if (simulating && provisional && Time.unscaledTime - provisionalStartRealtime > limit)
+                {
+                    AbortProvisional();
+                }
+
+                if (IsServer && !simulating && latestAuthority == Team.Blue &&
+                    Time.unscaledTime - lastGuestSampleRealtime > silenceTakeover)
+                {
+                    HostTakeTerm(BallSampleFlags.Forced, "guest went silent");
+                }
+            }
+
+            LogStats();
+        }
+
+        /// <summary>
+        /// How far ahead the drawn ball may be projected. It used to be a one-way trip plus 0.1 s, which
+        /// is shorter than the gaps a phone link really has: Wi-Fi power saving and Relay deliver samples
+        /// in bursts, and past the horizon the drawn ball FROZE until the next burst, then jumped — a fast
+        /// ball showed as a few still positions instead of motion. The projection stops at rods and
+        /// bounces off rails, so carrying it the whole way is the better guess.
+        /// </summary>
+        private float PresentHorizon() => maxPresentHorizon;
+
+        private float RttSeconds()
+        {
+            if (NetClock.Rtt > 0) return (float)NetClock.Rtt;
+            int ms = TransportRttMs();
+            return ms > 0 ? ms / 1000f : 0f;
+        }
+
+        /// <summary>TEMPORARY: stream and authority health every two seconds, on both machines.</summary>
+        private void LogStats()
         {
             if (!logStreamStats || Time.unscaledTime < nextStatsLog)
             {
@@ -384,36 +1174,80 @@ namespace TableFootball.Net
 
             nextStatsLog = Time.unscaledTime + 2f;
 
-            if (stream.Frames > 0)
+            // rtt = round trip measured by our own messages, which wait for a frame at each end;
+            // netRtt = the transport's own measurement, without that. The gap is frame-rate cost.
+            string timing = $"fps={statFrames / 2f:F0} rtt={NetClock.Rtt * 1000.0:F0}ms netRtt={TransportRttMs()}ms";
+
+            if (LaneMode)
             {
-                Debug.Log($"[BallStream] frames={stream.Frames} starved={stream.StarvedFrames} " +
+                Debug.Log($"[BallAuthority] me={Me} {(simulating ? (provisional ? "PROVISIONAL" : "SIMULATING") : "drawing")} " +
+                          $"term={latestEpoch} handoffs={statHandoffs} takeovers={statTakeovers} " +
+                          $"provisional={statProvisional} confirmed={statConfirmed} rebases={statRebases} " +
+                          $"aborts={statAborts} forced={statForced} goalsJudged={statGoalsJudged} " +
+                          $"claims={statClaims} frozen={stream.ClampedFrames} " +
+                          $"maxGap={stream.MaxGap * 1000.0:F0}ms {timing}" +
+                          (string.IsNullOrEmpty(lastForceReason) ? string.Empty : $" lastForce='{lastForceReason}'"));
+            }
+            else if (stream.Frames > 0)
+            {
+                // fastest = one-way trip (plus clock error); buffer = what the smoothing adds above it.
+                Debug.Log($"[BallStream] starved={stream.StarvedFrames} " +
                           $"received={stream.Received} lateDrops={stream.LateDrops} " +
                           $"depth={stream.DepthSum / stream.Frames * 1000.0:F0}ms " +
-                          $"delay={stream.RenderDelay * 1000.0:F0}ms rtt={NetClock.Rtt * 1000.0:F0}ms");
+                          $"delay={stream.RenderDelay * 1000.0:F0}ms " +
+                          $"fastest={stream.FastestLateness * 1000.0:F0}ms " +
+                          $"buffer={(stream.RenderDelay - stream.FastestLateness) * 1000.0:F0}ms {timing}");
+            }
+            else if (IsServer)
+            {
+                Debug.Log($"[BallHost] {timing}");
             }
 
-            stream.Frames = stream.StarvedFrames = stream.Received = stream.LateDrops = 0;
-            stream.DepthSum = 0;
+            statFrames = 0;
+            stream.Frames = stream.StarvedFrames = stream.Received = stream.LateDrops = stream.ClampedFrames = 0;
+            stream.DepthSum = stream.MaxGap = 0;
+        }
+
+        /// <summary>The transport's own round-trip measurement to the other player, in ms, or -1.</summary>
+        private int TransportRttMs()
+        {
+            if (NetworkManager == null ||
+                !(NetworkManager.NetworkConfig.NetworkTransport is Unity.Netcode.Transports.UTP.UnityTransport transport))
+            {
+                return -1;
+            }
+
+            ulong other = NetworkManager.ServerClientId;
+            if (IsServer)
+            {
+                other = ulong.MaxValue;
+                foreach (ulong id in NetworkManager.ConnectedClientsIds)
+                {
+                    if (id != NetworkManager.ServerClientId)
+                    {
+                        other = id;
+                        break;
+                    }
+                }
+
+                if (other == ulong.MaxValue) return -1;
+            }
+
+            return (int)transport.GetCurrentRtt(other);
         }
 
         // ── sounds ─────────────────────────────────────────────────────────────────────────────────
 
         /// <summary>
-        /// Sounds the guest's own kicks the moment they look like they happen, instead of a round trip
-        /// later.
+        /// Sounds this player's own kicks the moment they look like they happen while the OTHER machine
+        /// is simulating, instead of a round trip later. With lane authority that is rare — a player's
+        /// own touches are normally simulated here and sound for real — but it still covers the edge of
+        /// a lane, and the whole match with lane authority off.
         ///
-        /// The guest never simulates the ball, so no contact is generated on this machine and every
-        /// impact arrives relayed — a full round trip after the swing that caused it. For the
-        /// opponent's hits that is fine: they are somebody else's action and there is nothing to
-        /// compare the delay against. For the player's OWN kick it reads as input lag even when the
-        /// picture is right, because the ear is far better at spotting a late confirmation of your own
-        /// action than the eye is at spotting a late ball.
-        ///
-        /// So the guest guesses, but only about itself: it plays on the leading edge of its own rod
-        /// meeting the ball, matching the simulating machine, which raises its impact from
-        /// OnCollisionEnter and so also fires once per contact. Every guess is recorded, and
-        /// <see cref="BallImpactRpc"/> cancels one relayed impact against it, so a correct prediction
-        /// is heard exactly once and a wrong one never — it just expires unmatched.
+        /// It plays on the leading edge of this player's rod meeting the drawn ball, matching the
+        /// simulating machine, which raises its impact from OnCollisionEnter and so also fires once per
+        /// contact. Every guess is recorded, and <see cref="BallImpactRpc"/> cancels one relayed impact
+        /// against it, so a correct prediction is heard exactly once and a wrong one never.
         /// </summary>
         private void PredictOwnImpact()
         {
@@ -442,32 +1276,9 @@ namespace TableFootball.Net
         private bool TryFindOwnRodTouch(out float speed)
         {
             speed = 0f;
-            RodController rod = null;
-
-            int count = Physics.OverlapSphereNonAlloc(transform.position, ballRadius + TouchSkin,
-                                                      touchResults, ~0, QueryTriggerInteraction.Ignore);
-
-            for (int i = 0; i < count; i++)
-            {
-                Collider hit = touchResults[i];
-
-                // The ball's own collider is always in this list and is never a contact.
-                if (hit == null || hit.attachedRigidbody == body)
-                {
-                    continue;
-                }
-
-                RodController candidate = hit.GetComponentInParent<RodController>();
-
-                // Only this player's rods. The opponent's hits are their action, not ours, and
-                // guessing at them would just add wrong sounds to ones that already arrive correctly.
-                if (candidate != null && candidate.Team == OnlineMatchDirector.LocalTeam)
-                {
-                    rod = candidate;
-                    break;
-                }
-            }
-
+            // Only this player's rods. The opponent's hits are their action, not ours, and guessing at
+            // them would just add wrong sounds to ones that already arrive correctly.
+            RodController rod = RodWithin(transform.position, TouchSkin, Me);
             if (rod == null)
             {
                 return false;
@@ -487,10 +1298,37 @@ namespace TableFootball.Net
             return true;
         }
 
+        /// <summary>A rod of <paramref name="team"/> within <paramref name="skin"/> of a ball centred at
+        /// <paramref name="centre"/>, or null.</summary>
+        private RodController RodWithin(Vector3 centre, float skin, Team team)
+        {
+            int count = Physics.OverlapSphereNonAlloc(centre, ballRadius + skin, touchResults, ~0,
+                                                      QueryTriggerInteraction.Ignore);
+
+            for (int i = 0; i < count; i++)
+            {
+                Collider hit = touchResults[i];
+
+                // The ball's own collider is always in this list and is never a contact.
+                if (hit == null || hit.attachedRigidbody == body)
+                {
+                    continue;
+                }
+
+                RodController candidate = hit.GetComponentInParent<RodController>();
+                if (candidate != null && candidate.Team == team)
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
+        }
+
         /// <summary>Drops guesses never confirmed, so they cannot silence a later real hit.</summary>
         private void ExpirePredictions()
         {
-            float lifetime = Mathf.Max(MinPredictionLifetime, (float)NetClock.Rtt * PredictionLifetimeRtts);
+            float lifetime = Mathf.Max(MinPredictionLifetime, RttSeconds() * PredictionLifetimeRtts);
             float cutoff = Time.unscaledTime - lifetime;
 
             // Oldest first, so stopping at the first live entry is safe.
@@ -503,6 +1341,11 @@ namespace TableFootball.Net
         /// <summary>The simulating machine heard a contact itself; pass it on.</summary>
         private void OnLocalImpact(float strength, bool struckRod)
         {
+            if (!IsSpawned || !simulating)
+            {
+                return;
+            }
+
             BallImpactRpc(NetClock.SharedNow, strength, struckRod);
         }
 
@@ -521,7 +1364,7 @@ namespace TableFootball.Net
 
             if (struckRod)
             {
-                // This may confirm a hit the guest already sounded for itself — see
+                // This may confirm a hit this player already sounded for themselves — see
                 // PredictOwnImpact. Cancel it against the oldest outstanding guess rather than thumping
                 // twice for one kick. Only rod hits are ever predicted, so wall thuds always play.
                 ExpirePredictions();

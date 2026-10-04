@@ -160,33 +160,48 @@ def pitch_perfect(a, c):
 
 
 def neon_rave(a, c):
-    """Near-black with a glowing grid. Returns an emission map too — a 'glowing' line that only
-    exists in albedo is just a bright stripe, and reads as paint rather than light."""
-    bg = hexcol("#080810")
+    """Sound waves on a dark dance floor: soft neon rings rippling out from the centre spot, magenta
+    at one end of the pitch shading to cyan at the other, fading out before they reach the goals.
+
+    Redesigned from a full cyan-and-magenta grid, which put ~16 crossing glow lines over the whole
+    pitch: it read as lines plastered on lines, gave no single thing to look at, and competed with
+    the white pitch markings and the ball everywhere at once. This has ONE idea — the pulse of a
+    speaker — and a calm floor under it. The rings are thin, few and dim, nothing glows inside the
+    goal areas where the play is tightest, and there are no straight lines to fight the pitch
+    markings. Returns an emission map too, so the rings read as light rather than paint.
+    """
+    centre_a, centre_c = PITCH_LONG / 2, PITCH_SHORT / 2
+    da, dc = a - centre_a, c - centre_c
+    r = np.sqrt(da * da + dc * dc)
+    t = np.clip(a / PITCH_LONG, 0, 1)                   # 0 = one goal, 1 = the other
+
+    # Floor: deep indigo, a faint purple bloom under the centre, and a barely-there dot pattern so
+    # it reads as a lit club floor rather than a flat black void.
+    bg = hexcol("#0B0916")
     rgb = np.repeat(np.repeat(bg[None, None, :], a.shape[0], 0), a.shape[1], 1).copy()
-    emis = np.zeros_like(rgb)
+    bloom = np.clip(1.0 - r / 0.45, 0, 1) ** 2
+    rgb += bloom[..., None] * hexcol("#2A1240")[None, None, :] * 0.9
+    pitch = 0.04
+    pa, pc = (a % pitch) - pitch / 2, (c % pitch) - pitch / 2
+    dot = np.clip(1.0 - np.sqrt(pa * pa + pc * pc) / 0.0035, 0, 1)
+    rgb += dot[..., None] * hexcol("#2A2440")[None, None, :]
 
-    cyan = hexcol("#2BF0FF")
-    magenta = hexcol("#FF3BD0")
+    # The wave colour runs the length of the pitch, so each half has its own tint.
+    magenta, cyan = hexcol("#FF3BD0"), hexcol("#2BE6FF")
+    colour = magenta[None, None, :] * (1 - t[..., None]) + cyan[None, None, :] * t[..., None]
 
-    def glow_lines(t, count, colour, width, bloom):
-        p = (t * count) % 1.0
-        d = np.minimum(p, 1.0 - p) / count            # distance to nearest line, in t units
-        core = np.clip(1.0 - d / width, 0, 1)
-        halo = np.clip(1.0 - d / bloom, 0, 1) ** 2
-        strength = np.clip(core + 0.55 * halo, 0, 1)
-        return strength[..., None] * colour[None, None, :]
+    # Rings: few, thin and dim, each fainter than the one inside it.
+    spacing = 0.085
+    phase = (r % spacing) / spacing
+    d = np.minimum(phase, 1 - phase) * spacing           # metres to the nearest ring
+    core = np.clip(1.0 - d / 0.0022, 0, 1)
+    halo = np.clip(1.0 - d / 0.011, 0, 1) ** 2
+    fade = np.clip(1.0 - r / 0.58, 0, 1) ** 1.4          # gone before the goal areas
+    ring = (core * 0.9 + halo * 0.35) * fade * (r > 0.05)
+    lit = ring[..., None] * colour
 
-    across_lines = glow_lines(a / PITCH_LONG, 10, cyan, 0.0016, 0.010)
-    along_lines = glow_lines(c / PITCH_SHORT, 6, magenta, 0.0022, 0.013)
-
-    lit = np.clip(across_lines + along_lines, 0, 1)
-    rgb = np.clip(rgb + lit * 0.85, 0, 1)
-    emis = lit
-
-    shimmer = fbm2(a, c, 5.0, 2, 51)
-    rgb *= (1.0 + (shimmer[..., None] - 0.5) * 0.10)
-    return np.clip(rgb, 0, 1), np.clip(emis, 0, 1)
+    rgb = np.clip(rgb + lit * 0.75, 0, 1)
+    return rgb, np.clip(lit * 0.9, 0, 1)
 
 
 def chessboard(a, c):

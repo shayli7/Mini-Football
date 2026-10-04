@@ -1,345 +1,205 @@
 using System;
 using TableFootball.Net;
 using TableFootball.Progression;
-using TMPro;
+using TableFootball.UI.Toolkit;
 using UnityEngine;
-using UnityEngine.UI;
+using UnityEngine.UIElements;
 
 namespace TableFootball.UI
 {
     /// <summary>
-    /// Today's three quests, the level they feed, and how long the set has left.
+    /// Today's three quests, the level they feed, and how long the set has left. Built on UI Toolkit,
+    /// styled by <c>Resources/UI/Styles/Quests.uss</c>.
     ///
     /// A read-only screen on purpose: there is no Claim button anywhere in it. A claim step on a
     /// phone is a chore, and a quest left unclaimed overnight is a sour surprise — so quests bank
     /// themselves the moment they are cleared, in front of the player, on the result screen. This is
-    /// where they come to check, not to collect.
+    /// where they come to check, not to collect. A quest in progress shows the XP it will pay; a
+    /// cleared one shows DONE.
     ///
-    /// Laid out wide rather than tall, like <see cref="ProfileMenu"/>, because a landscape phone is
-    /// the shape this game is actually held in.
+    /// Left: the level as a ring and the day streak. Right: the three quests and, under them, the
+    /// bonus for clearing all three.
     /// </summary>
     public class QuestsMenu : MonoBehaviour
     {
-        private GameObject root;
-        private CanvasGroup group;
+        private const int StreakPips = 7;
 
-        private Transform cardHost;
-        private TextMeshProUGUI resetLabel;
-        private TextMeshProUGUI levelNumber;
-        private TextMeshProUGUI levelCaption;
-        private TextMeshProUGUI streakLabel;
-        private Image levelRing;
-        private Image xpFill;
-
-        private Transform slamPips;
-        private TextMeshProUGUI slamNote;
+        private VisualElement root;
+        private VisualElement questList;
+        private Label resetLabel, levelNumber, levelCaption, streakLabel, slamNote;
+        private UiRing ring;
+        private VisualElement streakRow;
+        private VisualElement slamPips;
+        private UiFrame slamRow;
 
         private float nextTick;
 
         /// <summary>Raised when the player backs out.</summary>
         public Action OnBack;
 
-        public bool IsOpen => root != null && root.activeSelf;
+        public bool IsOpen => root != null && root.style.display != DisplayStyle.None;
 
+        /// <summary><paramref name="canvasRoot"/> is the uGUI canvas the older screens hang off, unused
+        /// here and kept so the boot order in TableFootballUI does not change.</summary>
         public void Build(Transform canvasRoot)
         {
-            root = UIFactory.Child(canvasRoot, "QuestsMenu");
-            UIFactory.Stretch(UIFactory.Rt(root));
-            group = root.AddComponent<CanvasGroup>();
+            root = UiKit.El("screen quests", UiToolkitHost.Root, "Quests");
+            var sheet = Resources.Load<StyleSheet>("UI/Styles/Quests");
+            if (sheet != null) root.styleSheets.Add(sheet);
+            root.pickingMode = PickingMode.Position;
 
-            UIFactory.Backdrop(root.transform);
+            UiBackdrop.AddTo(root);
 
-            UIFactory.ScreenHeader(root.transform, "Daily Quests", () => OnBack?.Invoke());
+            BuildHeader();
+            BuildLevel();
+            BuildRight();
 
-            resetLabel = UIFactory.Text(root.transform, string.Empty, ArcadeTheme.FsCaption,
-                                        ArcadeTheme.InkMuted, display: false, bold: true,
-                                        upper: true, tracking: 6f);
-            var rrt = UIFactory.Rt(resetLabel.gameObject);
-            rrt.anchorMin = new Vector2(0f, 1f);
-            rrt.anchorMax = new Vector2(1f, 1f);
-            rrt.pivot = new Vector2(0.5f, 1f);
-            // Just under the header's title, as its subtitle.
-            float under = ArcadeTheme.Xl + ArcadeTheme.HeaderHeight;
-            rrt.offsetMin = new Vector2(0f, -(under + 26f));
-            rrt.offsetMax = new Vector2(0f, -(under + 4f));
-
-            var panel = UIFactory.Panel(root.transform, "QuestsPanel");
-            var prt = UIFactory.Rt(panel);
-            prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
-            prt.pivot = new Vector2(0.5f, 0.5f);
-            // Taller now the bottom of the screen no longer has to hold a Back button.
-            prt.sizeDelta = new Vector2(1180f, 520f);
-            prt.anchoredPosition = new Vector2(0f, -30f);
-
-            var fill = panel.transform.Find("Fill");
-            var row = UIFactory.Child(fill, "Row");
-            UIFactory.Stretch(UIFactory.Rt(row), 26f, 20f, 26f, 20f);
-            var h = row.AddComponent<HorizontalLayoutGroup>();
-            h.spacing = ArcadeTheme.Xl;
-            h.childForceExpandWidth = false;
-            h.childForceExpandHeight = true;
-            h.childControlWidth = true;
-            h.childControlHeight = true;
-
-            BuildLevelColumn(row.transform);
-            BuildQuestColumn(row.transform);
-
-            root.SetActive(false);
+            UiFonts.Apply(root);
+            UiKit.Show(root, false);
         }
 
-        // ---------- left: the level ----------
+        // ---------- build ----------
 
-        private void BuildLevelColumn(Transform parent)
+        private void BuildHeader()
         {
-            var column = UIFactory.Child(parent, "LevelColumn");
-            var le = column.AddComponent<LayoutElement>();
-            le.preferredWidth = 300f;
-            le.flexibleWidth = 0f;
+            var header = UiKit.El("q__header", root);
 
-            var v = column.AddComponent<VerticalLayoutGroup>();
-            v.spacing = ArcadeTheme.Sm;
-            v.childAlignment = TextAnchor.UpperCenter;
-            v.childForceExpandWidth = true;
-            v.childForceExpandHeight = false;
-            v.childControlWidth = true;
-            v.childControlHeight = true;
+            var back = UiKit.Frame("sq q__back", header);
+            back.Add(new UiIcon(UiIcon.Glyph.ChevronLeft, ArcadeTheme.Ink, 2.5f));
+            UiKit.OnTap(back, () => OnBack?.Invoke(), UiSound.Back);
 
-            var ringHolder = UIFactory.Child(column.transform, "Ring");
-            ringHolder.AddComponent<LayoutElement>().preferredHeight = 140f;
+            var box = UiKit.El("q__title-box", header);
+            var row = UiKit.El("q__title-row", box);
+            row.Add(new UiIcon(UiIcon.Glyph.Quests, ArcadeTheme.Pulse, 2f));
+            UiKit.Text("DAILY QUESTS", "q__title f-display", row);
+            UiKit.El("q__bar", box);
 
-            var ring = UIFactory.Child(ringHolder.transform, "RingArt");
-            var art = UIFactory.Rt(ring);
-            art.anchorMin = art.anchorMax = new Vector2(0.5f, 0.5f);
-            art.pivot = new Vector2(0.5f, 0.5f);
-            art.sizeDelta = new Vector2(136f, 136f);
-
-            Ring(ring.transform, "Track", ArcadeTheme.Line, 0f);
-            levelRing = Ring(ring.transform, "Fill", ArcadeTheme.Gold, 0f);
-            levelRing.type = Image.Type.Filled;
-            levelRing.fillMethod = Image.FillMethod.Radial360;
-            levelRing.fillOrigin = (int)Image.Origin360.Top;
-            levelRing.fillClockwise = true;
-            Ring(ring.transform, "Hole", ArcadeTheme.BgPanel, 10f);
-
-            levelNumber = UIFactory.Text(ring.transform, "1", ArcadeTheme.FsTitle * 1.05f,
-                                         ArcadeTheme.Gold, display: true, bold: true);
-            UIFactory.Stretch(UIFactory.Rt(levelNumber.gameObject), 0f);
-
-            levelCaption = UIFactory.Text(column.transform, string.Empty, ArcadeTheme.FsCaption,
-                                          ArcadeTheme.InkMuted, display: false, bold: true,
-                                          upper: false, tracking: 2f);
-            levelCaption.gameObject.AddComponent<LayoutElement>().preferredHeight = 22f;
-
-            var track = UIFactory.Child(column.transform, "XpTrack");
-            UIFactory.RoundedImage(track, ArcadeTheme.RadSm, ArcadeTheme.BgDeep, false);
-            track.AddComponent<LayoutElement>().preferredHeight = 12f;
-
-            var bar = UIFactory.Child(track.transform, "XpFill");
-            xpFill = UIFactory.RoundedImage(bar, ArcadeTheme.RadSm, ArcadeTheme.Gold, false);
-            xpFill.type = Image.Type.Filled;
-            xpFill.fillMethod = Image.FillMethod.Horizontal;
-            UIFactory.Stretch(UIFactory.Rt(bar), 1.5f);
-
-            streakLabel = UIFactory.Text(column.transform, string.Empty, ArcadeTheme.FsCaption,
-                                         ArcadeTheme.Gold, display: false, bold: true,
-                                         upper: true, tracking: 6f);
-            streakLabel.gameObject.AddComponent<LayoutElement>().preferredHeight = 24f;
+            var reset = UiKit.Frame("q__reset", header);
+            reset.Add(new UiIcon(UiIcon.Glyph.Clock, ArcadeTheme.InkMuted, 2f));
+            resetLabel = UiKit.Text(string.Empty, "q__reset-label f-display", reset);
         }
 
-        /// <summary>
-        /// A ring, faked as a disc with a smaller disc of the panel colour on top — the theme bakes
-        /// no annulus, and <see cref="ArcadeTheme.SpinnerRing"/> is a comet rather than a meter.
-        /// </summary>
-        private static Image Ring(Transform parent, string name, Color color, float inset)
+        private void BuildLevel()
         {
-            var go = UIFactory.Child(parent, name);
-            var img = go.AddComponent<Image>();
-            img.sprite = ArcadeTheme.Disc();
-            img.type = Image.Type.Simple;
-            img.color = color;
-            img.raycastTarget = false;
-            UIFactory.Stretch(UIFactory.Rt(go), inset);
-            return img;
+            var panel = UiKit.Frame("frame--panel q__level", root);
+
+            ring = new UiRing { Thickness = 14f, Fill = ArcadeTheme.Pulse, Track = ArcadeTheme.BgRaised };
+            ring.AddToClassList("q__ring");
+            levelNumber = UiKit.Text("1", "q__level-number f-display", ring);
+            UiKit.Text("LEVEL", "q__level-word f-display-semi", ring);
+            panel.Add(ring);
+
+            levelCaption = UiKit.Text(string.Empty, "q__level-caption f-display-semi", panel);
+
+            UiKit.El("q__rule", panel);
+
+            var streakHead = UiKit.El("q__streak-head", panel);
+            streakHead.Add(new UiIcon(UiIcon.Glyph.Flame, ArcadeTheme.Reward, 2f));
+            streakLabel = UiKit.Text(string.Empty, "q__streak-label f-display", streakHead);
+            streakRow = UiKit.El("q__pips", panel);
+            for (int i = 0; i < StreakPips; i++) UiKit.El("q__pip", streakRow);
         }
 
-        // ---------- right: the quests ----------
-
-        private void BuildQuestColumn(Transform parent)
+        private void BuildRight()
         {
-            var column = UIFactory.Child(parent, "QuestColumn");
-            column.AddComponent<LayoutElement>().flexibleWidth = 1f;
+            var right = UiKit.El("q__right", root);
+            questList = UiKit.El("q__list", right);
 
-            var v = column.AddComponent<VerticalLayoutGroup>();
-            v.spacing = ArcadeTheme.Sm;
-            v.childForceExpandWidth = true;
-            v.childForceExpandHeight = false;
-            v.childControlWidth = true;
-            v.childControlHeight = true;
-
-            cardHost = UIFactory.Child(column.transform, "Cards").transform;
-            var cv = cardHost.gameObject.AddComponent<VerticalLayoutGroup>();
-            cv.spacing = ArcadeTheme.Sm;
-            cv.childForceExpandWidth = true;
-            cv.childForceExpandHeight = false;
-            cv.childControlWidth = true;
-            cv.childControlHeight = true;
-            cardHost.gameObject.AddComponent<LayoutElement>().preferredHeight = 316f;
-
-            BuildSlamStrip(column.transform);
+            slamRow = UiKit.Frame("q__slam", right);
+            var tile = UiKit.Frame("q__slam-tile", slamRow);
+            tile.Add(new UiIcon(UiIcon.Glyph.Trophy, ArcadeTheme.Reward, 2f));
+            var words = UiKit.El("q__slam-words", slamRow);
+            UiKit.Text("CLEAR ALL THREE", "q__slam-title f-display", words);
+            slamNote = UiKit.Text(string.Empty, "q__slam-note f-display-semi", words);
+            slamPips = UiKit.El("q__slam-pips", slamRow);
+            var xp = UiKit.Frame("q__reward q__reward--slam", slamRow);
+            UiKit.Text("+" + QuestDefinition.SlamXp + " XP", "q__reward-label f-display", xp);
         }
 
-        private void BuildSlamStrip(Transform parent)
+        // ---------- rows ----------
+
+        /// <summary>The picture for a quest. Each is a glyph from the shared set; a quest keeps its picture
+        /// whether it is finished or not, so a cleared one is still recognisably the same quest.</summary>
+        private static UiIcon.Glyph GlyphFor(QuestId id)
         {
-            var strip = UIFactory.Child(parent, "Slam");
-            strip.AddComponent<LayoutElement>().preferredHeight = 52f;
-            UIFactory.RoundedImage(strip, ArcadeTheme.RadMd, ArcadeTheme.BgRaised, false);
-
-            var icon = UIFactory.Child(strip.transform, "Icon");
-            var irt = UIFactory.Rt(icon);
-            irt.anchorMin = irt.anchorMax = new Vector2(0f, 0.5f);
-            irt.pivot = new Vector2(0f, 0.5f);
-            irt.sizeDelta = new Vector2(44f, 44f);
-            irt.anchoredPosition = new Vector2(ArcadeTheme.Md, 0f);
-            QuestIcons.Glyph(icon.transform, default, true, 30f, ArcadeTheme.BgRaised);
-
-            slamNote = UIFactory.Text(strip.transform, string.Empty, ArcadeTheme.FsCaption,
-                                      ArcadeTheme.InkMuted, display: false, bold: true,
-                                      upper: true, tracking: 4f, align: TextAlignmentOptions.Left);
-            UIFactory.Stretch(UIFactory.Rt(slamNote.gameObject), 66f, 0f, 190f, 0f);
-
-            var pips = UIFactory.Child(strip.transform, "Pips");
-            var prt = UIFactory.Rt(pips);
-            prt.anchorMin = prt.anchorMax = new Vector2(1f, 0.5f);
-            prt.pivot = new Vector2(1f, 0.5f);
-            prt.sizeDelta = new Vector2(170f, 24f);
-            prt.anchoredPosition = new Vector2(-ArcadeTheme.Md, 0f);
-
-            var ph = pips.AddComponent<HorizontalLayoutGroup>();
-            ph.spacing = ArcadeTheme.Sm;
-            ph.childAlignment = TextAnchor.MiddleRight;
-            ph.childForceExpandWidth = false;
-            ph.childForceExpandHeight = false;
-            ph.childControlWidth = true;
-            ph.childControlHeight = true;
-            slamPips = pips.transform;
+            switch (id)
+            {
+                case QuestId.PlayThreeOnline: return UiIcon.Glyph.Globe;
+                case QuestId.FirstBlood: return UiIcon.Glyph.Bolt;
+                case QuestId.ScoreFive: return UiIcon.Glyph.Star;
+                case QuestId.CleanSheet: return UiIcon.Glyph.Shield;
+                case QuestId.BackToBack: return UiIcon.Glyph.Levels;
+                case QuestId.BeatFriend: return UiIcon.Glyph.TwoPlayers;
+                case QuestId.WinByThree: return UiIcon.Glyph.Trophy;
+                case QuestId.Comeback: return UiIcon.Glyph.Flame;
+                case QuestId.SuddenDeathWin: return UiIcon.Glyph.Clock;
+                case QuestId.BeatHardAi: return UiIcon.Glyph.Robot;
+                default: return UiIcon.Glyph.Quests;
+            }
         }
 
-        /// <summary>
-        /// One quest. The icon carries its own progress in the ring around it, so the bar underneath
-        /// is a second reading of the same fact rather than the only one — which is what makes the
-        /// card legible at a glance before any of it is read.
-        /// </summary>
-        private void BuildCard(int slot)
+        private static int Diamonds(QuestTier tier) => (int)tier + 1;
+
+        private void BuildRow(int slot)
         {
             QuestDefinition definition = DailyQuests.DefinitionAt(slot);
             bool done = DailyQuests.IsCompleteAt(slot);
             int progress = DailyQuests.ProgressAt(slot);
             Color tier = QuestIcons.TierColor(definition.Tier);
 
-            var card = UIFactory.Child(cardHost, "Quest_" + definition.Id);
-            card.AddComponent<LayoutElement>().preferredHeight = 100f;
-            UIFactory.RoundedImage(card, ArcadeTheme.RadMd,
-                                   done ? ArcadeTheme.BgRaised : ArcadeTheme.BgPanel, false);
+            var row = UiKit.Frame("q__row", questList);
+            row.OverrideEdge(done ? ArcadeTheme.Reward : ArcadeTheme.LineLit);
 
-            var border = UIFactory.Child(card.transform, "Border");
-            UIFactory.RoundedImage(border, ArcadeTheme.RadMd, done ? ArcadeTheme.Gold : ArcadeTheme.Line, false);
-            UIFactory.Stretch(UIFactory.Rt(border), 0f);
-            var inner = UIFactory.Child(card.transform, "Inner");
-            UIFactory.RoundedImage(inner, ArcadeTheme.RadMd,
-                                   done ? ArcadeTheme.BgRaised : ArcadeTheme.BgPanel, false);
-            UIFactory.Stretch(UIFactory.Rt(inner), 1.5f);
+            var tile = UiKit.Frame("q__tile", row);
+            tile.OverrideEdge(done ? ArcadeTheme.Reward : tier);
+            tile.Add(new UiIcon(GlyphFor(definition.Id), done ? ArcadeTheme.Reward : tier, 2.2f));
 
-            var iconHolder = UIFactory.Child(card.transform, "Icon");
-            var irt = UIFactory.Rt(iconHolder);
-            irt.anchorMin = irt.anchorMax = new Vector2(0f, 0.5f);
-            irt.pivot = new Vector2(0f, 0.5f);
-            irt.sizeDelta = new Vector2(76f, 76f);
-            irt.anchoredPosition = new Vector2(ArcadeTheme.Md, 0f);
-            QuestIcons.Disc(iconHolder.transform, definition.Id, definition.Tier,
-                            DailyQuests.Progress01At(slot), done, false, 72f);
+            var words = UiKit.El("q__words", row);
+            var top = UiKit.El("q__title-line", words);
+            UiKit.Text(definition.Title.ToUpperInvariant(), "q__quest-title f-display", top);
+            var diamonds = UiKit.El("q__diamonds", top);
+            for (int i = 0; i < Diamonds(definition.Tier); i++)
+            {
+                var d = UiKit.El("q__diamond", diamonds);
+                d.style.backgroundColor = tier;
+            }
 
-            var titleRow = UIFactory.Text(card.transform, definition.Title, ArcadeTheme.FsBody,
-                                          done ? ArcadeTheme.Gold : ArcadeTheme.Ink,
-                                          display: true, bold: true, upper: true, tracking: 2f,
-                                          align: TextAlignmentOptions.Left);
-            var tr = UIFactory.Rt(titleRow.gameObject);
-            tr.anchorMin = new Vector2(0f, 1f);
-            tr.anchorMax = new Vector2(1f, 1f);
-            tr.pivot = new Vector2(0.5f, 1f);
-            tr.offsetMin = new Vector2(104f, -36f);
-            tr.offsetMax = new Vector2(-190f, -14f);
-
-            var tierChip = UIFactory.Text(card.transform, definition.Tier.ToString(),
-                                          ArcadeTheme.FsCaption * 0.8f, tier,
-                                          display: false, bold: true, upper: true, tracking: 8f,
-                                          align: TextAlignmentOptions.Right);
-            var cr = UIFactory.Rt(tierChip.gameObject);
-            cr.anchorMin = new Vector2(1f, 1f);
-            cr.anchorMax = new Vector2(1f, 1f);
-            cr.pivot = new Vector2(1f, 1f);
-            cr.sizeDelta = new Vector2(180f, 22f);
-            cr.anchoredPosition = new Vector2(-ArcadeTheme.Md, -14f);
-
-            // The AI quest is the one exception to "online only", and the card has to say so — a
+            // The AI quest is the one exception to "online only", and the row has to say so — a
             // player who never goes online should be able to see which one they can still reach.
-            string where = definition.OnlineOnly ? string.Empty : "  •  offline";
-            var caption = UIFactory.Text(card.transform, definition.Description + where,
-                                         ArcadeTheme.FsCaption, ArcadeTheme.InkMuted,
-                                         display: false, bold: false, upper: false, tracking: 0f,
-                                         align: TextAlignmentOptions.Left);
-            var qr = UIFactory.Rt(caption.gameObject);
-            qr.anchorMin = new Vector2(0f, 1f);
-            qr.anchorMax = new Vector2(1f, 1f);
-            qr.pivot = new Vector2(0.5f, 1f);
-            qr.offsetMin = new Vector2(104f, -60f);
-            qr.offsetMax = new Vector2(-104f, -38f);
+            string where = definition.OnlineOnly ? string.Empty : "  ·  OFFLINE OK";
+            UiKit.Text(definition.Description + where, "q__desc f-body-medium", words);
 
-            var track = UIFactory.Child(card.transform, "Track");
-            UIFactory.RoundedImage(track, ArcadeTheme.RadSm, ArcadeTheme.BgDeep, false);
-            var kr = UIFactory.Rt(track);
-            kr.anchorMin = new Vector2(0f, 0f);
-            kr.anchorMax = new Vector2(1f, 0f);
-            kr.pivot = new Vector2(0.5f, 0f);
-            kr.offsetMin = new Vector2(104f, 20f);
-            kr.offsetMax = new Vector2(-180f, 30f);
+            // Segmented progress: a cell per step for small targets, ten for anything bigger.
+            var bar = UiKit.El("q__segments", words);
+            int cells = Mathf.Clamp(definition.Target, 1, 10);
+            int lit = done ? cells : Mathf.FloorToInt(DailyQuests.Progress01At(slot) * cells + 0.0001f);
+            for (int i = 0; i < cells; i++)
+            {
+                var cell = UiKit.El("q__seg", bar);
+                if (i < lit) cell.style.backgroundColor = done ? ArcadeTheme.Reward : tier;
+            }
 
-            var barFill = UIFactory.Child(track.transform, "Fill");
-            var bar = UIFactory.RoundedImage(barFill, ArcadeTheme.RadSm, done ? ArcadeTheme.Gold : tier, false);
-            bar.type = Image.Type.Filled;
-            bar.fillMethod = Image.FillMethod.Horizontal;
-            bar.fillAmount = DailyQuests.Progress01At(slot);
-            UIFactory.Stretch(UIFactory.Rt(barFill), 1.5f);
+            UiKit.Text(progress + "/" + definition.Target, "q__count f-display", bar);
 
-            var count = UIFactory.Text(card.transform, $"{progress}/{definition.Target}",
-                                       ArcadeTheme.FsCaption, done ? ArcadeTheme.Gold : ArcadeTheme.Ink,
-                                       display: true, bold: true, upper: true, tracking: 1f,
-                                       align: TextAlignmentOptions.Left);
-            var nr = UIFactory.Rt(count.gameObject);
-            nr.anchorMin = new Vector2(1f, 0f);
-            nr.anchorMax = new Vector2(1f, 0f);
-            nr.pivot = new Vector2(1f, 0f);
-            nr.sizeDelta = new Vector2(170f, 24f);
-            nr.anchoredPosition = new Vector2(-ArcadeTheme.Md - 76f, 14f);
-
-            var xp = UIFactory.Text(card.transform, "+" + definition.Xp, ArcadeTheme.FsBody,
-                                    done ? ArcadeTheme.Gold : tier, display: true, bold: true,
-                                    upper: true, tracking: 1f, align: TextAlignmentOptions.Right);
-            var xr = UIFactory.Rt(xp.gameObject);
-            xr.anchorMin = new Vector2(1f, 0f);
-            xr.anchorMax = new Vector2(1f, 0f);
-            xr.pivot = new Vector2(1f, 0f);
-            xr.sizeDelta = new Vector2(90f, 30f);
-            xr.anchoredPosition = new Vector2(-ArcadeTheme.Md, 14f);
+            if (done)
+            {
+                var badge = UiKit.Frame("q__reward q__reward--done", row);
+                badge.OverrideEdge(ArcadeTheme.Reward);
+                badge.Add(new UiIcon(UiIcon.Glyph.Check, ArcadeTheme.Reward, 2.6f));
+                UiKit.Text("DONE", "q__reward-label q__reward-label--done f-display", badge);
+            }
+            else
+            {
+                var reward = UiKit.Frame("q__reward", row);
+                UiKit.Text("+" + definition.Xp + " XP", "q__reward-label f-display", reward);
+            }
         }
 
         // ---------- state ----------
 
         public void Open()
         {
-            if (root == null)
-            {
-                return;
-            }
+            if (root == null) return;
 
             DailyQuests.EnsureToday();
 
@@ -348,34 +208,32 @@ namespace TableFootball.UI
             // it on a result screen they walked straight past.
             DailyQuests.MarkSeen();
 
-            DailyQuests.OnChanged -= Redraw;
+            Unsubscribe();
             DailyQuests.OnChanged += Redraw;
-            PlayerXp.OnChanged -= Redraw;
             PlayerXp.OnChanged += Redraw;
 
             Redraw();
 
-            root.SetActive(true);
-            root.transform.SetAsLastSibling();
-            group.blocksRaycasts = true;
-            group.alpha = 1f;
+            UiKit.Show(root, true);
+            root.BringToFront();
+            root.style.opacity = 0f;
+            UiKit.Fade(root, 1f, ArcadeTheme.TFast);
+            GameSfx.PlayUi(UiSound.Open);
 
-            StartCoroutine(UITween.Stagger(this, cardHost, ArcadeTheme.Stagger, ArcadeTheme.TNormal));
+            int i = 0;
+            foreach (var row in questList.Children()) UiKit.Enter(row, 0.05f * i++);
+            UiKit.Enter(slamRow, 0.05f * i);
         }
 
         public void Close()
         {
-            DailyQuests.OnChanged -= Redraw;
-            PlayerXp.OnChanged -= Redraw;
-
-            if (root != null)
-            {
-                group.blocksRaycasts = false;
-                root.SetActive(false);
-            }
+            Unsubscribe();
+            if (root != null) UiKit.Show(root, false);
         }
 
-        private void OnDestroy()
+        private void OnDestroy() => Unsubscribe();
+
+        private void Unsubscribe()
         {
             DailyQuests.OnChanged -= Redraw;
             PlayerXp.OnChanged -= Redraw;
@@ -387,10 +245,7 @@ namespace TableFootball.UI
         /// </summary>
         private void Update()
         {
-            if (root == null || !root.activeSelf || Time.unscaledTime < nextTick)
-            {
-                return;
-            }
+            if (!IsOpen || Time.unscaledTime < nextTick) return;
 
             nextTick = Time.unscaledTime + 1f;
             RefreshReset();
@@ -398,91 +253,55 @@ namespace TableFootball.UI
 
         private void RefreshReset()
         {
-            if (resetLabel == null)
-            {
-                return;
-            }
-
             double seconds = DailyQuests.SecondsUntilReset;
             int hours = (int)(seconds / 3600d);
             int minutes = (int)((seconds % 3600d) / 60d);
 
             resetLabel.text = hours > 0
-                ? $"new set in {hours}h {minutes}m"
-                : $"new set in {minutes}m";
+                ? "NEW SET IN " + hours + "H " + minutes + "M"
+                : "NEW SET IN " + minutes + "M";
         }
 
         private void Redraw()
         {
-            if (root == null)
-            {
-                return;
-            }
+            if (root == null) return;
 
-            UIFactory.ClearChildren(cardHost);
-            for (int slot = 0; slot < DailyQuests.Slots; slot++)
-            {
-                BuildCard(slot);
-            }
+            questList.Clear();
+            for (int slot = 0; slot < DailyQuests.Slots; slot++) BuildRow(slot);
 
-            if (levelNumber != null) levelNumber.text = PlayerXp.Level.ToString();
-            if (levelRing != null) levelRing.fillAmount = PlayerXp.Progress01;
-            if (xpFill != null) xpFill.fillAmount = PlayerXp.Progress01;
+            levelNumber.text = PlayerXp.Level.ToString();
+            ring.Progress = PlayerXp.Progress01;
+            levelCaption.text = PlayerProgress.AtMaxLevel
+                ? "MAX LEVEL"
+                : (PlayerProgress.XpToNext - PlayerProgress.Xp) + " XP TO LEVEL " + (PlayerXp.Level + 1);
 
-            if (levelCaption != null)
-            {
-                levelCaption.text = PlayerProgress.AtMaxLevel
-                    ? "MAX LEVEL"
-                    : $"{PlayerProgress.XpToNext - PlayerProgress.Xp} XP to level {PlayerXp.Level + 1}";
-            }
-
-            if (streakLabel != null)
-            {
-                int streak = DailyQuests.DayStreak;
-                streakLabel.text = streak > 0 ? $"day {streak} streak" : "no streak yet";
-                streakLabel.color = streak > 0 ? ArcadeTheme.Gold : ArcadeTheme.InkMuted;
-            }
+            int streak = DailyQuests.DayStreak;
+            streakLabel.text = streak > 0 ? "DAY " + streak + " STREAK" : "NO STREAK YET";
+            streakLabel.style.color = streak > 0 ? ArcadeTheme.Reward : ArcadeTheme.InkMuted;
+            int litDays = Mathf.Min(streak, StreakPips);
+            int p = 0;
+            foreach (var pip in streakRow.Children()) pip.EnableInClassList("is-lit", p++ < litDays);
 
             RedrawSlam();
             RefreshReset();
+            UiFonts.Apply(questList);
         }
 
         private void RedrawSlam()
         {
-            if (slamPips == null)
-            {
-                return;
-            }
-
             int done = DailyQuests.CompletedCount;
 
-            UIFactory.ClearChildren(slamPips);
+            slamPips.Clear();
             for (int i = 0; i < DailyQuests.Slots; i++)
             {
-                var pip = UIFactory.Child(slamPips, "Pip");
-                var img = pip.AddComponent<Image>();
-                img.sprite = ArcadeTheme.Disc();
-                img.color = i < done ? ArcadeTheme.Gold : ArcadeTheme.Line;
-                img.raycastTarget = false;
-                var le = pip.AddComponent<LayoutElement>();
-                le.preferredWidth = 14f;
-                le.preferredHeight = 14f;
+                var pip = UiKit.El("q__slam-pip", slamPips);
+                pip.EnableInClassList("is-lit", i < done);
             }
 
-            var xp = UIFactory.Text(slamPips, "+" + QuestDefinition.SlamXp, ArcadeTheme.FsBody,
-                                    ArcadeTheme.Gold, display: true, bold: true, upper: true,
-                                    tracking: 1f, align: TextAlignmentOptions.Right);
-            var le2 = xp.gameObject.AddComponent<LayoutElement>();
-            le2.preferredWidth = 84f;
-            le2.preferredHeight = 28f;
-
-            if (slamNote != null)
-            {
-                slamNote.text = DailyQuests.SlamAwarded
-                    ? "daily slam — banked"
-                    : "daily slam — clear all three";
-                slamNote.color = DailyQuests.SlamAwarded ? ArcadeTheme.Gold : ArcadeTheme.InkMuted;
-            }
+            bool banked = DailyQuests.SlamAwarded;
+            slamNote.text = banked ? "BANKED" : done + " OF " + DailyQuests.Slots;
+            slamNote.style.color = banked ? ArcadeTheme.Reward : ArcadeTheme.InkMuted;
+            slamRow.OverrideEdge(banked ? ArcadeTheme.Reward : ArcadeTheme.LineLit);
         }
     }
 }

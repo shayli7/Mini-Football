@@ -32,10 +32,15 @@ namespace TableFootball.Net
         /// <summary>
         /// Cumulative XP needed to REACH each level: index 0 → level 1 (0 XP), index 1 → level 2, and
         /// so on. Edit these numbers to reshape the early curve. Levels past the last entry keep
-        /// climbing at the final step (here 2600−1800 = 800 XP each) up to <see cref="MaxLevel"/> —
+        /// climbing at the final step (here 1575−1275 = 300 XP each) up to <see cref="MaxLevel"/> —
         /// add more entries if you want to shape the higher levels by hand.
+        ///
+        /// Each level costs 25 more than the last, from 150 for level 2 to 300 for level 8, then a flat
+        /// 300. A win pays <see cref="XpForWin"/>, so a level takes two or three wins where it used to
+        /// take five to seven. Existing players keep their XP and simply land on a higher level; the
+        /// rewards they have newly reached show up as claimable on the path.
         /// </summary>
-        private static readonly int[] LevelXp = { 0, 500, 1100, 1800, 2600 };
+        private static readonly int[] LevelXp = { 0, 150, 325, 525, 750, 1000, 1275, 1575 };
 
         /// <summary>
         /// The top of the ladder. The level path pays a reward for every level up to this one and

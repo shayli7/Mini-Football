@@ -368,6 +368,43 @@ namespace TableFootball
         /// motion is scripted rather than simulated.</summary>
         public bool IsBeingCarried => pickupActive;
 
+        /// <summary>When a figure last touched the ball in THIS machine's simulation, on scaled time.</summary>
+        public float LastTouchTime => lastTouchTime;
+
+        /// <summary>
+        /// Online lane authority: this machine is taking over the ball's simulation mid-play, with the
+        /// ball already moving at <paramref name="velocity"/>. Everything the old simulation knew about
+        /// recent contact belongs to that simulation, not this one — a stale trap window or striker
+        /// would act on a ball they never touched — so it is cleared, and the incoming velocity a
+        /// contact reads is set to the ball's real one. Who touched it last is inherited, because the
+        /// stall rule counts against that team.
+        /// </summary>
+        public void BeginSimulatingFrom(Vector3 velocity, Team? lastTouch)
+        {
+            pickupActive = false;
+            lastVelocity = velocity;
+            controlRod = null;
+            lastStriker = null;
+            stillTime = 0f;
+            nudges = 0;
+            ClearStall();
+            lastTouchTeam = lastTouch;
+            lastTouchTime = Time.time;
+        }
+
+        /// <summary>
+        /// Online lane authority: the other machine is taking the simulation over. A carry in progress
+        /// is abandoned without touching the kinematic flag — the caller owns that now — and a stall
+        /// warning on screen is withdrawn, since this machine no longer runs the rule.
+        /// </summary>
+        public void EndSimulating()
+        {
+            pickupActive = false;
+            controlRod = null;
+            lastStriker = null;
+            ClearStall();
+        }
+
         /// <summary>
         /// Raised after <see cref="ResetBall"/> has placed the ball. A mirrored copy must SNAP to a
         /// placed ball: drawing a smooth curve from where it was to the centre spot would show the

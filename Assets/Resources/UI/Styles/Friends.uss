@@ -1,0 +1,194 @@
+/* Friends. See FriendsMenu.cs. Laid out against a 760-unit-high panel.
+   Every selector is under .friends so it outranks the shared frame defaults in Base.uss. */
+
+/* ---------- header ---------- */
+
+.friends .fr__header {
+    position: absolute;
+    left: 40px;
+    right: 40px;
+    top: 24px;
+    height: 58px;
+    align-items: center;
+    justify-content: center;
+}
+
+.friends .fr__back { position: absolute; left: 0; top: 0; }
+.friends .fr__title-box { align-items: center; }
+.friends .fr__title-row { flex-direction: row; align-items: center; }
+.friends .fr__title-row .icon { width: 28px; height: 28px; }
+.friends .fr__title { font-size: 32px; letter-spacing: 7px; margin-left: 12px; }
+.friends .fr__bar { width: 44px; height: 3px; margin-top: 6px; background-color: var(--pulse); }
+
+.friends .fr__online {
+    position: absolute;
+    right: 0;
+    top: 6px;
+    flex-direction: row;
+    align-items: center;
+    height: 44px;
+    padding: 0 18px;
+    --frame-fill: #0A1322;
+    --frame-edge: #24456F;
+    --frame-edge-width: 1.5;
+    --frame-cut: 8;
+}
+
+.friends .fr__online-dot { width: 10px; height: 10px; border-radius: 5px; background-color: #3DDC84; }
+.friends .fr__online-label { font-size: 14px; letter-spacing: 3px; margin-left: 10px; }
+
+.friends .sq {
+    width: 55px;
+    height: 55px;
+    align-items: center;
+    justify-content: center;
+    --frame-fill: #0F1C31;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1.5;
+    --frame-cut: 10;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.friends .sq:hover { scale: 1.05 1.05; }
+.friends .sq:active { scale: 0.95 0.95; }
+.friends .sq .icon { width: 26px; height: 26px; }
+
+/* ---------- left: your code, add a friend ---------- */
+
+.friends .fr__side {
+    position: absolute;
+    left: 40px;
+    top: 108px;
+    width: 380px;
+}
+
+.friends .fr__card {
+    padding: 22px 22px 22px 22px;
+    margin-bottom: 18px;
+}
+
+.friends .fr__caption { font-size: 14px; letter-spacing: 5px; color: var(--pulse); margin-bottom: 16px; }
+
+.friends .fr__me { flex-direction: row; align-items: center; margin-bottom: 18px; }
+.friends .fr__me-hex { width: 76px; height: 76px; align-items: center; justify-content: center; margin-right: 16px; }
+.friends .fr__me-initial { font-size: 32px; color: var(--pulse); -unity-text-align: middle-center; }
+.friends .fr__code { font-size: 22px; letter-spacing: 1px; flex-shrink: 1; overflow: hidden; }
+
+.friends .fr__copy { height: 52px; }
+.friends .fr__copy .icon { width: 20px; height: 20px; margin-right: 10px; }
+
+.friends .fr__field {
+    flex-direction: row;
+    align-items: center;
+    height: 54px;
+    padding: 0 16px;
+    --frame-fill: #060B14;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1.5;
+    --frame-cut: 10;
+}
+
+.friends .fr__field.is-focus { --frame-edge: #3DE3FF; }
+.friends .fr__field .icon { width: 20px; height: 20px; }
+.friends .fr__field-input { flex-grow: 1; margin: 0 0 0 12px; padding: 0; min-width: 0; }
+
+.friends .fr__field-input .unity-base-text-field__input,
+.friends .fr__field-input .unity-text-field__input {
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 0;
+    margin: 0;
+    padding: 0;
+    color: var(--ink);
+    font-size: 19px;
+    -unity-text-align: middle-left;
+}
+
+.friends .fr__hint { font-size: 13px; color: var(--dim); margin: 8px 0 16px 4px; }
+.friends .fr__add { height: 52px; }
+
+/* ---------- right: the list ---------- */
+
+.friends .fr__right {
+    position: absolute;
+    left: 444px;
+    right: 40px;
+    top: 108px;
+    bottom: 64px;
+}
+
+.friends .fr__invite {
+    flex-direction: row;
+    align-items: center;
+    height: 76px;
+    padding: 0 16px 0 20px;
+    margin-bottom: 12px;
+    --frame-fill: #1A1405;
+    --frame-edge-width: 2;
+    --frame-cut: 12;
+}
+
+.friends .fr__invite .icon { width: 24px; height: 24px; }
+.friends .fr__invite-text { flex-grow: 1; flex-shrink: 1; font-size: 18px; letter-spacing: 3px; color: var(--reward); margin-left: 14px; overflow: hidden; }
+
+.friends .fr__list { flex-grow: 1; }
+
+.friends .fr__row {
+    flex-direction: row;
+    align-items: center;
+    height: 76px;
+    padding: 0 16px 0 20px;
+    margin-bottom: 10px;
+    --frame-fill: #0B1628;
+    --frame-edge: #1D3557;
+    --frame-edge-width: 1.5;
+    --frame-cut: 12;
+}
+
+.friends .fr__row.is-offline { opacity: 0.55; }
+
+.friends .fr__bar-online {
+    position: absolute;
+    left: 0;
+    top: 12px;
+    bottom: 12px;
+    width: 4px;
+    background-color: #3DDC84;
+}
+
+.friends .fr__id { flex-direction: row; align-items: center; flex-grow: 1; flex-shrink: 1; height: 100%; }
+.friends .fr__hex { width: 52px; height: 52px; align-items: center; justify-content: center; margin-right: 16px; }
+.friends .fr__initial { font-size: 22px; -unity-text-align: middle-center; }
+.friends .fr__words { flex-shrink: 1; }
+.friends .fr__name { font-size: 20px; letter-spacing: 1px; overflow: hidden; }
+.friends .fr__sub { font-size: 12px; letter-spacing: 3px; margin-top: 4px; }
+
+.friends .fr__dot { width: 12px; height: 12px; border-radius: 6px; margin: 0 16px; }
+
+.friends .fr__act { height: 44px; padding: 0 20px; margin-left: 10px; }
+.friends .fr__act .btn__label { font-size: 14px; letter-spacing: 3px; }
+.friends .fr__no { width: 44px; height: 44px; margin-left: 10px; --frame-cut: 8; }
+.friends .fr__no .icon { width: 20px; height: 20px; }
+
+/* ---------- empty ---------- */
+
+.friends .fr__empty { align-items: center; padding-top: 70px; }
+.friends .fr__empty-art { width: 190px; height: 110px; }
+.friends .fr__empty-hex { position: absolute; width: 96px; height: 96px; top: 7px; align-items: center; justify-content: center; }
+.friends .fr__empty-hex .icon { width: 44px; height: 44px; }
+.friends .fr__empty-hex--l { left: 0; }
+.friends .fr__empty-hex--r { right: 0; }
+.friends .fr__empty-head { font-size: 26px; letter-spacing: 5px; margin-top: 16px; }
+.friends .fr__empty-line { font-size: 13px; letter-spacing: 3px; color: var(--muted); margin-top: 10px; }
+
+/* ---------- status ---------- */
+
+.friends .fr__status {
+    position: absolute;
+    left: 444px;
+    right: 40px;
+    bottom: 26px;
+    font-size: 14px;
+    letter-spacing: 3px;
+    -unity-text-align: middle-left;
+}

@@ -21,6 +21,10 @@ namespace TableFootball.Net
     [DisallowMultipleComponent]
     public class OnlineMatchDirector : NetworkBehaviour
     {
+        /// <summary>Whether this machine's director has spawned. On the guest that is the moment the table
+        /// has synced; the connecting screen reads it to show how far along the connection is.</summary>
+        public static bool IsTableSynced => instance != null && instance.IsSpawned;
+
         /// <summary>
         /// The host defends and attacks as Red; the guest is always Blue.
         ///
@@ -211,6 +215,51 @@ namespace TableFootball.Net
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
 
+        /// <summary>
+        /// Each player's card for the versus screen — name, level, worn badge. Server-written like the
+        /// figure skins: the host writes its own into Red at spawn, and the guest's arrives with its
+        /// ready report (<see cref="ReportReadyRpc"/>), which is retried until answered, so it cannot
+        /// be lost the way a one-off message sent at spawn can.
+        /// </summary>
+        private readonly NetworkVariable<PlayerCard> netCardRed = new(
+            default,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+
+        private readonly NetworkVariable<PlayerCard> netCardBlue = new(
+            default,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+
+        /// <summary>
+        /// How long the versus screen holds the table parked before the first kick-off, in seconds.
+        /// Both machines wait this long from the same kick-off message, so they start as close together
+        /// as they did without it. The screen reads the same constant, so the two cannot disagree.
+        /// </summary>
+        public const float VersusSeconds = 2f;
+
+        /// <summary>The pending first kick-off behind the versus screen.</summary>
+        private Coroutine versusKickOff;
+
+        /// <summary>
+        /// A player's card for the versus screen. This player's own is read fresh from the local
+        /// stores; the opponent's comes from the network. Default (empty) when there is no session.
+        /// </summary>
+        public static PlayerCard CardFor(Team team)
+        {
+            if (team == LocalTeam)
+            {
+                return PlayerCard.Local();
+            }
+
+            if (instance == null)
+            {
+                return default;
+            }
+
+            return team == Team.Red ? instance.netCardRed.Value : instance.netCardBlue.Value;
+        }
+
         /// <summary>The table's skinners, if the scene has them. Optional: a table without them just
         /// keeps the materials the model ships with.</summary>
         private FieldSkinner fieldSkinner;
@@ -291,6 +340,7 @@ namespace TableFootball.Net
                     Inventory.EquippedId(CosmeticKind.Background) ?? string.Empty);
                 // The host dresses its own side directly; the guest's arrives by RPC below.
                 netFiguresRed.Value = new FixedString64Bytes(myFigures);
+                netCardRed.Value = PlayerCard.Local();
             }
             else
             {
@@ -309,6 +359,9 @@ namespace TableFootball.Net
                 NetworkManager.Singleton.OnClientDisconnectCallback += OnClientDisconnected;
             }
 
+            // Both roles too: the stall rule runs on whichever machine is simulating the ball.
+            if (ball != null) ball.StallChanged += OnLocalStall;
+
             if (IsServer)
             {
                 if (match != null)
@@ -316,9 +369,6 @@ namespace TableFootball.Net
                     match.GoalScored += OnHostGoal;
                     match.MatchRestarted += OnHostRestart;
                 }
-
-                // The stall rule runs only where the ball is simulated; the guest just shows it.
-                if (ball != null) ball.StallChanged += OnHostStall;
 
                 return;
             }
@@ -430,6 +480,12 @@ namespace TableFootball.Net
                 readyHandshake = null;
             }
 
+            if (versusKickOff != null)
+            {
+                StopCoroutine(versusKickOff);
+                versusKickOff = null;
+            }
+
             matchBegun = false;
 
             if (instance == this)
@@ -443,9 +499,9 @@ namespace TableFootball.Net
                 match.MatchRestarted -= OnHostRestart;
             }
 
-            if (IsServer && ball != null)
+            if (ball != null)
             {
-                ball.StallChanged -= OnHostStall;
+                ball.StallChanged -= OnLocalStall;
             }
 
             if (!IsServer)
@@ -694,7 +750,7 @@ namespace TableFootball.Net
             int asked = 0;
             while (!matchBegun && asked < ReadyAttempts)
             {
-                ReportReadyRpc();
+                ReportReadyRpc(PlayerCard.Local());
                 asked++;
                 // Unscaled, like everything else that has to survive a stopped world: the front end
                 // sits at timeScale 0 and the guest may still be on the connecting screen.
@@ -764,9 +820,13 @@ namespace TableFootball.Net
         /// second kick-off lands on a flow that ignores a match already in progress.
         /// </summary>
         [Rpc(SendTo.Server)]
-        private void ReportReadyRpc(RpcParams rpcParams = default)
+        private void ReportReadyRpc(PlayerCard card, RpcParams rpcParams = default)
         {
             ulong clientId = rpcParams.Receive.SenderClientId;
+
+            // Before the kick-off below, so the host's own versus screen already has the guest's card.
+            // Sanitised because it came from the other machine.
+            netCardBlue.Value = card.Sanitised();
 
             // Rods first, kick-off second. Arriving to find a table whose Blue rods still answer to
             // the host would be a worse head start than the one this replaces.
@@ -809,11 +869,27 @@ namespace TableFootball.Net
             // three loops to be certain instead of hopeful.
             ConfigureTable();
 
-            // UI first, table second: the flow puts the HUD up and marks itself playing, and the
-            // restart below immediately fires the events that HUD is there to draw.
+            // UI first, table second: the flow puts the versus screen up and marks itself playing, and
+            // the reset below immediately fires the events the HUD is there to draw.
             OnMatchShouldStart?.Invoke();
 
-            StartFromMessage();
+            // The table is reset and parked now, but the ball only goes live once the versus screen
+            // has had its moment. Each machine waits the same time from the same message.
+            PrepareFromMessage();
+            if (versusKickOff != null) StopCoroutine(versusKickOff);
+            versusKickOff = StartCoroutine(KickOffAfterVersus());
+        }
+
+        private IEnumerator KickOffAfterVersus()
+        {
+            // Unscaled: the wait must not depend on anything having set the world running.
+            yield return new WaitForSecondsRealtime(VersusSeconds);
+            versusKickOff = null;
+
+            if (match != null)
+            {
+                match.KickOff();
+            }
         }
 
         /// <summary>
@@ -832,8 +908,23 @@ namespace TableFootball.Net
                 return;
             }
 
+            PrepareFromMessage();
+            match.KickOff();
+        }
+
+        /// <summary>
+        /// Resets the score and parks the table off a message every machine received, without starting
+        /// play. Flagged so the host does not relay this restart to a guest that ran the same message.
+        /// </summary>
+        private void PrepareFromMessage()
+        {
+            if (match == null)
+            {
+                return;
+            }
+
             restartFromMessage = true;
-            match.RestartMatch();
+            match.PrepareMatch();
             restartFromMessage = false;
         }
 
@@ -1017,20 +1108,40 @@ namespace TableFootball.Net
             }
         }
 
-        private void OnHostStall(Team? team, int secondsLeft) =>
-            StallRpc((sbyte)(team.HasValue ? (int)team.Value : -1), (byte)Mathf.Clamp(secondsLeft, 0, 255));
+        /// <summary>True while replaying the other machine's stall warning, so it is not echoed back.</summary>
+        private bool replayingStall;
 
         /// <summary>
-        /// Mirrors the host's stall countdown on the guest. Reliable, unlike the ball samples: a lost
-        /// "warning withdrawn" would leave a countdown on the guest's screen for a stall that ended.
+        /// The stall rule runs wherever the ball is simulated — with lane authority that can be either
+        /// machine (a team's back zone is that team's own lanes) — so whichever one raised the warning
+        /// relays it. A disabled BallController means this machine is only drawing the ball and its
+        /// warning, if any, is the replay of the other's.
         /// </summary>
-        [Rpc(SendTo.NotServer)]
+        private void OnLocalStall(Team? team, int secondsLeft)
+        {
+            if (replayingStall || ball == null || !ball.enabled)
+            {
+                return;
+            }
+
+            StallRpc((sbyte)(team.HasValue ? (int)team.Value : -1), (byte)Mathf.Clamp(secondsLeft, 0, 255));
+        }
+
+        /// <summary>
+        /// Mirrors the simulating machine's stall countdown on the other. Reliable, unlike the ball
+        /// samples: a lost "warning withdrawn" would leave a countdown on screen for a stall that ended.
+        /// </summary>
+        [Rpc(SendTo.NotMe)]
         private void StallRpc(sbyte team, byte secondsLeft)
         {
-            if (ball != null)
+            if (ball == null)
             {
-                ball.ReportStall(team < 0 ? (Team?)null : (Team)team, secondsLeft);
+                return;
             }
+
+            replayingStall = true;
+            ball.ReportStall(team < 0 ? (Team?)null : (Team)team, secondsLeft);
+            replayingStall = false;
         }
 
         [Rpc(SendTo.NotServer)]

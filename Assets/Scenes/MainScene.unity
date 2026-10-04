@@ -138,6 +138,7 @@ MonoBehaviour:
   maxSpinSpeed: 2200
   spinAccel: 4400
   spinDamping: 3
+  extraSpinDamping: 4
   invertSpin: 0
   autoDetectAxis: 1
   localBarAxis: {x: 0, y: 1, z: 0}
@@ -249,6 +250,50 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &288353823
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 288353825}
+  - component: {fileID: 288353824}
+  m_Layer: 0
+  m_Name: GameServices
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &288353824
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 288353823}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0c899a9aba3e9354892a6f9311faf010, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!4 &288353825
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 288353823}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!134 &314115007
 PhysicsMaterial:
   m_ObjectHideFlags: 0
@@ -275,6 +320,7 @@ GameObject:
   - component: {fileID: 330585544}
   - component: {fileID: 330585547}
   - component: {fileID: 330585548}
+  - component: {fileID: 330585549}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -416,6 +462,21 @@ MonoBehaviour:
   amplitude: 0.02
   duration: 0.35
   frequency: 24
+--- !u!114 &330585549
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 330585543}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 20563ba0d71752a43976ab9b07e9264a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  sideMargin: 0.03
+  verticalMargin: 0.16
+  sizeScale: 1
 --- !u!1 &410087039
 GameObject:
   m_ObjectHideFlags: 0
@@ -717,6 +778,7 @@ MonoBehaviour:
   maxSpinSpeed: 2200
   spinAccel: 4400
   spinDamping: 3
+  extraSpinDamping: 4
   invertSpin: 0
   autoDetectAxis: 1
   localBarAxis: {x: 0, y: 1, z: 0}
@@ -741,6 +803,7 @@ MonoBehaviour:
   maxSpinSpeed: 2200
   spinAccel: 4400
   spinDamping: 3
+  extraSpinDamping: 4
   invertSpin: 0
   autoDetectAxis: 1
   localBarAxis: {x: 0, y: 1, z: 0}
@@ -902,6 +965,7 @@ MonoBehaviour:
   maxSpinSpeed: 2200
   spinAccel: 4400
   spinDamping: 3
+  extraSpinDamping: 4
   invertSpin: 0
   autoDetectAxis: 1
   localBarAxis: {x: 0, y: 1, z: 0}
@@ -983,6 +1047,7 @@ MonoBehaviour:
   maxSpinSpeed: 2200
   spinAccel: 4400
   spinDamping: 3
+  extraSpinDamping: 4
   invertSpin: 0
   autoDetectAxis: 1
   localBarAxis: {x: 0, y: 1, z: 0}
@@ -1007,6 +1072,7 @@ MonoBehaviour:
   maxSpinSpeed: 2200
   spinAccel: 4400
   spinDamping: 3
+  extraSpinDamping: 4
   invertSpin: 0
   autoDetectAxis: 1
   localBarAxis: {x: 0, y: 1, z: 0}
@@ -1031,72 +1097,12 @@ MonoBehaviour:
   maxSpinSpeed: 2200
   spinAccel: 4400
   spinDamping: 3
+  extraSpinDamping: 4
   invertSpin: 0
   autoDetectAxis: 1
   localBarAxis: {x: 0, y: 1, z: 0}
   localPivot: {x: 0, y: 0, z: 0}
   logSetupOnStart: 0
---- !u!1001 &1769598441
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 0}
-    m_Modifications:
-    - target: {fileID: -8679921383154817045, guid: 916b8b2adc721474299fd7365f8178e2, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 916b8b2adc721474299fd7365f8178e2, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 916b8b2adc721474299fd7365f8178e2, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 916b8b2adc721474299fd7365f8178e2, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 916b8b2adc721474299fd7365f8178e2, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 916b8b2adc721474299fd7365f8178e2, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: -0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 916b8b2adc721474299fd7365f8178e2, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: -0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 916b8b2adc721474299fd7365f8178e2, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 916b8b2adc721474299fd7365f8178e2, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: -8679921383154817045, guid: 916b8b2adc721474299fd7365f8178e2, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 919132149155446097, guid: 916b8b2adc721474299fd7365f8178e2, type: 3}
-      propertyPath: m_Name
-      value: ArcadeFloor
-      objectReference: {fileID: 0}
-    - target: {fileID: 919132149155446097, guid: 916b8b2adc721474299fd7365f8178e2, type: 3}
-      propertyPath: m_IsActive
-      value: 0
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 916b8b2adc721474299fd7365f8178e2, type: 3}
 --- !u!1 &2047135018
 GameObject:
   m_ObjectHideFlags: 0
@@ -1171,6 +1177,7 @@ MonoBehaviour:
   maxSpinSpeed: 2200
   spinAccel: 4400
   spinDamping: 3
+  extraSpinDamping: 4
   invertSpin: 0
   autoDetectAxis: 1
   localBarAxis: {x: 0, y: 1, z: 0}
@@ -6353,6 +6360,13 @@ MonoBehaviour:
   spinDegreesPerScreenHeight: 540
   flickStrength: 0.9
   maxFlick: 1600
+  axisDecideDistance: 0.02
+  spinBreakout: 0.04
+  slideBreakout: 0.03
+  fineSpinGain: 0.45
+  fullGainSpeed: 2.5
+  flickSmoothing: 0.04
+  slideSmoothing: 0.025
   logGrabs: 0
 --- !u!114 &3271520834897452819
 MonoBehaviour:
@@ -7882,6 +7896,60 @@ MonoBehaviour:
       m_PreInfinity: 2
       m_PostInfinity: 2
       m_RotationOrder: 4
+  trackTightnessHandicap:
+    atEasy: 0.15
+    atHard: 0
+    response:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 1
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 1
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
+  handSpeedHandicap:
+    atEasy: 0.2
+    atHard: 0
+    response:
+      serializedVersion: 2
+      m_Curve:
+      - serializedVersion: 3
+        time: 0
+        value: 0
+        inSlope: 0
+        outSlope: 1
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      - serializedVersion: 3
+        time: 1
+        value: 1
+        inSlope: 1
+        outSlope: 0
+        tangentMode: 0
+        weightedMode: 0
+        inWeight: 0
+        outWeight: 0
+      m_PreInfinity: 2
+      m_PostInfinity: 2
+      m_RotationOrder: 4
   aimErrorInterval: 0.6
   possessionDistance: 0.075
   useAuthoritativePossession: 1
@@ -7937,7 +8005,7 @@ MonoBehaviour:
   countdownGoClip: {fileID: 0}
   questClip: {fileID: 0}
   menuMusicClip: {fileID: 8300000, guid: 679c6b027fd25470286fe5f199c0d44b, type: 3}
-  menuMusicVolume: 0.3
+  menuMusicVolume: 0.2
   ballHitVolume: 2.6
   ballHitQuietest: 0.7
   wallThudVolume: 0.8
@@ -17709,18 +17777,22 @@ MonoBehaviour:
   friction: 0.05
   linearDrag: 0.02
   angularDrag: 0.05
-  maxSpeed: 9
+  speedCap: 6.5
+  rollingDecel: 0.35
   contactOffset: 0.002
   maxAngularSpeed: 100
   fallResetDistance: 0.3
-  pickupDuration: 0.45
+  pickupDuration: 0.6
   pickupLiftHeight: 0.4
-  stuckSpeed: 0.05
+  stuckSpeed: 0.15
   stuckSeconds: 10
   nudgeSpeed: 0.45
   nudgeSpread: 30
   nudgesBeforeReset: 3
   logRescues: 1
+  stallLimitSeconds: 15
+  stallWarnSeconds: 4
+  freeShotOffset: 0.05
   strikeBoost: 3
   strikeMinSpin: 200
   strikeFullSpin: 1800
@@ -17728,23 +17800,28 @@ MonoBehaviour:
   maxSlidePush: 0.6
   minSlideSpeed: 0.05
   wallAssist: 1
-  wallBounceRetention: 1
+  railRetention: 0.7
   contactPointInfluence: 0.35
   contactAngleInfluence: 0.25
   momentumRedirect: 0.5
   baseSpread: 1.5
   powerSpread: 6
   powerJitter: 0.08
-  controlWindowSeconds: 0.18
-  controlDamping: 6
-  controlMinSpeed: 0.2
+  randomnessScale: 0.4
+  trapRetention: 0.4
+  trapSlowdown: 3
+  trapWindowSeconds: 0.35
   controlRadius: 0.12
-  controlMaxSpeed: 0.7
+  trapMaxSpeed: 2
+  trapMinApproach: 0.45
   passMaxSpin: 700
   passSpeedCap: 3.5
   passSpread: 1
   passReceiveBonus: 0.08
-  figureRetention: 0.75
+  glanceRetention: 0.8
+  blockRetention: 0.3
+  frontMinAlignment: 0.6
+  sideRetention: 0.9
   figureDeflectSpread: 3
   possessionMemorySeconds: 0.6
   quietImpactSpeed: 0.4
@@ -17836,10 +17913,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   ShowTopMostFoldoutHeaderGroup: 1
-  interpolationLeadSeconds: 0.04
-  maxLeadSeconds: 0.12
-  maxLeadDistance: 0.12
-  leadSharpness: 25
+  maxExtrapolation: 0.06
+  errorSnapDistance: 0.05
+  errorDecay: 0.06
+  logStreamStats: 1
 --- !u!114 &9221244712420881486
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -17934,10 +18011,10 @@ SceneRoots:
   - {fileID: 330585546}
   - {fileID: 410087041}
   - {fileID: 832575519}
-  - {fileID: 1769598441}
   - {fileID: 2750879622750684587}
   - {fileID: 2047135020}
   - {fileID: 1112548522}
   - {fileID: 1305908418}
   - {fileID: 217766991}
   - {fileID: 610411388}
+  - {fileID: 288353825}

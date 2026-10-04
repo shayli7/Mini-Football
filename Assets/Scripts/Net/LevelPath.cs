@@ -30,6 +30,14 @@ namespace TableFootball.Net
         /// </summary>
         public static readonly int[] Milestones = { 5, 10, 20, 30, 40, 50, 60 };
 
+        /// <summary>The Shining Gold name style, paid at <see cref="GoldNameLevel"/>.</summary>
+        public const string GoldNameId = "name.gold";
+        public const int GoldNameLevel = 50;
+
+        /// <summary>The King badge, paid at <see cref="KingBadgeLevel"/> — the last rung of the path.</summary>
+        public const string KingBadgeId = "badge.king";
+        public const int KingBadgeLevel = 60;
+
         /// <summary>What a level pays.</summary>
         public enum RewardKind
         {
@@ -120,8 +128,8 @@ namespace TableFootball.Net
                 case 20: return new Reward(level, RewardKind.Chest, 0, ChestTier.Rare, null);
                 case 30: return new Reward(level, RewardKind.Skin, 0, ChestTier.Common, "ball.basketball");
                 case 40: return new Reward(level, RewardKind.Chest, 0, ChestTier.Epic, null);
-                case 50: return new Reward(level, RewardKind.Skin, 0, ChestTier.Common, "figure.stripes");
-                case 60: return new Reward(level, RewardKind.Chest, 0, ChestTier.Legendary, null);
+                case GoldNameLevel: return new Reward(level, RewardKind.Skin, 0, ChestTier.Common, GoldNameId);
+                case KingBadgeLevel: return new Reward(level, RewardKind.Skin, 0, ChestTier.Common, KingBadgeId);
                 default: return new Reward(level, RewardKind.Coins, CoinsForLevel(level),
                                            ChestTier.Common, null);
             }
@@ -213,6 +221,15 @@ namespace TableFootball.Net
                         Wallet.Add(refund);
                         OnChanged?.Invoke();
                         return new ClaimResult(true, level, refund, default, false, reward.Tier);
+                    }
+
+                    // The two prizes that change how YOU read are worn straight away: a name style has
+                    // the plain default under it, so there is nothing to protect, and a badge is worn
+                    // only if the slot is empty, so it never pushes aside one the player picked.
+                    if (item.Kind == CosmeticKind.NameStyle ||
+                        (item.Kind == CosmeticKind.Badge && !Inventory.Equipped(CosmeticKind.Badge).Valid))
+                    {
+                        Inventory.Equip(item.Id);
                     }
 
                     OnChanged?.Invoke();

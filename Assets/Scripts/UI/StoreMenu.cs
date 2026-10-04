@@ -1,524 +1,493 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using TableFootball.Net;
-using TMPro;
+using TableFootball.UI.Toolkit;
 using UnityEngine;
-using UnityEngine.UI;
+using UnityEngine.UIElements;
 
 namespace TableFootball.UI
 {
     /// <summary>
-    /// The store: one horizontal shelf of four chests bought with coins, then the daily deal (a free
-    /// Common or Rare chest for one ad), then a coin top-up paid for by ads. Skins are no longer sold
-    /// one by one. They come out of chests, through <see cref="ChestLoot"/>, which never repeats a
-    /// skin the player already owns.
+    /// The store: one horizontal shelf in four sections, with a bar along the bottom that jumps between
+    /// them and lights the one in view.
     ///
-    /// The store is also where skins are WORN: the Collection button opens the player's owned
-    /// cosmetics, tabbed by kind, and tapping one equips it. It used to be the price grid; it is the
-    /// same grid with the prices taken off, because every chest drop has to be equippable somewhere.
+    ///   1. Lucky Chests — the four tiers, bought with coins at <see cref="ChestLoot.Price"/>.
+    ///   2. Daily reward — a free Common or Rare chest for one ad, once a day.
+    ///   3. Coins — a top-up paid for by watching ads, a few times a day.
+    ///   4. Daily items — three skins on sale for coins, a new three every day.
     ///
-    /// Like every other screen it is built in code, reads its data from <c>Net/</c>
-    /// (<see cref="ChestLoot"/>, <see cref="ShopOffers"/>, <see cref="Wallet"/>, <see cref="Inventory"/>),
-    /// redraws on their change events, and talks out only through <see cref="OnBack"/>. It holds no
-    /// economy rules of its own.
+    /// The wardrobe is not part of the store any more: COLLECTION in the header opens
+    /// <see cref="CollectionScreen"/> and Back from there returns here (<see cref="GameFlow"/> keeps
+    /// track). Built on UI Toolkit, styled by <c>Resources/UI/Styles/Store.uss</c>.
+    ///
+    /// Like every other screen it reads its data from <c>Net/</c> (<see cref="ChestLoot"/>,
+    /// <see cref="ShopOffers"/>, <see cref="Wallet"/>, <see cref="Inventory"/>), redraws on their change
+    /// events, and talks out only through callbacks. It holds no economy rules of its own.
     ///
     /// A purchase asks first. One tap spending three thousand coins with no way back would make the
     /// shelf dangerous to browse.
     /// </summary>
     public class StoreMenu : MonoBehaviour
     {
-        private GameObject root;
-        private CanvasGroup group;
+        private const int SectionCount = 4;
+        private const int ChestSection = 0, DealSection = 1, CoinSection = 2, ItemSection = 3;
 
-        private TextMeshProUGUI footerLabel;
-        private Coroutine statusRoutine;
+        private static readonly string[] SectionNames = { "LUCKY CHESTS", "DAILY REWARD", "COINS", "DAILY ITEMS" };
+        private static readonly UiIcon.Glyph[] SectionGlyphs =
+            { UiIcon.Glyph.Chest, UiIcon.Glyph.Clock, UiIcon.Glyph.Coin, UiIcon.Glyph.Store };
 
-        // The chest shelf, built once and refreshed in place.
-        private readonly MenuButton[] chestButtons = new MenuButton[4];
-        private readonly CanvasGroup[] chestPrices = new CanvasGroup[4];
+        private VisualElement root;
+        private UiCoinChip coinChip;
+        private ScrollView shelf;
+        private readonly VisualElement[] sections = new VisualElement[SectionCount];
+        private readonly List<VisualElement> navTabs = new List<VisualElement>();
+        private VisualElement dealDot;
+        private IVisualElementScheduledItem scrollAnim;
+        private int activeSection = -1;
 
-        private MenuButton dealButton;
-        private Transform dealArt;
-        private TextMeshProUGUI dealTierLabel;
-        private TextMeshProUGUI dealName;
-        private TextMeshProUGUI dealCountdown;
+        private readonly VisualElement[] chestBuy = new VisualElement[4];
+
+        // Daily reward
+        private UiFrame dealCard;
+        private VisualElement dealHalo, dealArt, dealButton;
+        private Label dealTierLabel, dealName, dealCountdown, dealButtonLabel;
         private ChestTier shownDealTier = (ChestTier)(-1);
 
-        private MenuButton adButton;
-        private TextMeshProUGUI adsLeftLabel;
-        private readonly List<Image> adPips = new List<Image>();
+        // Coins
+        private readonly List<VisualElement> adPips = new List<VisualElement>();
+        private Label adsLeftLabel, adButtonLabel;
+        private VisualElement adButton;
+
+        // Daily items
+        private VisualElement itemsRow;
+        private Label itemsCountdown;
+        private string itemsSignature = string.Empty;
+        private readonly List<(CosmeticItem item, VisualElement buy)> itemBuys =
+            new List<(CosmeticItem, VisualElement)>();
+
+        // Toast
+        private Label toast;
+        private int toastToken;
+
+        // Buy confirmation
+        private VisualElement sheetLayer, sheetArt;
+        private Label sheetTitle, sheetPrice, sheetGo;
+        private Action pendingBuy;
 
         private float nextTick;
-
-        // Buy confirmation.
-        private GameObject confirmPanel;
-        private Transform confirmArt;
-        private TextMeshProUGUI confirmTitle;
-        private TextMeshProUGUI confirmPrice;
-        private ChestTier? pendingBuy;
-
-        // Chest reveal.
-        private GameObject revealPanel;
-        private Transform revealArt;
-        private TextMeshProUGUI revealKicker;
-        private TextMeshProUGUI revealName;
-        private TextMeshProUGUI revealNote;
-
-        // Collection (the wardrobe).
-        private GameObject collectionPanel;
-        private RectTransform gridContent;
-        private TextMeshProUGUI collectionCaption;
-        private CosmeticKind tab = CosmeticKind.FieldSkin;
 
         /// <summary>Raised when the player backs out.</summary>
         public Action OnBack;
 
-        public bool IsOpen => root != null && root.activeSelf;
+        /// <summary>Raised by COLLECTION in the header.</summary>
+        public Action OnOpenCollection;
 
-        private const string FooterText =
-            "Chests never repeat a skin you own. Collected everything? You get coins instead.";
+        public bool IsOpen => root != null && root.style.display != DisplayStyle.None;
 
-        // The shelf's proportions, in one place. Sized so the whole row fits a 16:9 phone without
-        // scrolling; a 4:3 tablet scrolls it sideways.
-        private const float CardWidth = 220f;
-        private const float DealWidth = 264f;
-        private const float CardHeight = 500f;
-        private const float ArtHeight = 190f;
-        private const float ChestSize = 150f;
-
-        // The collection grid's proportions. Four columns fit the panel with a card wide enough for a
-        // legible name.
-        private const int Columns = 4;
-        private const float GridCardWidth = 232f;
-        private const float GridCardHeight = 224f;
-        private const float GridGap = 18f;
-
+        /// <summary><paramref name="canvasRoot"/> is the uGUI canvas the older screens hang off, unused
+        /// here and kept so the boot order in TableFootballUI does not change.</summary>
         public void Build(Transform canvasRoot)
         {
-            root = UIFactory.Child(canvasRoot, "StoreMenu");
-            UIFactory.Stretch(UIFactory.Rt(root));
-            group = root.AddComponent<CanvasGroup>();
-            UIFactory.ScrimDim(root.transform);
+            root = UiKit.El("screen store", UiToolkitHost.Root, "Store");
+            var sheet = Resources.Load<StyleSheet>("UI/Styles/Store");
+            if (sheet != null) root.styleSheets.Add(sheet);
+            root.pickingMode = PickingMode.Position;
 
-            UIFactory.ScreenHeader(root.transform, "Store", Back);
-            BuildCorners(root.transform);
-            BuildShelf(root.transform);
-            BuildFooter(root.transform);
+            UiBackdrop.AddTo(root);
 
-            // Last, in this order: each covers the whole screen and must draw over what is under it.
-            BuildCollection(root.transform);
-            BuildConfirm(root.transform);
-            BuildReveal(root.transform);
+            BuildHeader();
+            BuildShelf();
+            BuildNav();
 
-            root.SetActive(false);
+            toast = UiKit.Text(string.Empty, "st__toast f-display-semi", root);
+            toast.pickingMode = PickingMode.Ignore;
+            toast.style.opacity = 0f;
+
+            BuildSheet();
+
+            UiFonts.Apply(root);
+            UiKit.Show(root, false);
         }
 
-        // ---------- header corners ----------
+        // ---------- build ----------
 
-        /// <summary>The Collection button top-left and the live balance top-right, level with the title.</summary>
-        private void BuildCorners(Transform parent)
+        private void BuildHeader()
         {
-            var left = Corner(parent, "CollectionHolder", 0f);
-            UIFactory.Button(left.transform, "Collection", MenuButton.Variant.Blue, OpenCollection,
-                             ArcadeTheme.HeaderHeight);
+            var header = UiKit.El("st__header", root);
 
-            var right = Corner(parent, "Purse", 1f);
-            // On a child of the holder, not on the holder: Build reparents its own GameObject to what
-            // it is given, and a transform cannot be its own parent.
-            UIFactory.Child(right.transform, "Pill").AddComponent<CoinPill>().Build(right.transform);
+            var back = UiKit.Frame("sq st__back", header);
+            back.Add(new UiIcon(UiIcon.Glyph.ChevronLeft, ArcadeTheme.Ink, 2.5f));
+            UiKit.OnTap(back, Back, UiSound.Back);
+
+            var box = UiKit.El("st__title-box", header);
+            var row = UiKit.El("st__title-row", box);
+            row.Add(new UiIcon(UiIcon.Glyph.Store, ArcadeTheme.Pulse, 2f));
+            UiKit.Text("STORE", "st__title f-display", row);
+            UiKit.El("st__bar", box);
+
+            var tools = UiKit.El("st__tools", header);
+            var collection = UiKit.Frame("st__collection", tools);
+            collection.Add(new UiIcon(UiIcon.Glyph.Person, ArcadeTheme.Pulse, 2f));
+            UiKit.Text("COLLECTION", "st__collection-label f-display", collection);
+            UiKit.OnTap(collection, () => OnOpenCollection?.Invoke());
+            coinChip = new UiCoinChip();
+            tools.Add(coinChip);
         }
 
-        private static GameObject Corner(Transform parent, string name, float side)
+        private void BuildShelf()
         {
-            var go = UIFactory.Child(parent, name);
-            var rt = UIFactory.Rt(go);
-            rt.anchorMin = rt.anchorMax = new Vector2(side, 1f);
-            rt.pivot = new Vector2(side, 1f);
-            rt.sizeDelta = new Vector2(210f, ArcadeTheme.HeaderHeight);
-            rt.anchoredPosition = new Vector2(side < 0.5f ? ArcadeTheme.Xl2 : -ArcadeTheme.Xl2, -ArcadeTheme.Xl);
+            shelf = new ScrollView(ScrollViewMode.Horizontal) { name = "StoreShelf" };
+            shelf.AddToClassList("st__shelf");
+            shelf.horizontalScrollerVisibility = ScrollerVisibility.Hidden;
+            shelf.verticalScrollerVisibility = ScrollerVisibility.Hidden;
+            shelf.touchScrollBehavior = ScrollView.TouchScrollBehavior.Elastic;
+            shelf.contentContainer.AddToClassList("st__sections");
+            shelf.horizontalScroller.valueChanged += _ => UpdateActiveSection();
+            root.Add(shelf);
 
-            var v = go.AddComponent<VerticalLayoutGroup>();
-            v.childAlignment = TextAnchor.MiddleCenter;
-            v.childForceExpandWidth = true;
-            v.childForceExpandHeight = false;
-            v.childControlWidth = true;
-            v.childControlHeight = true;
-            return go;
+            var chests = Section(ChestSection, out _);
+            for (int i = 0; i < 4; i++) BuildChestCard(chests, (ChestTier)i);
+
+            Divider();
+            BuildDealCard(Section(DealSection, out _));
+
+            Divider();
+            BuildCoinsCard(Section(CoinSection, out _));
+
+            Divider();
+            itemsRow = Section(ItemSection, out itemsCountdown);
         }
 
-        // ---------- the shelf ----------
-
-        /// <summary>
-        /// One horizontal row between the header and the Back button: chests, a divider, the daily
-        /// deal, a divider, free coins. A sideways scroll view, centred when it fits, so a narrow
-        /// screen scrolls rather than squeezing the cards.
-        /// </summary>
-        private void BuildShelf(Transform parent)
+        /// <summary>A heading over a row of cards. Returns the row to put the cards in.</summary>
+        private VisualElement Section(int index, out Label rightNote)
         {
-            var view = UIFactory.Child(parent, "Shelf");
-            float top = ArcadeTheme.Xl + ArcadeTheme.HeaderHeight + ArcadeTheme.Lg;
-            float bottom = ArcadeTheme.Xl + ArcadeTheme.HeaderHeight + ArcadeTheme.Md;
-            UIFactory.Stretch(UIFactory.Rt(view), ArcadeTheme.Xl2, bottom, ArcadeTheme.Xl2, top);
-            var scroll = view.AddComponent<ScrollRect>();
+            var col = UiKit.El("st__section", shelf.contentContainer);
+            sections[index] = col;
 
-            var viewport = UIFactory.Child(view.transform, "Viewport");
-            viewport.AddComponent<RectMask2D>();
-            UIFactory.Stretch(UIFactory.Rt(viewport), 0);
-
-            var content = UIFactory.Child(viewport.transform, "Content");
-            var crt = UIFactory.Rt(content);
-            // Centre pivot: ScrollRect keeps content narrower than the viewport at its pivot, so the
-            // row sits in the middle of a wide phone and only scrolls when it does not fit.
-            crt.anchorMin = new Vector2(0.5f, 0f);
-            crt.anchorMax = new Vector2(0.5f, 1f);
-            crt.pivot = new Vector2(0.5f, 0.5f);
-            crt.sizeDelta = Vector2.zero;
-
-            var h = content.AddComponent<HorizontalLayoutGroup>();
-            h.spacing = ArcadeTheme.Xl;
-            h.childAlignment = TextAnchor.MiddleCenter;
-            h.childForceExpandWidth = false;
-            h.childForceExpandHeight = false;
-            h.childControlWidth = true;
-            h.childControlHeight = true;
-
-            var fitter = content.AddComponent<ContentSizeFitter>();
-            fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
-            fitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
-
-            scroll.content = crt;
-            scroll.viewport = UIFactory.Rt(viewport);
-            scroll.horizontal = true;
-            scroll.vertical = false;
-            scroll.movementType = ScrollRect.MovementType.Elastic;
-            scroll.scrollSensitivity = 24f;
-
-            var chests = Section(content.transform, "CHESTS", ArcadeTheme.InkMuted, ArcadeTheme.Lg);
-            for (int i = 0; i < 4; i++)
+            var head = UiKit.El("st__heading", col);
+            head.Add(new UiIcon(SectionGlyphs[index], ArcadeTheme.Pulse, 2f));
+            UiKit.Text(SectionNames[index], "st__heading-label f-display", head);
+            UiKit.El("st__heading-rule", head);
+            rightNote = null;
+            if (index == ItemSection || index == DealSection)
             {
-                BuildChestCard(chests, (ChestTier)i);
+                var clock = UiKit.El("st__heading-timer", head);
+                clock.Add(new UiIcon(UiIcon.Glyph.Clock, ArcadeTheme.InkMuted, 2f));
+                rightNote = UiKit.Text(string.Empty, "st__heading-time f-display-semi", clock);
             }
 
-            Divider(content.transform);
-            BuildDealCard(Section(content.transform, "DAILY DEAL", ArcadeTheme.Gold, 0f));
+            if (index == DealSection) dealCountdown = rightNote;
 
-            Divider(content.transform);
-            BuildCoinsCard(Section(content.transform, "FREE COINS", ArcadeTheme.InkMuted, 0f));
+            return UiKit.El("st__cards", col);
         }
 
-        /// <summary>A caption over a row of cards. Returns the row to put the cards in.</summary>
-        private static Transform Section(Transform parent, string caption, Color captionColor, float gap)
-        {
-            var col = UIFactory.Child(parent, "Section_" + caption);
-            var v = col.AddComponent<VerticalLayoutGroup>();
-            v.spacing = ArcadeTheme.Md;
-            v.childAlignment = TextAnchor.UpperLeft;
-            v.childForceExpandWidth = false;
-            v.childForceExpandHeight = false;
-            v.childControlWidth = true;
-            v.childControlHeight = true;
+        private void Divider() => UiKit.El("st__divider", shelf.contentContainer);
 
-            var label = UIFactory.Text(col.transform, caption, ArcadeTheme.FsCaption, captionColor,
-                                       display: true, bold: true, upper: true, tracking: 4f,
-                                       align: TextAlignmentOptions.Left);
-            label.gameObject.AddComponent<LayoutElement>().preferredHeight = 22f;
-
-            var row = UIFactory.Child(col.transform, "Row");
-            var h = row.AddComponent<HorizontalLayoutGroup>();
-            h.spacing = gap;
-            h.childAlignment = TextAnchor.UpperLeft;
-            h.childForceExpandWidth = false;
-            h.childForceExpandHeight = false;
-            h.childControlWidth = true;
-            h.childControlHeight = true;
-            return row.transform;
-        }
-
-        private static void Divider(Transform parent)
-        {
-            var go = UIFactory.Child(parent, "Divider");
-            var le = go.AddComponent<LayoutElement>();
-            le.preferredWidth = 1f;
-            le.minWidth = 1f;
-            le.preferredHeight = CardHeight - ArcadeTheme.Xl2;
-            var img = go.AddComponent<Image>();
-            img.color = ArcadeTheme.Line;
-            img.raycastTarget = false;
-        }
-
-        /// <summary>
-        /// The frame every shelf card shares: an edge in its colour, the panel fill, a soft glow behind
-        /// the art, and a column under the art for the words and the button. Returns the column; the
-        /// art area comes back through <paramref name="art"/>.
-        /// </summary>
-        private static Transform CardFrame(Transform parent, string name, float width, Color edge,
-                                           Color glow, out Transform art)
-        {
-            var card = UIFactory.Child(parent, name);
-            var le = card.AddComponent<LayoutElement>();
-            le.preferredWidth = width;
-            le.minWidth = width;
-            le.preferredHeight = CardHeight;
-            le.minHeight = CardHeight;
-
-            var border = UIFactory.Child(card.transform, "Border");
-            UIFactory.RoundedImage(border, ArcadeTheme.RadLg, edge, false);
-            UIFactory.Stretch(UIFactory.Rt(border), 0);
-
-            var fill = UIFactory.Child(card.transform, "Fill");
-            UIFactory.RoundedImage(fill, ArcadeTheme.RadLg, ArcadeTheme.BgPanel, false);
-            UIFactory.Stretch(UIFactory.Rt(fill), 2f);
-
-            var artGo = UIFactory.Child(card.transform, "Art");
-            var artRt = UIFactory.Rt(artGo);
-            artRt.anchorMin = new Vector2(0f, 1f);
-            artRt.anchorMax = new Vector2(1f, 1f);
-            artRt.pivot = new Vector2(0.5f, 1f);
-            artRt.sizeDelta = new Vector2(0f, ArtHeight);
-            artRt.anchoredPosition = Vector2.zero;
-
-            var halo = UIFactory.Child(artGo.transform, "Halo");
-            UIFactory.GlowImage(halo, ArcadeTheme.RadLg, 48f, glow);
-            var hrt = UIFactory.Rt(halo);
-            hrt.anchorMin = hrt.anchorMax = new Vector2(0.5f, 0.45f);
-            hrt.pivot = new Vector2(0.5f, 0.5f);
-            hrt.sizeDelta = new Vector2(width * 0.85f, ArtHeight * 0.8f);
-            art = artGo.transform;
-
-            var col = UIFactory.Child(card.transform, "Column");
-            UIFactory.Stretch(UIFactory.Rt(col), ArcadeTheme.Lg, ArcadeTheme.Lg, ArcadeTheme.Lg, ArtHeight);
-            var v = col.AddComponent<VerticalLayoutGroup>();
-            v.spacing = ArcadeTheme.Sm;
-            v.childAlignment = TextAnchor.UpperLeft;
-            v.childForceExpandWidth = true;
-            v.childForceExpandHeight = false;
-            v.childControlWidth = true;
-            v.childControlHeight = true;
-            return col.transform;
-        }
-
-        /// <summary>A small caption pinned into a top corner of a card's art.</summary>
-        private static TextMeshProUGUI CornerTag(Transform art, string text, Color color, float side)
-        {
-            var t = UIFactory.Text(art, text, ArcadeTheme.FsCaption * 0.88f, color, display: true,
-                                   bold: true, upper: true, tracking: 3f,
-                                   align: side < 0.5f ? TextAlignmentOptions.Left : TextAlignmentOptions.Right);
-            var rt = UIFactory.Rt(t.gameObject);
-            rt.anchorMin = rt.anchorMax = new Vector2(side, 1f);
-            rt.pivot = new Vector2(side, 1f);
-            rt.sizeDelta = new Vector2(150f, 24f);
-            rt.anchoredPosition = new Vector2(side < 0.5f ? ArcadeTheme.Lg : -ArcadeTheme.Lg, -ArcadeTheme.Md);
-            return t;
-        }
-
-        private static TextMeshProUGUI CardTitle(Transform col, string text, Color color, float size)
-        {
-            var t = UIFactory.Text(col, text, size, color, display: true, bold: true, upper: false,
-                                   tracking: 1f, align: TextAlignmentOptions.Left);
-            t.gameObject.AddComponent<LayoutElement>().preferredHeight = size + 6f;
-            return t;
-        }
-
-        private static void CardBlurb(Transform col, string text)
-        {
-            var t = UIFactory.Text(col, text, ArcadeTheme.FsCaption, ArcadeTheme.InkMuted, display: false,
-                                   bold: false, upper: false, align: TextAlignmentOptions.TopLeft);
-            t.textWrappingMode = TextWrappingModes.Normal;
-            t.gameObject.AddComponent<LayoutElement>().preferredHeight = 70f;
-        }
-
-        private static void Flex(Transform col)
-        {
-            UIFactory.Child(col, "Flex").AddComponent<LayoutElement>().flexibleHeight = 1f;
-        }
-
-        private void BuildChestCard(Transform parent, ChestTier tier)
+        private void BuildChestCard(VisualElement parent, ChestTier tier)
         {
             Color tint = UIFactory.ChestColor(tier);
-            var col = CardFrame(parent, "Chest_" + tier, CardWidth, tint.WithAlpha(0.55f),
-                                tint.WithAlpha(0.26f), out Transform art);
+            var card = UiKit.Frame("st__card st__card--chest", parent);
+            card.OverrideEdge(new Color(tint.r, tint.g, tint.b, 0.6f));
 
-            CornerTag(art, CosmeticCatalog.RarityName((Rarity)(int)tier), tint, 0f);
-            PlaceChest(art, tier, ChestSize);
+            var tag = UiKit.Text(CosmeticCatalog.RarityName((Rarity)(int)tier).ToUpperInvariant(), "st__tag f-display", card);
+            tag.style.color = tint;
 
-            CardTitle(col, ChestLoot.TierName(tier), ArcadeTheme.Ink, ArcadeTheme.FsBody * 1.1f);
-            Flex(col);
+            var stage = UiKit.El("st__stage", card);
+            var halo = UiKit.El("st__halo", stage);
+            halo.style.backgroundColor = new Color(tint.r, tint.g, tint.b, 0.13f);
+            var chest = new UiChest(tier);
+            chest.AddToClassList("st__chest");
+            stage.Add(chest);
 
-            var btn = UIFactory.Button(col, string.Empty, MenuButton.Variant.Blue, () => AskBuy(tier), 56f);
-            var price = UIFactory.CoinAmount(btn.transform, ChestLoot.Price(tier).ToString("N0", CultureInfo.InvariantCulture), 34f);
-            UIFactory.Stretch(UIFactory.Rt(price), 0);
-            var dim = price.AddComponent<CanvasGroup>();
-            dim.blocksRaycasts = false;
+            UiKit.Text("LUCKY CHEST", "st__name f-display", card);
 
-            chestButtons[(int)tier] = btn;
-            chestPrices[(int)tier] = dim;
-        }
-
-        private void BuildDealCard(Transform parent)
-        {
-            // The one card on the screen with a resting gold halo, alongside its gold button.
-            var halo = UIFactory.Child(parent, "DealHalo");
-            halo.AddComponent<LayoutElement>().ignoreLayout = true;
-
-            var col = CardFrame(parent, "Deal", DealWidth, ArcadeTheme.Gold,
-                                ArcadeTheme.Gold.WithAlpha(0.22f), out Transform art);
-
-            UIFactory.GlowImage(halo, ArcadeTheme.RadLg, 30f, ArcadeTheme.Gold.WithAlpha(0.18f));
-            var hrt = UIFactory.Rt(halo);
-            hrt.anchorMin = hrt.anchorMax = new Vector2(0f, 1f);
-            hrt.pivot = new Vector2(0f, 1f);
-            hrt.sizeDelta = new Vector2(DealWidth + 28f, CardHeight + 28f);
-            hrt.anchoredPosition = new Vector2(-14f, 14f);
-
-            // A gold chip reading FREE in the top-left corner.
-            var chip = UIFactory.Child(art, "FreeChip");
-            UIFactory.RoundedImage(chip, ArcadeTheme.RadSm, ArcadeTheme.Gold.WithAlpha(0.16f), false);
-            var crt = UIFactory.Rt(chip);
-            crt.anchorMin = crt.anchorMax = new Vector2(0f, 1f);
-            crt.pivot = new Vector2(0f, 1f);
-            crt.sizeDelta = new Vector2(72f, 28f);
-            crt.anchoredPosition = new Vector2(ArcadeTheme.Md, -ArcadeTheme.Md);
-            var free = UIFactory.Text(chip.transform, "FREE", ArcadeTheme.FsCaption * 0.88f, ArcadeTheme.Gold,
-                                      display: true, bold: true, upper: true, tracking: 3f);
-            UIFactory.Stretch(UIFactory.Rt(free.gameObject), 0);
-
-            dealTierLabel = CornerTag(art, string.Empty, ArcadeTheme.Ink, 1f);
-
-            var holder = UIFactory.Child(art, "ChestHolder");
-            UIFactory.Stretch(UIFactory.Rt(holder), 0);
-            dealArt = holder.transform;
-
-            dealName = CardTitle(col, string.Empty, ArcadeTheme.Ink, ArcadeTheme.FsBody * 1.1f);
-            CardBlurb(col, "Watch one ad to open it. A new deal every day, Common or Rare.");
-            Flex(col);
-
-            dealCountdown = UIFactory.Text(col, string.Empty, ArcadeTheme.FsCaption, ArcadeTheme.InkMuted,
-                                           display: false, bold: true, upper: false,
-                                           align: TextAlignmentOptions.Left, richText: false);
-            dealCountdown.gameObject.AddComponent<LayoutElement>().preferredHeight = 24f;
-
-            dealButton = UIFactory.Button(col, "Watch ad", MenuButton.Variant.Primary, ClaimDeal, 56f);
-            UIShine.AddTo(dealButton);
-        }
-
-        private void BuildCoinsCard(Transform parent)
-        {
-            var col = CardFrame(parent, "Coins", CardWidth, ArcadeTheme.Coin.WithAlpha(0.45f),
-                                ArcadeTheme.Coin.WithAlpha(0.20f), out Transform art);
-
-            // A small pile: two coins behind, one in front.
-            PlaceCoin(art, new Vector2(-30f, -18f), 70f);
-            PlaceCoin(art, new Vector2(30f, -18f), 70f);
-            PlaceCoin(art, new Vector2(0f, 8f), 96f);
-
-            CardTitle(col, "+" + ShopOffers.AdCoins, ArcadeTheme.Coin, ArcadeTheme.FsBody * 1.45f);
-            CardTitle(col, "Coins", ArcadeTheme.Ink, ArcadeTheme.FsBody);
-            CardBlurb(col, "Watch a short ad for a coin top-up.");
-            Flex(col);
-
-            var pipRow = UIFactory.Child(col, "Pips");
-            pipRow.AddComponent<LayoutElement>().preferredHeight = 24f;
-            var h = pipRow.AddComponent<HorizontalLayoutGroup>();
-            h.spacing = ArcadeTheme.Xs + 2f;
-            h.childAlignment = TextAnchor.MiddleLeft;
-            h.childForceExpandWidth = false;
-            h.childForceExpandHeight = false;
-            h.childControlWidth = true;
-            h.childControlHeight = true;
-
-            for (int i = 0; i < ShopOffers.AdsPerDay; i++)
+            // What it leans toward: one dot per rarity, brighter the likelier.
+            var dots = UiKit.El("st__odds", card);
+            for (int r = 0; r < 4; r++)
             {
-                var pip = UIFactory.Child(pipRow.transform, "Pip");
-                var ple = pip.AddComponent<LayoutElement>();
-                ple.preferredWidth = 20f;
-                ple.preferredHeight = 8f;
-                adPips.Add(UIFactory.RoundedImage(pip, 4, ArcadeTheme.BgRaised, false));
+                int chance = ChestLoot.Chance(tier, (Rarity)r);
+                var dot = UiKit.El("st__odd", dots);
+                Color c = UIFactory.RarityColor((Rarity)r);
+                dot.style.backgroundColor = c;
+                dot.style.opacity = chance <= 0 ? 0.14f : Mathf.Lerp(0.45f, 1f, Mathf.Clamp01(chance / 60f));
             }
 
-            UIFactory.Child(pipRow.transform, "Gap").AddComponent<LayoutElement>().flexibleWidth = 1f;
-            adsLeftLabel = UIFactory.Text(pipRow.transform, string.Empty, ArcadeTheme.FsCaption * 0.9f,
-                                          ArcadeTheme.InkMuted, display: false, bold: true,
-                                          align: TextAlignmentOptions.Right, richText: false);
-
-            adButton = UIFactory.Button(col, "Watch ad", MenuButton.Variant.Blue, WatchCoinAd, 56f);
+            ChestTier captured = tier;
+            chestBuy[(int)tier] = PriceButton(card, ChestLoot.Price(tier), () => AskBuyChest(captured));
         }
 
-        private static void PlaceChest(Transform parent, ChestTier tier, float size)
+        private void BuildDealCard(VisualElement parent)
         {
-            var chest = UIFactory.ChestGlyph(parent, tier, size);
-            UIFactory.Rt(chest).anchoredPosition = new Vector2(0f, -ArcadeTheme.Sm);
+            dealCard = UiKit.Frame("st__card st__card--deal", parent);
+            dealCard.OverrideEdge(ArcadeTheme.Reward);
+
+            dealHalo = UiKit.El("st__glow", dealCard);
+            dealHalo.pickingMode = PickingMode.Ignore;
+            dealHalo.SendToBack();
+
+            var free = UiKit.Text("FREE", "st__free f-display", dealCard);
+            free.pickingMode = PickingMode.Ignore;
+            dealTierLabel = UiKit.Text(string.Empty, "st__tag st__tag--right f-display", dealCard);
+
+            var stage = UiKit.El("st__stage", dealCard);
+            UiKit.El("st__halo st__halo--gold", stage);
+            dealArt = UiKit.El("st__deal-art", stage);
+
+            dealName = UiKit.Text(string.Empty, "st__name f-display", dealCard);
+            UiKit.Text("ONE AD · ONE CHEST · EVERY DAY", "st__blurb f-display-semi", dealCard);
+
+            dealButton = UiKit.Frame("btn btn--reward st__buy st__watch", dealCard);
+            dealButton.Add(new UiIcon(UiIcon.Glyph.Play, ArcadeTheme.OnReward, 2.4f));
+            dealButtonLabel = UiKit.Text("WATCH AD", "btn__label f-display", dealButton);
+            UiKit.OnTap(dealButton, ClaimDeal, UiSound.Reward);
         }
 
-        private static void PlaceCoin(Transform parent, Vector2 pos, float size)
+        private void BuildCoinsCard(VisualElement parent)
         {
-            var coin = UIFactory.CoinGlyph(parent, size);
-            UIFactory.Rt(coin).anchoredPosition = pos;
+            var card = UiKit.Frame("st__card st__card--coins", parent);
+            card.OverrideEdge(new Color(ArcadeTheme.Coin.r, ArcadeTheme.Coin.g, ArcadeTheme.Coin.b, 0.5f));
+
+            var stage = UiKit.El("st__stage", card);
+            UiKit.El("st__halo st__halo--gold", stage);
+            var pile = UiKit.El("st__pile", stage);
+            var a = new UiCoin(); a.AddToClassList("st__pile-coin"); a.AddToClassList("st__pile-coin--l"); pile.Add(a);
+            var b = new UiCoin(); b.AddToClassList("st__pile-coin"); b.AddToClassList("st__pile-coin--r"); pile.Add(b);
+            var c = new UiCoin(); c.AddToClassList("st__pile-coin"); c.AddToClassList("st__pile-coin--m"); pile.Add(c);
+
+            UiKit.Text("+" + ShopOffers.AdCoins, "st__amount f-display", card);
+            UiKit.Text("COINS", "st__name f-display", card);
+
+            var pips = UiKit.El("st__pips", card);
+            for (int i = 0; i < ShopOffers.AdsPerDay; i++) adPips.Add(UiKit.El("st__pip", pips));
+            adsLeftLabel = UiKit.Text(string.Empty, "st__left f-display-semi", card);
+
+            adButton = UiKit.Frame("btn btn--reward st__buy st__watch", card);
+            adButton.Add(new UiIcon(UiIcon.Glyph.Play, ArcadeTheme.OnReward, 2.4f));
+            adButtonLabel = UiKit.Text("WATCH AD", "btn__label f-display", adButton);
+            UiKit.OnTap(adButton, WatchCoinAd, UiSound.Reward);
         }
 
-        private void BuildFooter(Transform parent)
+        /// <summary>The blue-outlined button with the coin and the price. Greyed (not disabled) when the
+        /// player cannot afford it, so tapping it can still say why.</summary>
+        private static VisualElement PriceButton(VisualElement parent, int price, Action onTap)
         {
-            // Along the bottom edge, level with Back, and clear of it.
-            footerLabel = UIFactory.Text(parent, FooterText, ArcadeTheme.FsCaption, ArcadeTheme.InkMuted,
-                                         display: false, bold: true, upper: false, richText: false);
-            var rt = UIFactory.Rt(footerLabel.gameObject);
-            rt.anchorMin = new Vector2(0f, 0f);
-            rt.anchorMax = new Vector2(1f, 0f);
-            rt.pivot = new Vector2(0.5f, 0f);
-            rt.offsetMin = new Vector2(ArcadeTheme.Xl2 + ArcadeTheme.BackWidth + ArcadeTheme.Lg, ArcadeTheme.Xl);
-            rt.offsetMax = new Vector2(-(ArcadeTheme.Xl2 + ArcadeTheme.BackWidth + ArcadeTheme.Lg),
-                                       ArcadeTheme.Xl + ArcadeTheme.HeaderHeight);
+            var buy = UiKit.Frame("btn btn--pulse st__buy", parent);
+            buy.Add(new UiCoin());
+            UiKit.Text(price.ToString("N0", CultureInfo.InvariantCulture), "btn__label f-display", buy);
+            UiKit.OnTap(buy, onTap);
+            return buy;
+        }
+
+        private void BuildNav()
+        {
+            var bar = UiKit.El("st__nav", root);
+            for (int i = 0; i < SectionCount; i++)
+            {
+                int index = i;
+                var tab = UiKit.Frame("st__tab", bar);
+                tab.Add(new UiIcon(SectionGlyphs[i], ArcadeTheme.InkMuted, 2f));
+                UiKit.Text(SectionNames[i], "st__tab-label f-display", tab);
+                UiKit.OnTap(tab, () => JumpTo(index));
+                navTabs.Add(tab);
+
+                // A gold dot on the daily reward tab while the free chest is waiting.
+                if (i == DealSection)
+                {
+                    dealDot = UiKit.El("st__dot", tab);
+                    dealDot.pickingMode = PickingMode.Ignore;
+                }
+            }
+        }
+
+        private void BuildSheet()
+        {
+            sheetLayer = UiKit.El("bleed st__sheet-layer", root);
+            sheetLayer.pickingMode = PickingMode.Position;
+
+            var sheet = UiKit.Frame("st__sheet", sheetLayer);
+            sheetArt = UiKit.El("st__sheet-art", sheet);
+            sheetTitle = UiKit.Text(string.Empty, "st__sheet-title f-display", sheet);
+
+            var price = UiKit.El("st__sheet-price", sheet);
+            price.Add(new UiCoin());
+            sheetPrice = UiKit.Text("0", "st__sheet-amount f-display", price);
+
+            var buttons = UiKit.El("st__sheet-buttons", sheet);
+            UiKit.Button("CANCEL", "ghost", CloseSheet, buttons);
+            var go = UiKit.Button("OPEN", "pulse", ConfirmSheet, buttons);
+            sheetGo = go.Q<Label>();
+
+            UiKit.Show(sheetLayer, false);
+        }
+
+        // ---------- sections ----------
+
+        private void JumpTo(int index)
+        {
+            SelectSection(index);
+            float target = Mathf.Max(0f, sections[index].layout.x - 40f);
+
+            scrollAnim?.Pause();
+            if (ArcadeTheme.ReducedMotion)
+            {
+                shelf.scrollOffset = new Vector2(target, 0f);
+                return;
+            }
+
+            float from = shelf.scrollOffset.x;
+            float start = Time.unscaledTime;
+            scrollAnim = shelf.schedule.Execute(() =>
+            {
+                float t = Mathf.Clamp01((Time.unscaledTime - start) / 0.28f);
+                float k = 1f - (1f - t) * (1f - t);
+                shelf.scrollOffset = new Vector2(Mathf.Lerp(from, target, k), 0f);
+                if (t >= 1f) scrollAnim.Pause();
+            }).Every(16);
+        }
+
+        /// <summary>Lights the bar's tab for the section that is in view.</summary>
+        private void UpdateActiveSection()
+        {
+            float x = shelf.scrollOffset.x;
+            int found = 0;
+            for (int i = 0; i < SectionCount; i++)
+            {
+                if (sections[i].layout.x - 90f <= x) found = i;
+            }
+
+            // The last section may be too short to ever reach its own start; the end of the shelf is it.
+            if (x >= shelf.horizontalScroller.highValue - 2f && shelf.horizontalScroller.highValue > 0f)
+            {
+                found = SectionCount - 1;
+            }
+
+            SelectSection(found);
+        }
+
+        private void SelectSection(int index)
+        {
+            if (index == activeSection) return;
+            activeSection = index;
+            for (int i = 0; i < navTabs.Count; i++)
+            {
+                bool on = i == index;
+                navTabs[i].EnableInClassList("is-active", on);
+                navTabs[i].Q<UiIcon>().Color = on ? ArcadeTheme.Pulse : ArcadeTheme.InkMuted;
+            }
         }
 
         // ---------- refresh ----------
 
-        /// <summary>Repaints the shelf's live state: what can be afforded, and what the ad offers have left.</summary>
+        /// <summary>Repaints the shelf's live state: what can be afforded, and what the offers have left.</summary>
         private void RefreshShelf()
         {
             if (root == null) return;
 
-            for (int i = 0; i < chestButtons.Length; i++)
+            for (int i = 0; i < chestBuy.Length; i++)
             {
-                bool affordable = Wallet.CanAfford(ChestLoot.Price((ChestTier)i));
-                chestButtons[i].interactable = affordable;
-                chestPrices[i].alpha = affordable ? 1f : 0.45f;
+                chestBuy[i].EnableInClassList("is-poor", !Wallet.CanAfford(ChestLoot.Price((ChestTier)i)));
             }
 
+            RefreshDeal();
+            RefreshAds();
+            RefreshItems();
+            RefreshCountdowns();
+        }
+
+        private void RefreshDeal()
+        {
             ChestTier tier = ShopOffers.DealTier;
             if (tier != shownDealTier)
             {
                 shownDealTier = tier;
-                UIFactory.ClearChildren(dealArt);
-                PlaceChest(dealArt, tier, ChestSize + 10f);
-                dealTierLabel.text = CosmeticCatalog.RarityName((Rarity)(int)tier);
-                dealTierLabel.color = UIFactory.ChestColor(tier);
-                dealName.text = ChestLoot.TierName(tier);
+                dealArt.Clear();
+                var chest = new UiChest(tier);
+                chest.AddToClassList("st__chest");
+                dealArt.Add(chest);
+                dealTierLabel.text = CosmeticCatalog.RarityName((Rarity)(int)tier).ToUpperInvariant();
+                dealTierLabel.style.color = UIFactory.ChestColor(tier);
+                dealName.text = "LUCKY CHEST";
             }
 
-            bool dealOpen = !ShopOffers.DealClaimed;
-            dealButton.interactable = dealOpen;
-            dealButton.label.text = dealOpen ? "Watch ad" : "Claimed today";
-            // The screen's one resting glow, and only while there is something to take.
-            dealButton.SetAccent(ArcadeTheme.Gold, dealOpen ? 0.5f : 0f);
-
-            int left = ShopOffers.AdsLeft;
-            for (int i = 0; i < adPips.Count; i++)
-            {
-                adPips[i].color = i < left ? ArcadeTheme.Coin : ArcadeTheme.BgRaised;
-            }
-            adsLeftLabel.text = $"{left} of {ShopOffers.AdsPerDay} left";
-            adButton.interactable = left > 0;
-            adButton.label.text = left > 0 ? "Watch ad" : "Back tomorrow";
-
-            RefreshCountdown();
+            bool open = !ShopOffers.DealClaimed;
+            dealButton.EnableInClassList("is-disabled", !open);
+            dealButtonLabel.text = open ? "WATCH AD" : "CLAIMED";
+            UiKit.Show(dealHalo, open);
+            UiKit.Show(dealDot, open);
         }
 
-        private void RefreshCountdown()
+        private void RefreshAds()
         {
-            if (dealCountdown == null) return;
+            int left = ShopOffers.AdsLeft;
+            for (int i = 0; i < adPips.Count; i++) adPips[i].EnableInClassList("is-lit", i < left);
+            adsLeftLabel.text = left + " OF " + ShopOffers.AdsPerDay + " LEFT";
+            adButton.EnableInClassList("is-disabled", left <= 0);
+            adButtonLabel.text = left > 0 ? "WATCH AD" : "BACK TOMORROW";
+        }
+
+        private void RefreshItems()
+        {
+            CosmeticItem[] today = ShopOffers.DailyItems;
+
+            string signature = string.Empty;
+            foreach (CosmeticItem item in today) signature += item.Id + (Inventory.Owns(item.Id) ? "+" : "-") + ";";
+
+            if (signature != itemsSignature)
+            {
+                itemsSignature = signature;
+                itemsRow.Clear();
+                itemBuys.Clear();
+                foreach (CosmeticItem item in today) BuildItemCard(item);
+                if (today.Length == 0) UiKit.Text("YOU OWN EVERYTHING ON SALE", "st__empty f-display-semi", itemsRow);
+                UiFonts.Apply(itemsRow);
+            }
+
+            foreach (var entry in itemBuys)
+            {
+                entry.buy.EnableInClassList("is-poor", !Wallet.CanAfford(ShopOffers.DailyItemPrice(entry.item)));
+            }
+        }
+
+        private void BuildItemCard(CosmeticItem item)
+        {
+            Color rarity = UIFactory.RarityColor(item.Rarity);
+            bool owned = Inventory.Owns(item.Id);
+
+            var card = UiKit.Frame("st__card st__card--item", itemsRow);
+            card.OverrideEdge(new Color(rarity.r, rarity.g, rarity.b, owned ? 0.3f : 0.6f));
+
+            var tag = UiKit.Text(CosmeticCatalog.RarityName(item.Rarity).ToUpperInvariant(), "st__tag f-display", card);
+            tag.style.color = rarity;
+
+            var art = UiArt.Cosmetic(item);
+            art.AddToClassList("st__item-art");
+            if (owned) art.style.opacity = 0.5f;
+            card.Add(art);
+
+            UiKit.Text(item.Name, "st__name st__name--item f-display", card);
+            var kind = UiKit.Text(CosmeticCatalog.KindLabel(item.Kind).ToUpperInvariant(), "st__kind f-display-semi", card);
+            kind.style.color = ArcadeTheme.InkMuted;
+
+            if (owned)
+            {
+                var done = UiKit.Frame("btn btn--ghost st__buy st__owned", card);
+                done.Add(new UiIcon(UiIcon.Glyph.Check, ArcadeTheme.Pulse, 2.6f));
+                UiKit.Text("OWNED", "btn__label f-display", done);
+                return;
+            }
+
+            CosmeticItem captured = item;
+            var buy = PriceButton(card, ShopOffers.DailyItemPrice(item), () => AskBuyItem(captured));
+            itemBuys.Add((item, buy));
+        }
+
+        private void RefreshCountdowns()
+        {
             TimeSpan t = ShopOffers.UntilReset;
-            dealCountdown.text = $"New deal in {(int)t.TotalHours:00}:{t.Minutes:00}:{t.Seconds:00}";
+            string text = ((int)t.TotalHours).ToString("00") + ":" + t.Minutes.ToString("00") + ":" + t.Seconds.ToString("00");
+            if (dealCountdown != null) dealCountdown.text = text;
+            if (itemsCountdown != null) itemsCountdown.text = text;
         }
 
         private void Update()
@@ -526,50 +495,75 @@ namespace TableFootball.UI
             if (!IsOpen || Time.unscaledTime < nextTick) return;
             nextTick = Time.unscaledTime + 1f;
 
-            // Once a second: the countdown, and — reading the offers is what rolls them over — a
-            // screen left open past midnight picks up the new day's deal and ad count.
-            bool dealWas = dealButton != null && dealButton.interactable;
+            // Once a second: the countdowns, and — reading the offers is what rolls them over — a
+            // screen left open past midnight picks up the new day's deal, ads and items.
+            bool dealShown = !dealButton.ClassListContains("is-disabled");
             bool dealNow = !ShopOffers.DealClaimed;
-            if (dealWas != dealNow || ShopOffers.DealTier != shownDealTier || !adButton.interactable && ShopOffers.AdsLeft > 0)
+            if (dealShown != dealNow || ShopOffers.DealTier != shownDealTier ||
+                (ShopOffers.AdsLeft > 0) == adButton.ClassListContains("is-disabled"))
             {
                 RefreshShelf();
                 return;
             }
 
-            RefreshCountdown();
+            RefreshCountdowns();
         }
 
         // ---------- actions ----------
 
-        private void AskBuy(ChestTier tier)
+        private void AskBuyChest(ChestTier tier)
         {
-            if (!Wallet.CanAfford(ChestLoot.Price(tier)))
+            int price = ChestLoot.Price(tier);
+            if (!Wallet.CanAfford(price))
             {
-                Say("Not enough coins. Play ranked or watch an ad to earn more");
+                Poor();
                 return;
             }
 
-            ShowConfirm(tier);
+            ShowSheet(price, "OPEN " + ChestLoot.TierName(tier).ToUpperInvariant() + "?", "OPEN",
+                      () => new UiChest(tier) { name = "sheetchest" }, () =>
+                      {
+                          // Asked and answered in one call: the balance may have moved since the sheet opened.
+                          if (!Wallet.TrySpend(price)) { Poor(); return; }
+                          OpenChest(ChestLoot.Open(tier));
+                      });
         }
 
-        private void Buy(ChestTier tier)
+        private void AskBuyItem(CosmeticItem item)
         {
-            // Asked and answered in one call: the balance may have moved since the confirm opened.
-            if (!Wallet.TrySpend(ChestLoot.Price(tier)))
+            int price = ShopOffers.DailyItemPrice(item);
+            if (!Wallet.CanAfford(price))
             {
-                Say("Not enough coins. Play ranked or watch an ad to earn more");
+                Poor();
                 return;
             }
 
-            ShowReveal(ChestLoot.Open(tier));
+            ShowSheet(price, "BUY " + item.Name.ToUpperInvariant() + "?", "BUY", () => UiArt.Cosmetic(item), () =>
+            {
+                if (ShopOffers.BuyDailyItem(item.Id))
+                {
+                    GameSfx.PlayUi(UiSound.Reward);
+                    Say(item.Name.ToUpperInvariant() + " IS YOURS · WEAR IT IN COLLECTION");
+                }
+                else
+                {
+                    Poor();
+                }
+            });
+        }
+
+        private void Poor()
+        {
+            GameSfx.PlayUi(UiSound.Deny);
+            Say("NOT ENOUGH COINS · PLAY RANKED OR WATCH AN AD");
         }
 
         private void ClaimDeal()
         {
             ShopOffers.ClaimDeal(drop =>
             {
-                if (drop.HasValue) ShowReveal(drop.Value);
-                else Say("The ad didn't finish, so the deal is still yours");
+                if (drop.HasValue) OpenChest(drop.Value);
+                else Say("THE AD DID NOT FINISH · YOUR CHEST IS STILL WAITING");
             });
         }
 
@@ -577,506 +571,80 @@ namespace TableFootball.UI
         {
             ShopOffers.WatchCoinAd(paid =>
             {
-                Say(paid ? $"+{ShopOffers.AdCoins} coins added" : "The ad didn't finish, so no coins this time");
+                if (paid) RewardFly.Play(RewardFly.Kind.Coins, adButton, coinChip, ShopOffers.AdCoins);
+                Say(paid ? "+" + ShopOffers.AdCoins + " COINS ADDED" : "THE AD DID NOT FINISH · NO COINS THIS TIME");
             });
         }
 
-        /// <summary>
-        /// Swaps the footer line for a short message, then puts it back. The footer rather than a popup:
-        /// it never moves the shelf, and it sits where the player is already looking after a tap.
-        /// </summary>
+        /// <summary>Plays the chest opening over the store for a chest that has already been rolled and
+        /// granted. It draws on top of everything and returns to the store when the player collects. A
+        /// chest with nothing left to win pays coins instead: the balance is held until the chest has
+        /// closed, then the coins fly in.</summary>
+        private void OpenChest(ChestDrop drop)
+        {
+            if (drop.Coins > 0)
+            {
+                coinChip.Freeze(true);
+                coinChip.SetNow(Mathf.Max(0, coinChip.Target - drop.Coins));
+            }
+
+            ChestOpening.Play(drop.Tier, drop.Item, drop.Coins, () =>
+            {
+                if (drop.Coins > 0) RewardFly.Play(RewardFly.Kind.Coins, null, coinChip, drop.Coins);
+            });
+        }
+
+        /// <summary>A short message above the section bar, then gone. It never moves the shelf, and it
+        /// sits where the player is already looking after a tap.</summary>
         private void Say(string message)
         {
-            if (footerLabel == null) return;
+            if (toast == null) return;
 
-            footerLabel.text = message;
-            footerLabel.color = ArcadeTheme.Coin;
+            toast.text = message;
+            toast.BringToFront();
+            UiKit.Fade(toast, 1f, ArcadeTheme.TFast);
 
-            if (statusRoutine != null) StopCoroutine(statusRoutine);
-            if (isActiveAndEnabled) statusRoutine = StartCoroutine(ClearStatus());
-        }
-
-        private IEnumerator ClearStatus()
-        {
-            // Realtime: the front end runs at timeScale 0, and a scaled wait here would never finish.
-            yield return new WaitForSecondsRealtime(2.6f);
-            ResetFooter();
-            statusRoutine = null;
-        }
-
-        private void ResetFooter()
-        {
-            if (footerLabel == null) return;
-            footerLabel.text = FooterText;
-            footerLabel.color = ArcadeTheme.InkMuted;
+            int token = ++toastToken;
+            toast.schedule.Execute(() =>
+            {
+                if (token == toastToken) UiKit.Fade(toast, 0f, 0.3f);
+            }).StartingIn(2600);
         }
 
         // ---------- confirm ----------
 
         /// <summary>
-        /// The purchase prompt: which chest, how much, and a way out. Built once and refilled, rather
-        /// than created per purchase, so there is no fresh set of listeners to leak.
+        /// The purchase prompt: what, how much, and a way out. Built once and refilled, rather than
+        /// created per purchase, so there is no fresh set of handlers to leak.
         /// </summary>
-        private void BuildConfirm(Transform parent)
+        private void ShowSheet(int price, string title, string goLabel, Func<VisualElement> art, Action onConfirm)
         {
-            confirmPanel = UIFactory.Child(parent, "ConfirmBuy");
-            UIFactory.Stretch(UIFactory.Rt(confirmPanel));
-            UIFactory.ScrimDim(confirmPanel.transform, 0.6f);
+            pendingBuy = onConfirm;
+            sheetArt.Clear();
+            sheetArt.Add(art());
+            sheetTitle.text = title;
+            sheetPrice.text = price.ToString("N0", CultureInfo.InvariantCulture);
+            sheetGo.text = goLabel;
 
-            var panel = UIFactory.Panel(confirmPanel.transform, "ConfirmPanel");
-            var prt = UIFactory.Rt(panel);
-            prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
-            prt.pivot = new Vector2(0.5f, 0.5f);
-            prt.sizeDelta = new Vector2(520f, 420f);
-
-            var col = UIFactory.Child(panel.transform.Find("Fill"), "Col");
-            UIFactory.Stretch(UIFactory.Rt(col), 26f);
-
-            var v = col.AddComponent<VerticalLayoutGroup>();
-            v.spacing = ArcadeTheme.Md;
-            v.childAlignment = TextAnchor.UpperCenter;
-            v.childForceExpandWidth = true;
-            v.childForceExpandHeight = false;
-            v.childControlWidth = true;
-            v.childControlHeight = true;
-
-            var art = UIFactory.Child(col.transform, "Art");
-            art.AddComponent<LayoutElement>().preferredHeight = 130f;
-            confirmArt = art.transform;
-
-            confirmTitle = UIFactory.Text(col.transform, string.Empty, ArcadeTheme.FsBody * 1.2f,
-                                          ArcadeTheme.Ink, display: true, bold: true, upper: false,
-                                          tracking: 1f, richText: false);
-            confirmTitle.gameObject.AddComponent<LayoutElement>().preferredHeight = 36f;
-
-            var priceRow = UIFactory.CoinAmount(col.transform, "0", 40f);
-            confirmPrice = priceRow.GetComponentInChildren<TextMeshProUGUI>();
-
-            UIFactory.Spacer(col.transform, 4f);
-
-            var buttons = UIFactory.Child(col.transform, "Buttons");
-            buttons.AddComponent<LayoutElement>().preferredHeight = 62f;
-            var h = buttons.AddComponent<HorizontalLayoutGroup>();
-            h.spacing = ArcadeTheme.Sm;
-            h.childForceExpandWidth = true;
-            h.childForceExpandHeight = true;
-            h.childControlWidth = true;
-            h.childControlHeight = true;
-
-            UIFactory.Button(buttons.transform, "Cancel", MenuButton.Variant.Ghost, CancelBuy);
-            UIFactory.Button(buttons.transform, "Open", MenuButton.Variant.Primary, ConfirmBuy);
-
-            confirmPanel.SetActive(false);
+            UiFonts.Apply(sheetLayer);
+            UiKit.Show(sheetLayer, true);
+            sheetLayer.BringToFront();
+            sheetLayer.style.opacity = 0f;
+            UiKit.Fade(sheetLayer, 1f, ArcadeTheme.TFast);
+            GameSfx.PlayUi(UiSound.Open);
         }
 
-        private void ShowConfirm(ChestTier tier)
+        private void ConfirmSheet()
         {
-            pendingBuy = tier;
-            if (confirmPanel == null) return;
-
-            UIFactory.ClearChildren(confirmArt);
-            UIFactory.ChestGlyph(confirmArt, tier, 130f);
-            confirmTitle.text = $"Open {ChestLoot.TierName(tier)}?";
-            confirmPrice.text = ChestLoot.Price(tier).ToString("N0", CultureInfo.InvariantCulture);
-            confirmPanel.SetActive(true);
-            confirmPanel.transform.SetAsLastSibling();
+            Action go = pendingBuy;
+            CloseSheet();
+            go?.Invoke();
         }
 
-        private void ConfirmBuy()
-        {
-            ChestTier? tier = pendingBuy;
-            CancelBuy();
-            if (tier.HasValue) Buy(tier.Value);
-        }
-
-        private void CancelBuy()
+        private void CloseSheet()
         {
             pendingBuy = null;
-            if (confirmPanel != null) confirmPanel.SetActive(false);
-        }
-
-        // ---------- reveal ----------
-
-        /// <summary>
-        /// What came out of a chest, big, with its rarity — the same card the level path shows for its
-        /// milestone chests, so a chest opened anywhere in the game ends the same way.
-        /// </summary>
-        private void BuildReveal(Transform parent)
-        {
-            revealPanel = UIFactory.Child(parent, "Reveal");
-            UIFactory.Stretch(UIFactory.Rt(revealPanel));
-            UIFactory.ScrimDim(revealPanel.transform, 0.72f);
-
-            var panel = UIFactory.Panel(revealPanel.transform, "RevealPanel");
-            var prt = UIFactory.Rt(panel);
-            prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
-            prt.pivot = new Vector2(0.5f, 0.5f);
-            prt.sizeDelta = new Vector2(560f, 560f);
-
-            var col = UIFactory.Child(panel.transform.Find("Fill"), "Col");
-            UIFactory.Stretch(UIFactory.Rt(col), 28f);
-
-            var v = col.AddComponent<VerticalLayoutGroup>();
-            v.spacing = ArcadeTheme.Md;
-            v.childAlignment = TextAnchor.UpperCenter;
-            v.childForceExpandWidth = true;
-            v.childForceExpandHeight = false;
-            v.childControlWidth = true;
-            v.childControlHeight = true;
-
-            revealKicker = UIFactory.Text(col.transform, string.Empty, ArcadeTheme.FsCaption,
-                                          ArcadeTheme.InkMuted, display: false, bold: true,
-                                          upper: true, tracking: 6f);
-            revealKicker.gameObject.AddComponent<LayoutElement>().preferredHeight = 26f;
-
-            var art = UIFactory.Child(col.transform, "Art");
-            art.AddComponent<LayoutElement>().preferredHeight = 240f;
-            revealArt = art.transform;
-
-            revealName = UIFactory.Text(col.transform, string.Empty, ArcadeTheme.FsBody * 1.2f,
-                                        ArcadeTheme.Ink, display: true, bold: true, upper: false,
-                                        tracking: 1f, richText: false);
-            revealName.gameObject.AddComponent<LayoutElement>().preferredHeight = 38f;
-
-            revealNote = UIFactory.Text(col.transform, string.Empty, ArcadeTheme.FsCaption,
-                                        ArcadeTheme.InkMuted, display: false, bold: true, upper: true,
-                                        tracking: 3f, richText: false);
-            revealNote.gameObject.AddComponent<LayoutElement>().preferredHeight = 24f;
-
-            UIFactory.Spacer(col.transform, 6f);
-
-            var buttonRow = UIFactory.Child(col.transform, "ButtonRow");
-            buttonRow.AddComponent<LayoutElement>().preferredHeight = 62f;
-            var bv = buttonRow.AddComponent<VerticalLayoutGroup>();
-            bv.childForceExpandWidth = true;
-            bv.childForceExpandHeight = true;
-            bv.childControlWidth = true;
-            bv.childControlHeight = true;
-            UIFactory.Button(buttonRow.transform, "Nice", MenuButton.Variant.Primary, HideReveal);
-
-            revealPanel.SetActive(false);
-        }
-
-        private void ShowReveal(ChestDrop drop)
-        {
-            if (revealPanel == null) return;
-
-            UIFactory.ClearChildren(revealArt);
-            revealKicker.text = ChestLoot.TierName(drop.Tier).ToUpperInvariant();
-
-            if (drop.Item.Valid)
-            {
-                var frame = UIFactory.Child(revealArt, "Frame");
-                var frt = UIFactory.Rt(frame);
-                frt.anchorMin = frt.anchorMax = new Vector2(0.5f, 0.5f);
-                frt.pivot = new Vector2(0.5f, 0.5f);
-                frt.sizeDelta = new Vector2(230f, 230f);
-                UIFactory.CosmeticSwatch(frame.transform, drop.Item);
-
-                Color rarity = UIFactory.RarityColor(drop.Item.Rarity);
-                revealKicker.color = rarity;
-                revealName.text = drop.Item.Name;
-                // Not worn automatically: a random drop changing the ball mid-browse would be a
-                // surprise, not a reward. Collection is one tap away.
-                revealNote.text = $"{CosmeticCatalog.RarityName(drop.Item.Rarity)} " +
-                                  $"{CosmeticCatalog.KindLabel(drop.Item.Kind)}  ·  Wear it from Collection";
-                revealNote.color = rarity;
-            }
-            else
-            {
-                UIFactory.CoinGlyph(revealArt, 200f);
-                revealKicker.color = ArcadeTheme.Coin;
-                revealName.text = $"{drop.Coins} coins";
-                // The one case worth explaining: a chest with nothing left to give is not a bad roll.
-                revealNote.text = "You already own every skin";
-                revealNote.color = ArcadeTheme.InkMuted;
-            }
-
-            revealPanel.SetActive(true);
-            revealPanel.transform.SetAsLastSibling();
-            StartCoroutine(UITween.PopIn(revealArt, ArcadeTheme.TSlow));
-        }
-
-        private void HideReveal()
-        {
-            if (revealPanel != null) revealPanel.SetActive(false);
-        }
-
-        // ---------- collection ----------
-
-        /// <summary>
-        /// The wardrobe: every cosmetic the player owns, tabbed by kind, tap to wear. League badges
-        /// are shown even when locked, because a wardrobe that only listed what you had won would
-        /// never tell a player what climbing the ladder is FOR.
-        /// </summary>
-        private void BuildCollection(Transform parent)
-        {
-            collectionPanel = UIFactory.Child(parent, "Collection");
-            UIFactory.Stretch(UIFactory.Rt(collectionPanel));
-            UIFactory.ScrimDim(collectionPanel.transform, 0.9f);
-
-            UIFactory.ScreenHeader(collectionPanel.transform, "Collection", CloseCollection);
-
-            var panel = UIFactory.Panel(collectionPanel.transform, "CollectionPanel");
-            var prt = UIFactory.Rt(panel);
-            prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
-            prt.pivot = new Vector2(0.5f, 0.5f);
-            // Clears the shared header even on a 20:9 phone, where the canvas is only ~805 tall.
-            prt.sizeDelta = new Vector2(1050f, 600f);
-            prt.anchoredPosition = new Vector2(0f, -10f);
-
-            // Laid-out content goes in a stretched column on top of the panel's frame, so a layout
-            // group never touches the shadow, border or fill. Same split as LeagueMenu.
-            var content = UIFactory.Child(panel.transform, "Content");
-            UIFactory.Stretch(UIFactory.Rt(content), 0f);
-
-            var col = content.AddComponent<VerticalLayoutGroup>();
-            col.padding = new RectOffset(24, 24, 24, 24);
-            col.spacing = ArcadeTheme.Md;
-            col.childAlignment = TextAnchor.UpperCenter;
-            col.childForceExpandWidth = true;
-            col.childForceExpandHeight = false;
-            col.childControlWidth = true;
-            col.childControlHeight = true;
-
-            var labels = new string[CosmeticCatalog.TabKinds.Length];
-            for (int i = 0; i < labels.Length; i++)
-            {
-                labels[i] = CosmeticCatalog.KindName(CosmeticCatalog.TabKinds[i]);
-            }
-
-            UIFactory.Segmented(content.transform, labels, 0, index =>
-            {
-                tab = CosmeticCatalog.TabKinds[Mathf.Clamp(index, 0, CosmeticCatalog.TabKinds.Length - 1)];
-                RedrawCollection();
-            }, 48f);
-
-            collectionCaption = UIFactory.Text(content.transform, string.Empty, ArcadeTheme.FsCaption,
-                                               ArcadeTheme.InkMuted, display: false, bold: true,
-                                               upper: true, tracking: 3f, richText: false);
-            collectionCaption.gameObject.AddComponent<LayoutElement>().preferredHeight = 22f;
-
-            var holder = UIFactory.Child(content.transform, "GridHolder");
-            var le = holder.AddComponent<LayoutElement>();
-            le.preferredHeight = 420f;
-            le.flexibleHeight = 1f;
-            le.minHeight = 160f;
-            gridContent = UIFactory.ScrollList(holder.transform, GridGap);
-
-            collectionPanel.SetActive(false);
-        }
-
-        private void OpenCollection()
-        {
-            if (collectionPanel == null) return;
-            collectionPanel.SetActive(true);
-            collectionPanel.transform.SetAsLastSibling();
-            RedrawCollection();
-        }
-
-        private void CloseCollection()
-        {
-            if (collectionPanel != null) collectionPanel.SetActive(false);
-        }
-
-        private void RedrawCollection()
-        {
-            if (gridContent == null || collectionPanel == null || !collectionPanel.activeSelf)
-            {
-                return;
-            }
-
-            UIFactory.ClearChildren(gridContent);
-
-            bool badges = tab == CosmeticKind.Badge;
-            collectionCaption.text = badges ? "League badges are earned in ranked" : "Tap a skin to wear it";
-
-            List<CosmeticItem> items = CosmeticCatalog.OfKind(tab);
-            Transform row = null;
-
-            for (int i = 0, shown = 0; i < items.Count; i++)
-            {
-                // What you own (the catalogue default counts: everybody owns it, and taking a skin OFF
-                // means putting it back on), plus every badge. Unowned skins come from chests.
-                CosmeticItem item = items[i];
-                if (!badges && !item.IsDefault && !Inventory.Owns(item.Id)) continue;
-
-                if (shown % Columns == 0) row = NewRow();
-                AddCard(row, item);
-                shown++;
-            }
-        }
-
-        private Transform NewRow()
-        {
-            var row = UIFactory.Child(gridContent, "Row");
-            row.AddComponent<LayoutElement>().preferredHeight = GridCardHeight;
-
-            var h = row.AddComponent<HorizontalLayoutGroup>();
-            h.spacing = GridGap;
-            // Left, not centre: a final row holding two cards should line up under the four above it.
-            h.childAlignment = TextAnchor.MiddleLeft;
-            h.childForceExpandWidth = false;
-            h.childForceExpandHeight = false;
-            h.childControlWidth = true;
-            h.childControlHeight = true;
-
-            return row.transform;
-        }
-
-        /// <summary>
-        /// One item card: placeholder art, name, rarity, and its ownership state. Built on
-        /// <see cref="MenuButton"/> so the whole card hovers, presses and clicks like a button, with
-        /// its edge in the item's rarity colour.
-        /// </summary>
-        private void AddCard(Transform parent, CosmeticItem item)
-        {
-            bool owned = Inventory.Owns(item.Id);
-            bool equipped = Inventory.IsEquipped(item.Id);
-            Color rarity = UIFactory.RarityColor(item.Rarity);
-
-            var card = UIFactory.Child(parent, "Card_" + item.Id);
-            var cle = card.AddComponent<LayoutElement>();
-            cle.preferredWidth = GridCardWidth;
-            cle.minWidth = GridCardWidth;
-            cle.preferredHeight = GridCardHeight;
-
-            var glowGo = UIFactory.Child(card.transform, "Glow");
-            var glow = UIFactory.GlowImage(glowGo, ArcadeTheme.RadMd, 26f, rarity.WithAlpha(0f));
-            UIFactory.Stretch(UIFactory.Rt(glowGo), -14f);
-
-            var borderGo = UIFactory.Child(card.transform, "Border");
-            var border = UIFactory.RoundedImage(borderGo, ArcadeTheme.RadMd, rarity, false);
-            UIFactory.Stretch(UIFactory.Rt(borderGo), 0);
-
-            var fillGo = UIFactory.Child(card.transform, "Fill");
-            var fill = UIFactory.RoundedImage(fillGo, ArcadeTheme.RadMd, ArcadeTheme.BgRaised, true);
-            UIFactory.Stretch(UIFactory.Rt(fillGo), 2f);
-
-            var btn = card.AddComponent<MenuButton>();
-            btn.fill = fill;
-            btn.border = border;
-            btn.glow = glow;
-            btn.label = null;
-            btn.targetGraphic = fill;
-            btn.Configure(MenuButton.Variant.Neutral);
-            // Equipped is the one card per tab that lights up at rest.
-            btn.SetAccent(rarity, equipped ? 0.55f : 0f);
-            btn.onClick.AddListener(() => Tapped(item));
-
-            var body = UIFactory.Child(card.transform, "Body");
-            UIFactory.Stretch(UIFactory.Rt(body), 8f);
-
-            var v = body.AddComponent<VerticalLayoutGroup>();
-            v.spacing = ArcadeTheme.Xs;
-            v.childAlignment = TextAnchor.UpperCenter;
-            v.childForceExpandWidth = true;
-            v.childForceExpandHeight = false;
-            v.childControlWidth = true;
-            v.childControlHeight = true;
-
-            var picture = UIFactory.Child(body.transform, "Picture");
-            picture.AddComponent<LayoutElement>().preferredHeight = 112f;
-
-            if (item.Kind == CosmeticKind.Badge)
-            {
-                UIFactory.LeagueBadgeGlyph(picture.transform, LeagueBadges.LeagueOf(item.Id), 96f);
-
-                if (!owned)
-                {
-                    var locked = picture.AddComponent<CanvasGroup>();
-                    locked.alpha = 0.28f;
-                    locked.blocksRaycasts = false;
-                }
-            }
-            else
-            {
-                UIFactory.CosmeticSwatch(picture.transform, item);
-            }
-
-            var name = UIFactory.Text(body.transform, item.Name, ArcadeTheme.FsCaption, ArcadeTheme.Ink,
-                                      display: true, bold: true, upper: false, tracking: 1f,
-                                      richText: false);
-            name.gameObject.AddComponent<LayoutElement>().preferredHeight = 24f;
-            name.overflowMode = TextOverflowModes.Ellipsis;
-
-            var rar = UIFactory.Text(body.transform, CosmeticCatalog.RarityName(item.Rarity),
-                                     ArcadeTheme.FsCaption * 0.78f, rarity, display: false, bold: true,
-                                     upper: true, tracking: 3f);
-            rar.gameObject.AddComponent<LayoutElement>().preferredHeight = 18f;
-
-            AddCardFooter(body.transform, item, owned, equipped);
-
-            if (equipped)
-            {
-                var check = UIFactory.EquippedCheck(card.transform, 30f);
-                var checkRt = UIFactory.Rt(check);
-                checkRt.anchorMin = checkRt.anchorMax = new Vector2(1f, 1f);
-                checkRt.pivot = new Vector2(1f, 1f);
-                checkRt.anchoredPosition = new Vector2(-8f, -8f);
-            }
-        }
-
-        /// <summary>The bottom line of a card: EQUIPPED, tap to equip, or which league earns a badge.</summary>
-        private static void AddCardFooter(Transform parent, CosmeticItem item, bool owned, bool equipped)
-        {
-            var footer = UIFactory.Child(parent, "Footer");
-            footer.AddComponent<LayoutElement>().preferredHeight = 34f;
-
-            TextMeshProUGUI t;
-            if (equipped)
-            {
-                UIFactory.RoundedImage(footer, ArcadeTheme.RadSm,
-                                       UIFactory.RarityColor(item.Rarity).WithAlpha(0.22f), false);
-                t = UIFactory.Text(footer.transform, "EQUIPPED", ArcadeTheme.FsCaption * 0.82f,
-                                   UIFactory.RarityColor(item.Rarity), display: true, bold: true,
-                                   upper: true, tracking: 3f);
-            }
-            else if (owned)
-            {
-                t = UIFactory.Text(footer.transform, "Tap to equip", ArcadeTheme.FsCaption * 0.82f,
-                                   ArcadeTheme.InkMuted, display: false, bold: true, upper: true,
-                                   tracking: 3f);
-            }
-            else
-            {
-                League league = LeagueBadges.LeagueOf(item.Id);
-                t = UIFactory.Text(footer.transform, $"Reach {Leagues.Name(league)}",
-                                   ArcadeTheme.FsCaption * 0.82f, UIFactory.LeagueColor(league),
-                                   display: false, bold: true, upper: true, tracking: 3f,
-                                   richText: false);
-            }
-
-            UIFactory.Stretch(UIFactory.Rt(t.gameObject), 0);
-        }
-
-        private void Tapped(CosmeticItem item)
-        {
-            bool badge = item.Kind == CosmeticKind.Badge;
-
-            if (!Inventory.Owns(item.Id))
-            {
-                if (badge)
-                {
-                    collectionCaption.text = $"Reach {Leagues.Name(LeagueBadges.LeagueOf(item.Id))} league to earn this badge";
-                }
-                return;
-            }
-
-            if (Inventory.IsEquipped(item.Id))
-            {
-                // A badge is the one cosmetic with no default underneath it, so it is the only one that
-                // can genuinely be taken OFF.
-                if (badge)
-                {
-                    Inventory.Unequip(CosmeticKind.Badge);
-                    collectionCaption.text = "Badge removed";
-                }
-                return;
-            }
-
-            Inventory.Equip(item.Id);
-            collectionCaption.text = badge ? $"{item.Name} now shows beside your name" : $"{item.Name} equipped";
+            UiKit.Show(sheetLayer, false);
         }
 
         // ---------- state ----------
@@ -1087,46 +655,46 @@ namespace TableFootball.UI
 
             // Removed first, so reopening cannot stack a second handler onto a static event that
             // outlives this panel — the pattern MainMenu and LeagueMenu already use.
-            Wallet.OnChanged -= RefreshShelf;
+            Unsubscribe();
             Wallet.OnChanged += RefreshShelf;
-            ShopOffers.OnChanged -= RefreshShelf;
             ShopOffers.OnChanged += RefreshShelf;
-            Inventory.OnChanged -= RedrawCollection;
-            Inventory.OnChanged += RedrawCollection;
+            Inventory.OnChanged += RefreshShelf;
 
-            CancelBuy();
-            HideReveal();
-            CloseCollection();
-            ResetFooter();
-
-            root.SetActive(true);
-            root.transform.SetAsLastSibling();
-            group.blocksRaycasts = true;
-
+            // A chest left mid-opening by a screen change must not leave the balance held.
+            coinChip.Freeze(false);
+            CloseSheet();
+            toast.style.opacity = 0f;
             RefreshShelf();
+
+            UiKit.Show(root, true);
+            root.BringToFront();
+            root.style.opacity = 0f;
+            UiKit.Fade(root, 1f, ArcadeTheme.TFast);
+            GameSfx.PlayUi(UiSound.Open);
+
+            // Once the layout has been measured: back to the first section.
+            root.schedule.Execute(() =>
+            {
+                shelf.scrollOffset = Vector2.zero;
+                activeSection = -1;
+                SelectSection(0);
+            }).StartingIn(60);
         }
 
         public void Close()
         {
             Unsubscribe();
-
-            if (root != null)
-            {
-                group.blocksRaycasts = false;
-                root.SetActive(false);
-            }
+            if (IsOpen) ChestOpening.Cancel();
+            if (root != null) UiKit.Show(root, false);
         }
 
-        private void OnDestroy()
-        {
-            Unsubscribe();
-        }
+        private void OnDestroy() => Unsubscribe();
 
         private void Unsubscribe()
         {
             Wallet.OnChanged -= RefreshShelf;
             ShopOffers.OnChanged -= RefreshShelf;
-            Inventory.OnChanged -= RedrawCollection;
+            Inventory.OnChanged -= RefreshShelf;
         }
 
         private void Back()

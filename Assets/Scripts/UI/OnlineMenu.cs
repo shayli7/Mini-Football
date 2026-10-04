@@ -30,8 +30,22 @@ namespace TableFootball.UI
             Working,
             Waiting,
             /// <summary>Quick match, which has nothing to show but the fact that it is still going.</summary>
-            Searching
+            Searching,
+            /// <summary>An opponent is in: the loading bar from "match found" to the kick-off.</summary>
+            Connecting
         }
+
+        // The bar's four steps, as fractions of its length: where each starts and where it stops. The bar
+        // holds to the step the connection is really on — see OnlineConnect — and only creeps within it.
+        private static readonly float[] StepStart = { 0f, 0.20f, 0.50f, 0.80f };
+        private static readonly float[] StepEnd = { 0.20f, 0.50f, 0.80f, 0.97f };
+
+        /// <summary>How fast the bar catches up to a step that has just been reached, per second.</summary>
+        private const float BarCatchUp = 1.4f;
+
+        /// <summary>How fast it creeps inside a step while that step is still going, per second. Slow
+        /// enough to be honest, fast enough that a long step does not look frozen.</summary>
+        private const float BarCreep = 0.035f;
 
         private GameObject root;
         private CanvasGroup group;
@@ -39,6 +53,10 @@ namespace TableFootball.UI
         private GameObject chooseGroup;
         private GameObject waitingGroup;
         private GameObject searchingGroup;
+        private GameObject connectingGroup;
+        private Image connectFill;
+        private TextMeshProUGUI connectStepText;
+        private float connectShown;
         private GameObject panelRoot;
         private TMP_InputField codeField;
         private TextMeshProUGUI statusText;
@@ -61,6 +79,9 @@ namespace TableFootball.UI
         /// <summary>Raised when the player chooses Ranked — opens the league screen / ranked queue.</summary>
         public Action OnOpenRanked;
 
+        /// <summary>Raised after the connect wait gives up and the table has been left.</summary>
+        public Action OnConnectTimeout;
+
         /// <summary>Raised when the player backs out, after the session has been left.</summary>
         public Action OnBack;
 
@@ -77,8 +98,8 @@ namespace TableFootball.UI
             UIFactory.Stretch(UIFactory.Rt(root));
             group = root.AddComponent<CanvasGroup>();
 
-            // Shared translucent dim, matching every other secondary screen. See UIFactory.ScrimDim.
-            UIFactory.ScrimDim(root.transform);
+            // The Arena, like every front-end screen. See UIFactory.Backdrop.
+            UIFactory.Backdrop(root.transform);
 
             UIFactory.ScreenHeader(root.transform, "Online", Back);
 
@@ -95,6 +116,7 @@ namespace TableFootball.UI
             BuildChoose(root.transform);
             BuildWaiting(panel.transform);
             BuildSearching(root.transform);
+            BuildConnecting(root.transform);
             BuildStatus(root.transform);
 
             Show(Screen.Choose);
@@ -172,7 +194,7 @@ namespace TableFootball.UI
 
             quickButton = UIFactory.ActionCard(casual.transform, "Quick Match",
                                                "Play whoever is searching right now.",
-                                               UIFactory.Icon.Dice, QuickMatch);
+                                               UIFactory.Icon.Bolt, QuickMatch);
             hostButton = UIFactory.ActionCard(casual.transform, "Host Table",
                                               "Open a private table and share its code.",
                                               UIFactory.Icon.Table, Host);
@@ -254,6 +276,67 @@ namespace TableFootball.UI
             UIFactory.Stretch(UIFactory.Rt(searchingGroup.transform.GetChild(0).gameObject), 0);
         }
 
+        /// <summary>
+        /// "Match found", a loading bar and the step it is on. Replaces the searching spinner the moment
+        /// an opponent is in: the search is over, and what is left is a connection with real steps in
+        /// it, so the bar shows those instead of another spinner. The bar's notches mark the four steps.
+        /// </summary>
+        private void BuildConnecting(Transform parent)
+        {
+            connectingGroup = UIFactory.Child(parent, "ConnectingGroup");
+            var rt = UIFactory.Rt(connectingGroup);
+            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(560f, 220f);
+            rt.anchoredPosition = new Vector2(0f, -10f);
+
+            var v = connectingGroup.AddComponent<VerticalLayoutGroup>();
+            v.childAlignment = TextAnchor.MiddleCenter;
+            v.spacing = ArcadeTheme.Lg;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
+
+            var title = UIFactory.Text(connectingGroup.transform, "match found", ArcadeTheme.FsTitle * 0.7f,
+                                       ArcadeTheme.Pulse, display: true, bold: true, upper: true,
+                                       tracking: 8f);
+            title.gameObject.AddComponent<LayoutElement>().preferredHeight = 70f;
+
+            var track = UIFactory.Child(connectingGroup.transform, "BarTrack");
+            var tle = track.AddComponent<LayoutElement>();
+            tle.preferredHeight = 18f;
+            tle.minHeight = 18f;
+            UIFactory.RoundedImage(track, ArcadeTheme.RadSm, ArcadeTheme.BgRaised, false);
+
+            var fillGo = UIFactory.Child(track.transform, "BarFill");
+            connectFill = UIFactory.RoundedImage(fillGo, ArcadeTheme.RadSm, ArcadeTheme.Pulse, false);
+            connectFill.type = Image.Type.Filled;
+            connectFill.fillMethod = Image.FillMethod.Horizontal;
+            connectFill.fillAmount = 0f;
+            UIFactory.Stretch(UIFactory.Rt(fillGo), 2f);
+
+            // A notch where each step ends, drawn over the fill.
+            for (int i = 0; i < StepEnd.Length - 1; i++)
+            {
+                var notch = UIFactory.Child(track.transform, "Notch");
+                var img = notch.AddComponent<Image>();
+                img.color = ArcadeTheme.BgDeep;
+                img.raycastTarget = false;
+                var nrt = UIFactory.Rt(notch);
+                nrt.anchorMin = new Vector2(StepEnd[i], 0f);
+                nrt.anchorMax = new Vector2(StepEnd[i], 1f);
+                nrt.pivot = new Vector2(0.5f, 0.5f);
+                nrt.sizeDelta = new Vector2(3f, 0f);
+                nrt.anchoredPosition = Vector2.zero;
+            }
+
+            connectStepText = UIFactory.Text(connectingGroup.transform, "connecting…", ArcadeTheme.FsCaption,
+                                             ArcadeTheme.InkMuted, display: false, bold: true, upper: true,
+                                             tracking: 4f);
+            connectStepText.gameObject.AddComponent<LayoutElement>().preferredHeight = 26f;
+        }
+
         private void BuildStatus(Transform parent)
         {
             // Mostly wording from this file, but ShowInviteDeclined puts a friend's chosen name into
@@ -325,6 +408,7 @@ namespace TableFootball.UI
             if (chooseGroup != null) chooseGroup.SetActive(choosing || next == Screen.Working);
             if (waitingGroup != null) waitingGroup.SetActive(next == Screen.Waiting);
             if (searchingGroup != null) searchingGroup.SetActive(searching);
+            if (connectingGroup != null) connectingGroup.SetActive(next == Screen.Connecting);
 
             // The code panel only frames the host's code. Everything else happens on the cards, or,
             // for quick match, around the loader with no panel behind it.
@@ -348,8 +432,17 @@ namespace TableFootball.UI
         /// </summary>
         public void ShowConnecting()
         {
-            Show(Screen.Working);
-            SetStatus("OPPONENT FOUND — CONNECTING…");
+            // The spinner gives way to the bar. Starts empty, unless this is called again while the bar is
+            // already up (a second player-count event), when it must keep what it has and not jump back.
+            if (connectingGroup == null || !connectingGroup.activeSelf)
+            {
+                connectShown = 0f;
+                connectFill.fillAmount = 0f;
+            }
+
+            Show(Screen.Connecting);
+            SetStatus(string.Empty);
+            GameSfx.PlayUi(UiSound.Confirm);
 
             if (connectTimeout != null) StopCoroutine(connectTimeout);
             connectTimeout = StartCoroutine(GiveUpConnecting());
@@ -384,6 +477,9 @@ namespace TableFootball.UI
 
             SetStatus("COULDN'T REACH YOUR OPPONENT");
             Show(Screen.Choose);
+
+            // The owner may take the player somewhere that can say so properly.
+            OnConnectTimeout?.Invoke();
         }
 
         private void CancelConnectTimeout()
@@ -465,6 +561,46 @@ namespace TableFootball.UI
                 opponentArrived = false;
                 OnMatchReady?.Invoke();
             }
+
+            if (IsOpen && connectingGroup != null && connectingGroup.activeSelf)
+            {
+                UpdateConnecting();
+            }
+        }
+
+        /// <summary>
+        /// Moves the bar to the step the connection is really on. It runs up quickly to the start of a
+        /// step that has just been reached, then creeps toward the end of it without ever arriving: the
+        /// last stretch belongs to the next real event, so the bar can wait honestly and never goes
+        /// backwards. The step's name is shown under it.
+        /// </summary>
+        private void UpdateConnecting()
+        {
+            int step = (int)OnlineConnect.Stage;
+            float dt = Time.unscaledDeltaTime;
+
+            if (connectShown < StepStart[step])
+            {
+                connectShown = Mathf.MoveTowards(connectShown, StepStart[step], BarCatchUp * dt);
+            }
+            else
+            {
+                connectShown = Mathf.MoveTowards(connectShown, Mathf.Max(connectShown, StepEnd[step] - 0.02f),
+                                                 BarCreep * dt);
+            }
+
+            connectFill.fillAmount = connectShown;
+
+            string text;
+            switch ((ConnectStage)step)
+            {
+                case ConnectStage.Found: text = "connecting…"; break;
+                case ConnectStage.Linking: text = "connecting to your opponent…"; break;
+                case ConnectStage.Building: text = "building the table…"; break;
+                default: text = "ready — starting…"; break;
+            }
+
+            connectStepText.text = text;
         }
 
         // ---------- actions ----------

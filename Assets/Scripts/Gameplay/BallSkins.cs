@@ -73,7 +73,7 @@ namespace TableFootball
             { "ball.camo",         "Camo" },
             { "ball.disco",        "Disco" },
             { "ball.ice",          "Ice" },
-            { "ball.golden",       "Golden" }
+            { "ball.golden",       "SolarCrown" }   // id kept so owners of the old Golden Trophy Ball get Solar Crown
         };
 
         private static readonly Dictionary<string, Finish> Finishes = new()
@@ -86,8 +86,19 @@ namespace TableFootball
             { "ball.camo",         new Finish(0f, 0.45f) },
             { "ball.disco",        new Finish(1f, 0.85f, packed: true) },
             { "ball.ice",          new Finish(0f, 0.74f, packed: true) },
-            { "ball.golden",       new Finish(1f, 0.88f, packed: true) }
+            { "ball.golden",       new Finish(0.9f, 0.6f, packed: true) }
         };
+
+        /// <summary>
+        /// Skins whose gold is meant to GLOW, and so ship a <c>_Emission</c> map. Listed rather than
+        /// probed, so a skin without one never logs a "missing texture" warning for a map it was never
+        /// meant to have. The base glow set here is what <see cref="SolarCrownFx"/> scales with speed.
+        /// </summary>
+        private static readonly HashSet<string> Emissive = new() { "ball.golden" };
+
+        /// <summary>The emission tint at rest. SolarCrownFx scales this up with speed (past 1, so the
+        /// seams bloom rather than read as bright paint) — it changes the brightness, never the hue.</summary>
+        public static readonly Color GlowColor = new Color(1.0f, 0.72f, 0.22f);
 
         /// <summary>Built materials, so a skin is assembled once per session however often the ball
         /// is re-skinned. Cleared by <see cref="Clear"/> when the textures could have changed.</summary>
@@ -137,6 +148,12 @@ namespace TableFootball
             {
                 SkinMaterials.SetMetallicMap(
                     mat, SkinMaterials.Load($"{ResourceFolder}BallSkin_{file}_MetalSmooth"));
+            }
+
+            if (Emissive.Contains(id))
+            {
+                SkinMaterials.SetEmission(
+                    mat, SkinMaterials.Load($"{ResourceFolder}BallSkin_{file}_Emission"), GlowColor);
             }
 
             Cache[id] = mat;

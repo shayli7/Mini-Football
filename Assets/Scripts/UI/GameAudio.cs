@@ -19,6 +19,8 @@ namespace TableFootball
         const string MusicKey = "tf_music";
         const string SfxKey = "tf_sfx";
         const string DiffKey = "tf_difficulty";
+        const string VibrationKey = "tf_vibration";
+        const string TouchKey = "tf_touch_sensitivity";
 
         /// <summary>
         /// Menu music level. Drives the music AudioSource alone, not <c>AudioListener.volume</c> —
@@ -42,6 +44,51 @@ namespace TableFootball
             set => PlayerPrefs.SetFloat(SfxKey, Mathf.Clamp01(value));
         }
 
+        /// <summary>
+        /// Whether the phone buzzes on ball contact. On by default. Held by <see cref="Haptics.Enabled"/>,
+        /// which is the switch the rumble code actually checks; this is the saved copy of it.
+        /// </summary>
+        public static bool Vibration
+        {
+            get => PlayerPrefs.GetInt(VibrationKey, 1) == 1;
+            set
+            {
+                PlayerPrefs.SetInt(VibrationKey, value ? 1 : 0);
+                Haptics.Enabled = value;
+            }
+        }
+
+        /// <summary>The most touch-sensitivity steps Settings offers, from 1 (lowest) to this.</summary>
+        public const int TouchSensitivitySteps = 5;
+
+        private static int touchSensitivity;
+
+        /// <summary>
+        /// How strongly a finger drag turns a rod, 1 (lowest) to <see cref="TouchSensitivitySteps"/>.
+        /// Middle by default. Cached, because <see cref="TouchSensitivityScale"/> is read every frame
+        /// a finger is down.
+        /// </summary>
+        public static int TouchSensitivity
+        {
+            get
+            {
+                if (touchSensitivity == 0)
+                {
+                    touchSensitivity = Mathf.Clamp(PlayerPrefs.GetInt(TouchKey, 3), 1, TouchSensitivitySteps);
+                }
+                return touchSensitivity;
+            }
+            set
+            {
+                touchSensitivity = Mathf.Clamp(value, 1, TouchSensitivitySteps);
+                PlayerPrefs.SetInt(TouchKey, touchSensitivity);
+            }
+        }
+
+        /// <summary>What <see cref="TouchSensitivity"/> multiplies spin by: 0.6 at the lowest step, 1.0
+        /// in the middle (so the default plays exactly as tuned), 1.4 at the highest.</summary>
+        public static float TouchSensitivityScale => 0.6f + 0.2f * (TouchSensitivity - 1);
+
         public static AiLevel Difficulty
         {
             get => (AiLevel)PlayerPrefs.GetInt(DiffKey, (int)AiLevel.Normal);
@@ -55,6 +102,7 @@ namespace TableFootball
             // volume is no longer a control and must not sit at some stale saved value.
             AudioListener.volume = 1f;
             GameSfx.ApplyMusicVolume();
+            Haptics.Enabled = Vibration;
             ApplyDifficultyToScene(Difficulty);
         }
 

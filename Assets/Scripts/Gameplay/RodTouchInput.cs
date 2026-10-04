@@ -407,7 +407,9 @@ namespace TableFootball
                 // by the average still catching up.
                 float gain = Mathf.Lerp(fineSpinGain, 1f,
                     Mathf.Clamp01(Mathf.Abs(instant) / Mathf.Max(fullGainSpeed, 1e-3f)));
-                grip.SpinAngle += delta * spinDegreesPerScreenHeight * gain;
+                // Times the player's own sensitivity setting; the middle step is 1, so the default
+                // plays exactly as tuned above.
+                grip.SpinAngle += delta * spinDegreesPerScreenHeight * gain * GameAudio.TouchSensitivityScale;
                 grip.Rod.SetSpinAngle(grip.SpinAngle);
             }
         }
@@ -426,7 +428,8 @@ namespace TableFootball
                 return;
             }
 
-            float flick = grip.AcrossVelocity * spinDegreesPerScreenHeight * flickStrength;
+            float flick = grip.AcrossVelocity * spinDegreesPerScreenHeight * flickStrength
+                          * GameAudio.TouchSensitivityScale;
             grip.Rod.FlickSpin(Mathf.Clamp(flick, -maxFlick, maxFlick));
         }
 

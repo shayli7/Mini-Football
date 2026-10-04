@@ -86,6 +86,18 @@ namespace TableFootball
             return true;
         }
 
+        /// <summary>Sets the base map WITHOUT touching the tint — for effect materials whose colour and
+        /// fade live in the tint (<see cref="SetAlbedo"/> resets it to white).</summary>
+        public static bool SetBaseMap(Material mat, Texture texture) =>
+            mat != null && texture != null && SetTextureAny(mat, BaseMapNames, texture);
+
+        /// <summary>Sets the tint, alpha included — how an effect quad fades.</summary>
+        public static void SetTint(Material mat, Color color)
+        {
+            if (mat == null) return;
+            SetColorAny(mat, BaseColorNames, color);
+        }
+
         /// <summary>Tints a material a flat colour, for a skin that is a colour rather than art.</summary>
         public static void SetFlatColor(Material mat, Color color)
         {

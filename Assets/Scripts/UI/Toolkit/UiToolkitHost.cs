@@ -44,6 +44,14 @@ namespace TableFootball.UI.Toolkit
         /// <summary>The safe-area-inset container screens are added to.</summary>
         public static VisualElement Root => Ensure().safeRoot;
 
+        /// <summary>How far <see cref="Root"/> is inset from each screen edge, in panel units:
+        /// x = left, y = top, z = right, w = bottom. A layer that must reach the true screen edge (the
+        /// Arena backdrop) extends by exactly this much.</summary>
+        public static Vector4 SafeInsets { get; private set; }
+
+        /// <summary>Raised when <see cref="SafeInsets"/> changes — rotation, a resized window.</summary>
+        public static event System.Action SafeAreaChanged;
+
         /// <summary>The panel's own root, edge to edge — for layers that must cover the whole screen.</summary>
         public static VisualElement FullRoot => Ensure().document.rootVisualElement;
 
@@ -106,7 +114,7 @@ namespace TableFootball.UI.Toolkit
 
         private void Update()
         {
-            if (Screen.safeArea != lastSafeArea || Screen.width != lastScreen.x || Screen.height != lastScreen.y)
+            if (SafeArea.Effective != lastSafeArea || Screen.width != lastScreen.x || Screen.height != lastScreen.y)
             {
                 ApplySafeArea();
             }
@@ -116,20 +124,25 @@ namespace TableFootball.UI.Toolkit
         {
             if (safeRoot == null || document == null || document.rootVisualElement.panel == null) return;
 
-            lastSafeArea = Screen.safeArea;
+            lastSafeArea = SafeArea.Effective;
             lastScreen = new Vector2Int(Screen.width, Screen.height);
 
             // Screen coordinates start at the bottom left; panel coordinates at the top left.
             var panel = document.rootVisualElement.panel;
-            Rect safe = Screen.safeArea;
+            Rect safe = SafeArea.Effective;
             Vector2 topLeft = RuntimePanelUtils.ScreenToPanel(panel, new Vector2(safe.xMin, Screen.height - safe.yMax));
             Vector2 bottomRight = RuntimePanelUtils.ScreenToPanel(panel, new Vector2(safe.xMax, Screen.height - safe.yMin));
             Vector2 full = RuntimePanelUtils.ScreenToPanel(panel, new Vector2(Screen.width, Screen.height));
 
+            float right = Mathf.Max(0f, full.x - bottomRight.x);
+            float bottom = Mathf.Max(0f, full.y - bottomRight.y);
             safeRoot.style.left = topLeft.x;
             safeRoot.style.top = topLeft.y;
-            safeRoot.style.right = Mathf.Max(0f, full.x - bottomRight.x);
-            safeRoot.style.bottom = Mathf.Max(0f, full.y - bottomRight.y);
+            safeRoot.style.right = right;
+            safeRoot.style.bottom = bottom;
+
+            SafeInsets = new Vector4(topLeft.x, topLeft.y, right, bottom);
+            SafeAreaChanged?.Invoke();
         }
 
         private void OnDestroy()

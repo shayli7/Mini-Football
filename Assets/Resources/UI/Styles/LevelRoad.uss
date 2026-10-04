@@ -1,0 +1,253 @@
+/* Level Road. See LevelPathMenu.cs. Laid out against a 760-unit-high panel.
+   Every selector is under .levelroad so it outranks the shared frame defaults in Base.uss. */
+
+.levelroad .lr__header {
+    position: absolute;
+    left: 40px;
+    right: 40px;
+    top: 24px;
+    height: 58px;
+    align-items: center;
+    justify-content: center;
+}
+
+.levelroad .lr__back { position: absolute; left: 0; top: 0; }
+.levelroad .lr__title-box { align-items: center; }
+.levelroad .lr__title-row { flex-direction: row; align-items: center; }
+.levelroad .lr__title-row .icon { width: 26px; height: 26px; }
+.levelroad .lr__title { font-size: 32px; letter-spacing: 7px; margin-left: 12px; }
+.levelroad .lr__bar { width: 44px; height: 3px; margin-top: 6px; background-color: var(--pulse); }
+
+.levelroad .sq {
+    width: 55px;
+    height: 55px;
+    align-items: center;
+    justify-content: center;
+    --frame-fill: #0F1C31;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1.5;
+    --frame-cut: 10;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.levelroad .sq:hover { scale: 1.05 1.05; }
+.levelroad .sq:active { scale: 0.95 0.95; }
+.levelroad .sq .icon { width: 26px; height: 26px; }
+
+/* ---------- level + coins ---------- */
+
+.levelroad .lr__strip {
+    position: absolute;
+    left: 40px;
+    right: 40px;
+    top: 104px;
+    height: 52px;
+    flex-direction: row;
+    align-items: center;
+}
+
+.levelroad .lr__pill {
+    font-size: 18px;
+    letter-spacing: 1px;
+    color: var(--pulse);
+    background-color: rgba(61, 227, 255, 0.14);
+    padding: 6px 12px;
+}
+
+.levelroad .lr__bar-track { flex-grow: 1; height: 12px; margin: 0 16px; border-radius: 0; }
+.levelroad .lr__bar-track .bar__fill { border-radius: 0; }
+.levelroad .lr__xp { font-size: 16px; color: var(--muted); margin-right: 16px; }
+
+.levelroad .lr__row-head {
+    position: absolute;
+    left: 40px;
+    right: 40px;
+    top: 168px;
+    height: 48px;
+    flex-direction: row;
+    align-items: center;
+}
+
+.levelroad .lr__row-head .icon { width: 22px; height: 22px; }
+.levelroad .lr__row-title { font-size: 16px; letter-spacing: 6px; color: var(--pulse); margin-left: 14px; }
+.levelroad .lr__row-rule { flex-grow: 1; height: 1px; margin: 0 14px; background-color: #24456F; }
+
+.levelroad .lr__claimall {
+    flex-direction: row;
+    align-items: center;
+    height: 46px;
+    padding: 0 22px;
+    --frame-fill: #FFC23D;
+    --frame-edge-width: 0;
+    --frame-cut: 10;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.levelroad .lr__claimall:hover { scale: 1.03 1.03; }
+.levelroad .lr__claimall:active { scale: 0.97 0.97; }
+.levelroad .lr__claimall-label { font-size: 15px; letter-spacing: 3px; color: var(--on-reward); }
+
+.levelroad .lr__claimall-count {
+    min-width: 22px;
+    height: 22px;
+    margin-left: 10px;
+    padding: 0 5px;
+    align-items: center;
+    justify-content: center;
+    background-color: #1E1400;
+}
+
+.levelroad .lr__claimall-count-label { font-size: 13px; color: var(--reward); }
+
+/* ---------- the road ---------- */
+
+.levelroad .lr__road {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 226px;
+    bottom: 0;
+}
+
+.levelroad .lr__stops {
+    flex-direction: row;
+    align-items: flex-end;
+    padding: 0 60px 56px 40px;
+    height: 100%;
+}
+
+.levelroad .lvl { flex-shrink: 0; align-items: center; }
+.levelroad .lvl--small { width: 124px; }
+.levelroad .lvl--big { width: 264px; }
+
+.levelroad .lvl__card {
+    align-items: center;
+    --frame-fill: #0A1322;
+    --frame-edge: #24456F;
+    --frame-edge-width: 1.5;
+    --frame-cut: 10;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.levelroad .lvl__card:hover { scale: 1.03 1.03; }
+.levelroad .lvl__card:active { scale: 0.97 0.97; }
+.levelroad .lvl__card.is-disabled:hover { scale: 1 1; }
+
+.levelroad .lvl--small .lvl__card {
+    width: 100px;
+    height: 104px;
+    justify-content: center;
+}
+
+.levelroad .lvl__card .coin { width: 38px; height: 38px; }
+
+.levelroad .lvl__coins {
+    font-size: 18px;
+    margin-top: 8px;
+}
+
+.levelroad .lvl__corner { position: absolute; top: 8px; right: 8px; }
+.levelroad .lvl__corner .icon { width: 18px; height: 18px; }
+
+.levelroad .lvl--big .lvl__card {
+    width: 236px;
+    height: 318px;
+    padding: 14px 14px 16px 14px;
+    --frame-cut: 16;
+    --frame-edge-width: 2;
+}
+
+.levelroad .lvl__tag { height: 24px; padding: 0 10px; align-items: center; justify-content: center; }
+.levelroad .lvl__tag-label { font-size: 11px; letter-spacing: 3px; color: #05070D; }
+
+.levelroad .lvl__stage {
+    flex-grow: 1;
+    align-self: stretch;
+    align-items: center;
+    justify-content: center;
+}
+
+.levelroad .lvl__chest { width: 170px; height: 150px; }
+.levelroad .lvl__skin { width: 208px; height: 150px; }
+
+.levelroad .lvl__title { font-size: 19px; letter-spacing: 2px; margin-bottom: 10px; }
+
+.levelroad .lvl__foot {
+    align-self: stretch;
+    height: 38px;
+    align-items: center;
+    justify-content: center;
+}
+
+.levelroad .lvl__foot-label { font-size: 14px; letter-spacing: 3px; color: var(--muted); }
+.levelroad .lvl__foot--claim { background-color: var(--reward); }
+.levelroad .lvl__foot--claim .lvl__foot-label { font-size: 15px; color: var(--on-reward); }
+
+/* A card that has been taken recedes; a locked one is quiet. */
+.levelroad .lvl__card.is-claimed .coin,
+.levelroad .lvl__card.is-claimed .lvl__coins,
+.levelroad .lvl__card.is-claimed .lvl__stage,
+.levelroad .lvl__card.is-claimed .lvl__title { opacity: 0.45; }
+
+.levelroad .lvl__card.is-locked .lvl__stage { opacity: 0.8; }
+
+.levelroad .lvl__stem { width: 2px; height: 20px; background-color: #24456F; }
+.levelroad .lvl--big .lvl__stem { height: 14px; }
+
+.levelroad .lvl__rail {
+    align-self: stretch;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+}
+
+.levelroad .lvl__track {
+    position: absolute;
+    top: 19px;
+    height: 6px;
+    background-color: #16294A;
+}
+
+.levelroad .lvl__track--left { left: 0; right: 50%; }
+.levelroad .lvl__track--right { left: 50%; right: 0; }
+.levelroad .lvl__track.is-lit { background-color: #3DE3FF; }
+
+.levelroad .lvl__marker {
+    width: 36px;
+    height: 36px;
+    align-items: center;
+    justify-content: center;
+}
+
+.levelroad .lvl__marker.is-here { width: 44px; height: 44px; }
+.levelroad .lvl__marker-text { font-size: 15px; -unity-text-align: middle-center; }
+.levelroad .lvl__marker.is-here .lvl__marker-text { font-size: 17px; }
+
+/* ---------- reveal ---------- */
+
+.levelroad .lr__reveal-layer {
+    background-color: rgba(2, 4, 8, 0.82);
+    align-items: center;
+    justify-content: center;
+}
+
+.levelroad .lr__reveal {
+    width: 480px;
+    padding: 28px 32px 30px 32px;
+    align-items: center;
+    --frame-fill: #0A1322;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1;
+    --frame-cut: 16;
+    --frame-tab: #3DE3FF;
+}
+
+.levelroad .lr__reveal-kicker { font-size: 14px; letter-spacing: 6px; }
+.levelroad .lr__reveal-art { width: 300px; height: 210px; margin: 18px 0; }
+.levelroad .lr__reveal-picture { flex-grow: 1; }
+.levelroad .lr__reveal-name { font-size: 26px; letter-spacing: 3px; }
+.levelroad .lr__reveal-note { font-size: 13px; letter-spacing: 3px; margin-top: 6px; }
+.levelroad .lr__reveal-button { align-self: stretch; margin-top: 22px; }

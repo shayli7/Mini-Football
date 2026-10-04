@@ -9,17 +9,21 @@ using UnityEngine.UI;
 namespace TableFootball.UI
 {
     /// <summary>
-    /// The Arcade Neon button. Subclasses <see cref="Selectable"/> so it gets keyboard / gamepad
+    /// The Holo Arena button. Subclasses <see cref="Selectable"/> so it gets keyboard / gamepad
     /// navigation and focus for free, then overrides the state transition to drive the design-system
-    /// visuals: scale to 1.04 + neon glow on hover/focus, dip to 0.97 on press, dim to 0.4 disabled.
+    /// visuals: scale to 1.04 on hover, dip to 0.97 on press, dim to 0.4 disabled.
     ///
-    /// All five states from MASTER.md are covered: default, hover, focus (Selected), active (Pressed),
-    /// disabled. Motion runs on unscaled time so it works while the game is paused.
+    /// The variant says what the button does, by colour: Primary is cyan (go, confirm), Reward is
+    /// gold (take a reward), Blue is a cyan outline (open a screen), Ghost is quiet (back, cancel),
+    /// Danger is a red outline (you lose something). The variant also picks the tap sound.
+    ///
+    /// All five states are covered: default, hover, focus (Selected), active (Pressed), disabled.
+    /// Motion runs on unscaled time so it works while the game is paused.
     /// </summary>
     [RequireComponent(typeof(RectTransform))]
     public class MenuButton : Selectable, IPointerClickHandler, ISubmitHandler
     {
-        public enum Variant { Primary, Ghost, Danger, Neutral, IconGold, Blue }
+        public enum Variant { Primary, Ghost, Danger, Neutral, IconGold, Blue, Reward }
 
         public UnityEvent onClick = new UnityEvent();
 
@@ -42,25 +46,31 @@ namespace TableFootball.UI
             switch (v)
             {
                 case Variant.Primary:
-                    fillBase = ArcadeTheme.Gold; borderBase = ArcadeTheme.Gold; borderHover = ArcadeTheme.Gold;
-                    labelBase = ArcadeTheme.OnGold; labelHover = ArcadeTheme.OnGold;
+                    // Cyan: go, confirm — the thing to press to carry on.
+                    fillBase = ArcadeTheme.Pulse; borderBase = ArcadeTheme.Pulse; borderHover = ArcadeTheme.Pulse;
+                    labelBase = ArcadeTheme.OnPulse; labelHover = ArcadeTheme.OnPulse;
                     // No resting glow. A halo that is always on is not feedback, it is decoration,
                     // and it reads as a stuck highlight sitting around the button.
-                    glowColor = ArcadeTheme.Gold; glowBase = 0f; glowHover = 0.9f;
+                    glowColor = ArcadeTheme.Pulse; glowBase = 0f; glowHover = 0.9f;
+                    break;
+                case Variant.Reward:
+                    // Gold: you get something — Claim, Collect, a free chest. Gold means nothing else.
+                    fillBase = ArcadeTheme.Reward; borderBase = ArcadeTheme.Reward; borderHover = ArcadeTheme.Reward;
+                    labelBase = ArcadeTheme.OnReward; labelHover = ArcadeTheme.OnReward;
+                    glowColor = ArcadeTheme.Reward; glowBase = 0f; glowHover = 0.9f;
                     break;
                 case Variant.Ghost:
-                    // The quiet way out — Back, Cancel, Later. Panel blue a step up, so it is plainly a
-                    // button without competing with the blue action beside it.
-                    fillBase = ArcadeTheme.BgRaised; borderBase = ArcadeTheme.Line; borderHover = ArcadeTheme.BlueSoft;
+                    // The quiet way out — Back, Cancel, Later. A dark plate with a dim edge, plainly a
+                    // button without competing with the action beside it.
+                    fillBase = ArcadeTheme.Plate; borderBase = ArcadeTheme.BlueLine; borderHover = ArcadeTheme.BlueSoft;
                     labelBase = ArcadeTheme.Ink; labelHover = Color.white;
                     glowColor = ArcadeTheme.BlueSoft; glowBase = 0f; glowHover = 0.85f;
                     break;
                 case Variant.Danger:
-                    // Outlined in the muted red rather than filled: destructive, but not the loudest
-                    // thing on the screen.
-                    fillBase = ArcadeTheme.BgPanel; borderBase = ArcadeTheme.Danger.WithAlpha(0.45f); borderHover = ArcadeTheme.Danger;
+                    // Outlined in red, never filled: you lose something by pressing this.
+                    fillBase = ArcadeTheme.DangerFill; borderBase = ArcadeTheme.Danger; borderHover = ArcadeTheme.Danger;
                     labelBase = ArcadeTheme.Danger; labelHover = ArcadeTheme.Danger;
-                    glowColor = ArcadeTheme.Red; glowBase = 0f; glowHover = 0.85f;
+                    glowColor = ArcadeTheme.Danger; glowBase = 0f; glowHover = 0.85f;
                     break;
                 case Variant.IconGold:
                     fillBase = ArcadeTheme.BgRaised.WithAlpha(0.55f); borderBase = ArcadeTheme.Gold; borderHover = ArcadeTheme.Gold;
@@ -68,16 +78,16 @@ namespace TableFootball.UI
                     glowColor = ArcadeTheme.Gold; glowBase = 0f; glowHover = 0.9f;
                     break;
                 case Variant.Blue:
-                    // The main blue button: an ordinary action that is not the screen's one gold
-                    // highlight — Host, Join, Rename. A step brighter than the panel it sits on.
-                    fillBase = ArcadeTheme.BlueFill; borderBase = ArcadeTheme.BlueLine; borderHover = ArcadeTheme.BlueSoft;
+                    // A cyan outline: open a screen, or an ordinary action that is not the screen's one
+                    // go button — Host, Join, Rename.
+                    fillBase = ArcadeTheme.Row; borderBase = ArcadeTheme.Pulse.WithAlpha(0.6f); borderHover = ArcadeTheme.Pulse;
                     labelBase = ArcadeTheme.Ink; labelHover = Color.white;
-                    glowColor = ArcadeTheme.BlueSoft; glowBase = 0f; glowHover = 0.8f;
+                    glowColor = ArcadeTheme.Pulse; glowBase = 0f; glowHover = 0.8f;
                     break;
                 default:
-                    fillBase = ArcadeTheme.BgRaised; borderBase = ArcadeTheme.Line; borderHover = ArcadeTheme.Gold;
+                    fillBase = ArcadeTheme.BgRaised; borderBase = ArcadeTheme.Line; borderHover = ArcadeTheme.Pulse;
                     labelBase = ArcadeTheme.Ink; labelHover = Color.white;
-                    glowColor = ArcadeTheme.Gold; glowBase = 0f; glowHover = 0.8f;
+                    glowColor = ArcadeTheme.Pulse; glowBase = 0f; glowHover = 0.8f;
                     break;
             }
 
@@ -208,14 +218,35 @@ namespace TableFootball.UI
         public override void OnPointerEnter(PointerEventData e) { base.OnPointerEnter(e); }
         public override void OnPointerExit(PointerEventData e)  { base.OnPointerExit(e); }
 
+        /// <summary>The tap sound for this button's variant: what it does, by ear.</summary>
+        private UiSound Sound()
+        {
+            switch (variant)
+            {
+                case Variant.Primary: return UiSound.Confirm;
+                case Variant.Reward: return UiSound.Reward;
+                case Variant.Ghost: return UiSound.Back;
+                case Variant.Danger: return UiSound.Warn;
+                default: return UiSound.Tap;
+            }
+        }
+
         public void OnPointerClick(PointerEventData eventData)
         {
-            if (IsInteractable() && eventData.button == PointerEventData.InputButton.Left)
+            if (eventData.button != PointerEventData.InputButton.Left) return;
+
+            if (IsInteractable())
             {
                 // Hooked here rather than at each call site, so every button and tile in the game
                 // clicks — including any added later — without anyone remembering to wire it.
-                GameSfx.PlayUiClick();
+                GameSfx.PlayUi(Sound());
                 onClick.Invoke();
+            }
+            else
+            {
+                // A tap on a disabled button still answers, with a dull low note, so the player can
+                // tell the button heard them and declined.
+                GameSfx.PlayUi(UiSound.Deny);
             }
         }
 
@@ -224,7 +255,7 @@ namespace TableFootball.UI
             if (!IsInteractable()) return;
             // Clicks here too: submitting with a keyboard or gamepad is the same action as tapping,
             // and it was the one path through the button that made no sound.
-            GameSfx.PlayUiClick();
+            GameSfx.PlayUi(Sound());
             onClick.Invoke();
         }
     }

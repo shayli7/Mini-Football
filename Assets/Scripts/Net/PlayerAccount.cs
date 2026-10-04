@@ -17,7 +17,9 @@ namespace TableFootball.Net
     ///
     /// The distinction that matters throughout: <see cref="DisplayName"/> is what other players see
     /// and type to add you (<c>Name#1234</c>), while the username below is a credential nobody else
-    /// ever sees. They are unrelated, and changing one does not touch the other.
+    /// ever sees. They are separate, and changing one afterwards does not touch the other — the one
+    /// exception is the moment an account is created, when the typed username is also taken as the
+    /// display name (see <see cref="CreateAccountAsync"/>).
     ///
     /// Nothing here throws at the caller, matching <see cref="GameServices"/> and
     /// <see cref="OnlineSession"/>: every entry point returns false and leaves <see cref="LastError"/>
@@ -93,10 +95,13 @@ namespace TableFootball.Net
         /// someone typed is never overwritten.</summary>
         private static readonly Regex GeneratedNameShape = new(@"^([A-Z][a-z]+)+[0-9]*$", RegexOptions.Compiled);
 
+        // Every word is five letters or fewer, so a name is at most 5 + 5 + 2 digits = 12 characters.
         private static readonly string[] NameFirst =
-            { "Red", "Blue", "Fast", "Bold", "Swift", "Lucky", "Nova", "Blaze", "Cool", "Iron" };
+            { "Red", "Blue", "Fast", "Bold", "Swift", "Lucky", "Nova", "Blaze", "Cool", "Iron",
+              "High", "Wild", "Mega", "Turbo", "Rapid", "Epic" };
         private static readonly string[] NameSecond =
-            { "Fox", "Owl", "Bat", "Elk", "Ram", "Yak", "Wolf", "Hawk", "Lynx", "Bear" };
+            { "Fox", "Owl", "Bat", "Elk", "Ram", "Yak", "Wolf", "Hawk", "Lynx", "Bear",
+              "Goat", "Viper", "Bolt", "Comet", "Blitz", "Champ", "Ace", "Kite" };
 
         private static void CacheName()
         {
@@ -115,8 +120,10 @@ namespace TableFootball.Net
             PlayerPrefs.Save();
         }
 
-        /// <summary>A short random name such as <c>SwiftFox42</c> — at most 10 characters.</summary>
-        private static string ShortRandomName() =>
+        /// <summary>A short random name such as <c>SwiftFox42</c>: two words and exactly two digits, at most
+        /// 12 characters. The one generator for every random name — the guest default and the username
+        /// dice — so they can never drift apart in length or style.</summary>
+        public static string RandomName() =>
             NameFirst[UnityEngine.Random.Range(0, NameFirst.Length)]
             + NameSecond[UnityEngine.Random.Range(0, NameSecond.Length)]
             + UnityEngine.Random.Range(10, 100);
@@ -229,7 +236,7 @@ namespace TableFootball.Net
 
             try
             {
-                if (await CompletesInTime(AuthenticationService.Instance.UpdatePlayerNameAsync(ShortRandomName())))
+                if (await CompletesInTime(AuthenticationService.Instance.UpdatePlayerNameAsync(RandomName())))
                 {
                     PlayerPrefs.SetInt(NameChosenKey, 1);
                 }
@@ -313,6 +320,10 @@ namespace TableFootball.Net
                 HasAccount = true;
 
                 Debug.Log($"Account secured. PlayerId is unchanged: {GameServices.PlayerId}");
+
+                // The name picked on the sign-up form is the name the player expects to appear as.
+                await AdoptUsernameAsDisplayNameAsync(username.Trim());
+
                 OnChanged?.Invoke();
                 return true;
             }
@@ -330,6 +341,44 @@ namespace TableFootball.Net
             finally
             {
                 IsBusy = false;
+            }
+        }
+
+        /// <summary>
+        /// Makes the name typed when the account was created the public name too, once, at creation.
+        ///
+        /// A username is a credential and a display name is what others see, and they stay separate
+        /// afterwards — renaming does not touch the login. But at the moment of creating an account the
+        /// player has typed ONE name, and showing up as a different one (the random name the game gave
+        /// them as a guest) reads as a bug. The username's alphabet is a little wider than a display
+        /// name's (it allows <c>@</c>), so characters a display name cannot hold are dropped, and if
+        /// nothing is left the existing name is simply kept.
+        ///
+        /// Never fails the account: it is already created by the time this runs, and a name that does not
+        /// stick is something the player can fix from the profile.
+        /// </summary>
+        private static async Task AdoptUsernameAsDisplayNameAsync(string username)
+        {
+            var kept = new System.Text.StringBuilder();
+            foreach (char c in username)
+            {
+                if (char.IsLetterOrDigit(c) && c < 128 || c == '.' || c == '-' || c == '_') kept.Append(c);
+            }
+
+            string name = kept.ToString();
+            if (!PlayerNameShape.IsMatch(name)) return;
+
+            try
+            {
+                if (await CompletesInTime(AuthenticationService.Instance.UpdatePlayerNameAsync(name)))
+                {
+                    PlayerPrefs.SetInt(NameChosenKey, 1);
+                    CacheName();
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"Could not use the username as the display name: {e.Message}");
             }
         }
 
@@ -383,6 +432,7 @@ namespace TableFootball.Net
                 Wallet.ResetLocal();
                 Inventory.ResetLocal();
                 RankedRewards.ResetLocal();
+                Ladder.ResetLocal();
                 Progression.DailyQuests.ResetForNewPlayer();
                 Progression.PlayerXp.ResetForNewPlayer();
                 ClearCachedName();
@@ -442,6 +492,11 @@ namespace TableFootball.Net
                     await OnlineSession.LeaveAsync();
                 }
 
+                // The server-side save first, while this identity can still reach Cloud Code: once the
+                // account is gone nothing can say whose document to erase. Best effort — a failure
+                // leaves the document behind but must not stop the player deleting their account.
+                await CloudSync.EraseRemoteAsync();
+
                 await AuthenticationService.Instance.DeleteAccountAsync();
 
                 HasAccount = false;
@@ -452,6 +507,7 @@ namespace TableFootball.Net
                 Wallet.ResetLocal();
                 Inventory.ResetLocal();
                 RankedRewards.ResetLocal();
+                Ladder.ResetLocal();
                 Progression.DailyQuests.ResetForNewPlayer();
                 Progression.PlayerXp.ResetForNewPlayer();
                 ClearCachedName();
@@ -475,6 +531,115 @@ namespace TableFootball.Net
             catch (Exception e)
             {
                 return Fail($"Could not delete the account: {Describe(e)}", e);
+            }
+            finally
+            {
+                IsBusy = false;
+                OnChanged?.Invoke();
+            }
+        }
+
+        /// <summary>
+        /// Changes the password of the account the player is signed in to. Needs the current one, so a
+        /// phone left unlocked on a table cannot be used to take an account over.
+        ///
+        /// Both passwords go through <see cref="Harden"/>, exactly as when they were set and as when
+        /// signing in: a password transformed on the way in but not here would be an account nobody
+        /// can open again. The new one is validated first, so a weak one is refused instantly and by
+        /// name rather than after a round trip.
+        /// </summary>
+        public static async Task<bool> ChangePasswordAsync(string current, string next)
+        {
+            if (string.IsNullOrEmpty(current))
+            {
+                return Fail("Enter your current password", null);
+            }
+
+            if (!ValidatePassword(next))
+            {
+                return false;
+            }
+
+            if (!HasAccount)
+            {
+                return Fail("This account has no password yet", null);
+            }
+
+            if (!await GameServices.EnsureSignedInAsync())
+            {
+                return Fail("Not signed in", null);
+            }
+
+            IsBusy = true;
+            try
+            {
+                await AuthenticationService.Instance.UpdatePasswordAsync(Harden(current), Harden(next));
+                LastError = string.Empty;
+                return true;
+            }
+            catch (Exception e)
+            {
+                return Fail($"Could not change the password: {Describe(e)}", e);
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        /// <summary>
+        /// Signs out of the account and leaves the device with a fresh guest. The account itself is
+        /// untouched on the service — signing in with its username and password brings everything back.
+        ///
+        /// The mirror of <see cref="SignInAsync"/>, in the order that matters: the outgoing player's
+        /// progress is uploaded FIRST, while still signed in as them, and only then are the local
+        /// stores wiped. Credentials are cleared, unlike a failed sign-in, because the cached token
+        /// names the account being left — keeping it would sign the next boot straight back in.
+        /// </summary>
+        public static async Task<bool> LogOutAsync()
+        {
+            if (!GameServices.IsSignedIn || !HasAccount)
+            {
+                return Fail("You are not logged in to an account", null);
+            }
+
+            IsBusy = true;
+            try
+            {
+                // Leave first, for the same reason deleting does: a table left open under a player who
+                // has just gone would hold a seat on the service.
+                if (OnlineSession.IsInSession)
+                {
+                    await OnlineSession.LeaveAsync();
+                }
+
+                await CloudSync.FlushAsync();
+
+                HasAccount = false;
+                GameServices.SignOut(clearCredentials: true);
+                FriendsHub.Reset();
+                MatchStats.ResetLocal();
+                PlayerProgress.ResetLocal();
+                Wallet.ResetLocal();
+                Inventory.ResetLocal();
+                RankedRewards.ResetLocal();
+                Ladder.ResetLocal();
+                Progression.DailyQuests.ResetForNewPlayer();
+                Progression.PlayerXp.ResetForNewPlayer();
+                ClearCachedName();
+
+                // Replaced at once so the game keeps working, and its (empty) cloud document loaded so
+                // the sync gate opens for the new guest.
+                await GameServices.EnsureSignedInAsync();
+                await CloudSync.LoadAsync();
+                await RefreshAsync();
+
+                Debug.Log($"Logged out. New anonymous PlayerId: {GameServices.PlayerId}");
+                return true;
+            }
+            catch (Exception e)
+            {
+                return Fail($"Could not log out: {Describe(e)}", e);
             }
             finally
             {

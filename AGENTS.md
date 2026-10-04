@@ -94,7 +94,7 @@ not new branches inside `RodController`.**
 | `Net/Cosmetics/*` | The catalogue of skins and badges, what is owned and worn, and the chest that rolls them. |
 | `Gameplay/BallSkins`, `BallSkinner` | Turns an equipped ball-skin id into the material the ball wears. Art in `Resources/BallSkins`, source in `Art/Blender`. |
 | `Net/Wallet`, `LevelPath`, `RankedRewards` | Gold coins, the 60-level reward path, and the weekly ranked payout. |
-| `Net/ShopOffers`, `AdService` | The store's daily free chest and coin ads; the one place ads are shown (placeholder today). |
+| `Net/ShopOffers`, `AdService` | The store's daily free chest and coin ads; the one place ads are shown (AdMob on Android, placeholder elsewhere). |
 
 **The rewards economy is five statics and one rule: coins are earned, never bought.** `Wallet` is the
 only balance; exactly three things credit it — `RankedRewards` at the weekly ladder rollover,
@@ -104,12 +104,44 @@ their `OnChanged`, the same shape as `PlayerProgress`. `CosmeticCatalog` is the 
 adding one is a row there and nothing else, because the store's Collection, the chest pool and the
 level path's named rewards all read it.
 
-**The store sells chests, not skins.** Four tiers at `ChestLoot.Price`, plus a free Common-or-Rare
-chest once a day for an ad and a few coin ads a day (`ShopOffers`, device-local day, not reset on a
-player change). Every ad goes through `AdService.ShowRewarded` and nowhere else — today a placeholder
-that succeeds instantly; a real SDK replaces that one file. `CosmeticItem.Price` no longer sells
-anything; it is still what `LevelPath` refunds for a named skin already owned. Skins are equipped from
-the store's Collection overlay, the only place `Inventory.Equip` is called for skins.
+**The store sells Lucky Chests first, and three skins a day.** Four chest tiers at `ChestLoot.Price`, a
+free Common-or-Rare chest once a day for an ad, a few coin ads a day, and **daily items**: three skins
+that could drop from a chest, picked once per local day and stored (`ShopOffers.DailyItems`, so buying
+one leaves it on the shelf marked owned instead of rerolling the rest), bought with coins through
+`ShopOffers.BuyDailyItem` at `ShopOffers.DailyItemPrice` (today `CosmeticItem.Price`, a placeholder the
+owner has yet to set). All of it is device-local-day state, not reset on a player change. Every ad goes
+through `AdService` and nowhere else (see the ads paragraph below). `LevelPath` still refunds `CosmeticItem.Price` for a named skin already
+owned. Skins are equipped from `CollectionScreen`, reached from the store or the profile, the only
+place `Inventory.Equip` is called for skins. Player-facing text says "Lucky Chest"; code keeps
+`ChestLoot`/`ChestTier`.
+
+**Ads are AdMob (Google Mobile Ads 11.5.0), and `AdService` is the only file that touches it.** On Android
+(`UNITY_ANDROID && !UNITY_EDITOR`) it runs the real SDK; everywhere else, the Editor included, it is a
+placeholder that finishes at once and reports the ad as watched, so the store can be tested in play
+mode. `ShowRewarded(Action<bool>)` reports true only when the reward was earned, and a tap that
+arrives while the ad is still loading WAITS for the load rather than declining. `ShowInterstitialIfDue`
+plays one interstitial after `GamesPerInterstitial` (3) finished matches and ALWAYS calls its callback,
+so a missing ad can never keep a player from the menu. `GameFlow.OnMatchWon` counts a finished match
+(local PvP included, a walked-out match not) via `AdService.RecordMatchFinished`; `ReturnToMenu` shows
+the ad behind the loading curtain, never during play. The SDK boots itself on
+`RuntimeInitializeOnLoadMethod` and asks for UMP consent first; it needs minimum API 24, and its
+AD_ID permission merges in from the SDK's own manifest. **The ad unit ids and the Google Mobile Ads
+Settings App ID are Google's TEST ids until the owner swaps in real ones** — three values: the App ID
+in `Assets/GoogleMobileAds/Resources/GoogleMobileAdsSettings.asset` and the two `*UnitId` constants in
+`AdService`. Nothing marks the app child-directed; if the Play target audience includes under-13s, set
+`RequestConfiguration` before `MobileAds.Initialize`. The compile-check harness needs the
+`GoogleMobileAds*.dll` refs from `Assets/GoogleMobileAds` and Unity's
+`NetStandard/compat/2.1.0/shims/netfx/mscorlib.dll` for the Android-define pass, because those DLLs
+reference `mscorlib`.
+
+**Account deletion also erases the server copy.** `PlayerAccount.DeleteAccountAsync` calls
+`CloudSync.EraseRemoteAsync` (which pauses uploads and lets an in-flight flush land, so one cannot
+re-create the document) before deleting the Authentication player; `CloudSaveBackend.DeleteAsync` calls the
+`progress` script's `delete` action. It is best effort — a failure never blocks deleting the account — and
+it only works once `cloudcode/progress.js` is redeployed with that action. Ranked data is not erased
+server-side yet because the real ladder (`LADDER_UGS`) is off and the game runs on the local mock;
+`Ladder.ResetLocal` clears the mock at every player change. Turning the real ladder on needs a matching
+`ladder.js` delete (player standing, the player's pod row, and `match:` claims all hold id and name).
 
 **Cloud Save is a sync layer over the six PlayerPrefs stores, never between them and the UI.**
 `Wallet`, `Inventory`, `PlayerProgress`, `LevelPath`, `RankedRewards` and `MatchStats` stay
@@ -157,7 +189,10 @@ synthesised.
 `WithRelayNetwork()`), not hand-rolled Lobby + Relay. `GameServices` and `OnlineSession` **never
 throw** — they report status, because a phone with no signal must boot exactly like one with a
 working connection, and local play depends on none of it. A `NetworkManager` with `UnityTransport`
-must already be in the scene before any of it is used.
+must already be in the scene before any of it is used. `Net/Connectivity` is the device's own idea of
+"any signal at all" (`Application.internetReachability`), polled once a second by whichever screen
+shows it — the main menu's OFFLINE chip and locked Online card. It cannot say the network is actually
+delivering; `GameServices` still reports that for itself.
 
 ## Invariants that bite
 
@@ -277,10 +312,41 @@ on device.
 is invisible to it and every sound falls back to the synthesised one — the fallback working exactly
 as designed is what makes this hard to spot.
 
-**Online:** the guest's ball is kinematic with `BallController` switched off wholesale; goal triggers
-are **disabled on the guest** (a transform-driven kinematic ball still fires `OnTriggerEnter`, and the
-guest would score a second private goal off the host's); and teams are **derived from `IsHost`**
-rather than negotiated, because a message can be lost or arrive late and `IsHost` cannot.
+**Online:** the machine NOT simulating the ball keeps it kinematic with `BallController` switched off
+wholesale; goal triggers are **disabled on the guest**, and `GoalTrigger` ignores any ball whose
+`BallController` is disabled (a transform-driven kinematic ball still fires `OnTriggerEnter`, and a
+drawn copy would score goals the real ball never did); and teams are **derived from `IsHost`** rather
+than negotiated, because a message can be lost or arrive late and `IsHost` cannot.
+
+**Lane authority: whoever owns the lane the ball is in simulates it.** Rows alternate by team, so
+`BallLanes` (built from rod pivots, boundaries midway between facing opposite-team rows) says whose
+figures can reach the ball. The simulating machine hands off (`BallHandoffRpc`, reliable) once its ball
+is `laneHysteresis` into the other lane for `handoffDwell` with no touch for `ownContactDwell`; the
+other machine draws the stream projected to the PRESENT and starts simulating *provisionally* the moment
+its drawn ball enters its own lane, then confirms, rebases or aborts when the hand over (or the old
+simulator's samples) arrive. Facing rows reach a few centimetres past a lane boundary (`[BallLanes]`
+logs it), so a **touch claim** covers that band: a machine whose own figure comes within `claimSkin` of
+a ball it only draws (and no opponent figure does) starts provisionally and sends `ClaimRpc`; the
+simulator hands over once its own figures are off the ball, or the claim times out and cools down.
+Each simulation term has an `epoch` that only grows; a machine only draws
+the current term's samples. **The host is the referee**: it takes a new term (epoch + 2, so it outranks
+any provisional) at every goal, restart and kick-off, when the guest goes silent for `silenceTakeover`,
+and when `AuthorityValidator` rejects the guest's samples (speed over the cap, off the table, kept deep
+in a Red lane); and `GoalJudge` scores goals inside the guest's simulation from the guest's real sample
+path, never from the host's drawn copy. `BallController.BeginSimulatingFrom`/`EndSimulating` clear the
+old simulation's contact state at every switch, and samples carry `LastTouch` so the stall rule survives
+a hand over; the stall warning is relayed from whichever machine runs it. The host's `laneAuthority`
+field (on `NetworkedBall`) switches all of it off, back to host-simulates-throughout. **Accepted
+residual**: inside its own lanes a modified guest can fake physically plausible traps and saves — the
+same limit as the spin-speed clamp below.
+
+**The first kick-off is held for the versus screen.** `BeginMatchRpc` resets and parks the table, and
+each machine kicks off `OnlineMatchDirector.VersusSeconds` after that same message — the screen
+(`UI/VersusScreen`) closes on the same constant, so the two cannot drift. The cards it shows
+(`PlayerCard`: name, level, worn badge) are the host's written at spawn and the guest's carried on its
+retried `ReportReadyRpc`, never a one-off spawn message; each machine shows its own card from local
+stores. A received card is untrusted input and goes through `PlayerCard.Sanitised`. Rematches kick off
+at once, with no versus screen.
 
 **The ball is a sample stream on a shared clock, not a NetworkTransform.** The simulating machine
 sends a `BallSample` (position, velocity, rotation) every physics step, unreliable, stamped with
@@ -337,13 +403,25 @@ from the standing rather than from a promotion. Both are idempotent and both han
 who does not open Ranked is never paid.
 
 **`PlayerProgress.MaxLevel` and the level path are one fact in two files.** The path pays a reward per
-level up to the cap and finishes on a chest at 60, so `LevelPath` reads the cap from `PlayerProgress`
+level up to the cap and finishes on the King badge at 60, so `LevelPath` reads the cap from `PlayerProgress`
 rather than holding a copy — and `PlayerProgress.ResetLocal` wipes the path with it. Clearing the XP
 while leaving the claim mask behind hands the next player a path already marked collected, and every
 level they earn back pays nothing, with no error anywhere. XP still accrues past the cap, so the bar
 is pinned full inside `FractionForXp` (not at the `XpFraction` property) — a `MatchOutcome` carries
 raw before/after fractions to the results banner, and capping only at the property would have the
 banner creeping forward while the profile chip sat full.
+
+**Two cosmetics are won on the level road, never sold or rolled.** Level 50 pays the **Shining Gold**
+name style (`CosmeticKind.NameStyle`, id `name.gold`, default `name.plain`) and level 60 pays the **King
+badge** (`badge.king`, a `Badge`), replacing the old level-60 Legendary chest. `CosmeticItem.IsEarnedOnly`
+(badges and name styles) is the one rule that keeps them out of chests, the store and the daily items.
+The claim wears them at once — the name style always, the badge only if the badge slot is empty.
+`UiShineLabel` draws the player's OWN name: gold with a glint that sweeps across it in a loop (per-letter
+rich-text colour, since a Label cannot take a gradient; reduced motion keeps the gold and drops the
+glint). Set a name through `Set(name, isMine)` rather than `.text` — another player's name never takes
+your style. It shows on your own screens (main menu chip, profile, friends code, your ranked rows);
+other players do not see it, because nothing about names is synced in a match. The worn badge sits
+beside the name via `UiArt.WornBadge`.
 
 **A `CoinPill` stays subscribed to `Wallet.OnChanged` while its menu is hidden**, and every screen has
 one. `StartCoroutine` on an inactive GameObject is a Unity error, not a no-op, so the pill snaps
@@ -408,6 +486,15 @@ both machines. Trail and particle materials come from `SkinMaterials.CreateTrail
 tries unlit shaders first (only those honour the vertex colours that make a trail FADE) and falls
 back to a transparent clone of the ball's own material, because `Shader.Find` returns null in a build
 for any shader that was stripped. No usable shader costs the sparkle, never the match.
+
+**The Solar Crown (`ball.golden`) is the one ball whose material CHANGES at runtime.** It kept the
+Golden Trophy Ball's id so every owner of that skin owns this one. Its seams glow from a
+`BallSkin_SolarCrown_Emission` map, and `SolarCrownFx` rewrites the shared skin material's
+`_EmissionColor` every frame to brighten it with speed — so `SetGlow(1)` on disable is what puts it
+back, and anything else that writes that colour will fight it. Like `BallTrail` it reads the
+TRANSFORM, never the Rigidbody, and detects impacts as a jump in transform velocity rather than from
+collision callbacks, which a kinematic guest ball never receives; a jump over `TeleportStep` is a
+reset, not a hit.
 
 **A background skin is a SKYBOX, and its default is no skybox at all.** The scene has no environment
 geometry — the table floats in Unity's default sky — so `BackgroundSkins` resolves an id to a

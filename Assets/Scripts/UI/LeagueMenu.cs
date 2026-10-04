@@ -1,18 +1,22 @@
 using System;
+using System.Collections.Generic;
 using TableFootball.Net;
-using TMPro;
+using TableFootball.UI.Toolkit;
 using UnityEngine;
-using UnityEngine.UI;
+using UnityEngine.UIElements;
 
 namespace TableFootball.UI
 {
     /// <summary>
-    /// The ranked screen: which league you are in, your pod of fifteen, and where the promotion (top
-    /// three) and relegation (bottom two) lines fall — plus how long is left before the weekly lock.
+    /// The ranked screen: which league you are in and what this week pays (left), a podium for the
+    /// top three — the ones who go up (middle) — and the rest of your pod of fifteen with the bottom
+    /// two, who go down, marked in red (right). Your own row is taller, cyan and wider than the list so
+    /// you find yourself at a glance. Built on UI Toolkit, styled by
+    /// <c>Resources/UI/Styles/Ranked.uss</c>.
     ///
-    /// Like every other screen it is built in code, reads its data from <see cref="Ladder"/> and
-    /// redraws on <see cref="Ladder.OnChanged"/>, and talks out only through a callback. It holds no
-    /// ladder logic of its own.
+    /// Like every other screen it reads its data from <see cref="Ladder"/> and
+    /// <see cref="RankedRewards"/>, redraws on their change events and talks out only through
+    /// callbacks. It holds no ladder logic of its own.
     ///
     /// The three DEBUG buttons (editor-only, see <see cref="BuildDebug"/>) stand in for real ranked
     /// results until the online ranked queue is exercised in practice: they let a single developer
@@ -21,17 +25,38 @@ namespace TableFootball.UI
     /// </summary>
     public class LeagueMenu : MonoBehaviour
     {
-        private GameObject root;
-        private CanvasGroup group;
+        // Podium metals. Gold here is the medal, not the reward colour; silver and bronze are used
+        // nowhere else.
+        private static readonly Color Silver = new Color32(0xC9, 0xD6, 0xE8, 0xFF);
+        private static readonly Color Bronze = new Color32(0xD9, 0x89, 0x4B, 0xFF);
 
-        private TextMeshProUGUI leagueLabel;
-        private TextMeshProUGUI statusLabel;
-        private Image headerBackground;
-        private RectTransform listContent;
+        /// <summary>Step heights on the podium, by rank, in panel units (first is tallest).</summary>
+        private static readonly float[] StepHeights = { 150f, 108f, 80f };
 
-        private TextMeshProUGUI rewardLabel;
-        private Image rewardBackground;
-        private GameObject rewardClaimHolder;
+        private VisualElement root;
+
+        // The week and points the player last saw here, so a gain since then can fly in. Static: it has
+        // to outlive the screen, which is closed and reopened around every match.
+        private static int seenWeek = -1;
+        private static int seenPoints = -1;
+
+        private UiCoinChip coinChip;
+        private UiPointsChip pointsChip;
+        private bool pointsFlying;
+
+        private VisualElement badgeHolder;
+        private Label leagueName, standingLine, zoneChip, timerLabel;
+        private VisualElement zoneBox;
+        private readonly List<VisualElement> ladderRows = new List<VisualElement>();
+
+        private UiFrame payBox;
+        private UiCoin payCoin;
+        private Label payLabel;
+        private VisualElement payClaim;
+        private VisualElement play;
+
+        private VisualElement podium;
+        private ScrollView list;
 
         /// <summary>Raised when the player backs out.</summary>
         public Action OnBack;
@@ -39,233 +64,125 @@ namespace TableFootball.UI
         /// <summary>Raised when the player starts a ranked match from here.</summary>
         public Action OnPlayRanked;
 
-        public bool IsOpen => root != null && root.activeSelf;
+        public bool IsOpen => root != null && root.style.display != DisplayStyle.None;
 
+        /// <summary><paramref name="canvasRoot"/> is the uGUI canvas the older screens hang off, unused
+        /// here and kept so the boot order in TableFootballUI does not change.</summary>
         public void Build(Transform canvasRoot)
         {
-            root = UIFactory.Child(canvasRoot, "LeagueMenu");
-            UIFactory.Stretch(UIFactory.Rt(root));
-            group = root.AddComponent<CanvasGroup>();
-            UIFactory.ScrimDim(root.transform);
+            root = UiKit.El("screen ranked", UiToolkitHost.Root, "Ranked");
+            var sheet = Resources.Load<StyleSheet>("UI/Styles/Ranked");
+            if (sheet != null) root.styleSheets.Add(sheet);
+            root.pickingMode = PickingMode.Position;
 
-            UIFactory.ScreenHeader(root.transform, "Ranked", Back);
+            UiBackdrop.AddTo(root);
 
-            var panel = UIFactory.Panel(root.transform, "LeaguePanel");
-            var prt = UIFactory.Rt(panel);
-            prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
-            prt.pivot = new Vector2(0.5f, 0.5f);
-            prt.sizeDelta = new Vector2(660f, 680f);
-            // Clears the shared header even on a 20:9 phone, where the canvas is only ~805 tall.
-            prt.anchoredPosition = new Vector2(0f, -40f);
+            BuildHeader();
+            BuildSide();
+            BuildPodiumArea();
+            BuildListArea();
 
-            // The panel's own children are its background (shadow/border/fill); the laid-out content
-            // goes in a separate stretched column on top, so a layout group never touches the frame.
-            var content = UIFactory.Child(panel.transform, "Content");
-            UIFactory.Stretch(UIFactory.Rt(content), 0f);
-
-            var col = content.AddComponent<VerticalLayoutGroup>();
-            col.padding = new RectOffset(24, 24, 24, 24);
-            col.spacing = ArcadeTheme.Md;
-            col.childAlignment = TextAnchor.UpperCenter;
-            col.childForceExpandWidth = true;
-            col.childForceExpandHeight = false;
-            col.childControlWidth = true;
-            col.childControlHeight = true;
-
-            BuildHeader(content.transform);
-            BuildReward(content.transform);
-            BuildLegend(content.transform);
-            BuildList(content.transform);
-            BuildPlay(content.transform);
-            BuildDebug(content.transform);
-
-            root.SetActive(false);
+            UiFonts.Apply(root);
+            UiKit.Show(root, false);
         }
 
-        private void BuildHeader(Transform parent)
+        // ---------- build ----------
+
+        private void BuildHeader()
         {
-            var header = UIFactory.Child(parent, "Header");
-            // Was 78 with no background at all — the league/points line and the status line were bare
-            // text floating on the scrim, reading as two disconnected labels rather than one header.
-            // A real panel behind them, with real padding, is what "unified header panel" means.
-            header.AddComponent<LayoutElement>().preferredHeight = 100f;
-            headerBackground = UIFactory.RoundedImage(header, ArcadeTheme.RadSm, ArcadeTheme.BgRaised, false);
+            var header = UiKit.El("rk__header", root);
 
-            var v = header.AddComponent<VerticalLayoutGroup>();
-            v.padding = new RectOffset(16, 16, 14, 14);
-            v.spacing = ArcadeTheme.Sm;
-            v.childAlignment = TextAnchor.MiddleCenter;
-            v.childForceExpandWidth = true;
-            v.childForceExpandHeight = false;
-            v.childControlWidth = true;
-            v.childControlHeight = true;
+            var back = UiKit.Frame("sq rk__back", header);
+            back.Add(new UiIcon(UiIcon.Glyph.ChevronLeft, ArcadeTheme.Ink, 2.5f));
+            UiKit.OnTap(back, Back, UiSound.Back);
 
-            leagueLabel = UIFactory.Text(header.transform, "RANKED", 34f, ArcadeTheme.Gold,
-                                         display: true, bold: true, upper: true, tracking: 6f);
-            leagueLabel.gameObject.AddComponent<LayoutElement>().preferredHeight = 42f;
+            var box = UiKit.El("rk__title-box", header);
+            var row = UiKit.El("rk__title-row", box);
+            row.Add(new UiIcon(UiIcon.Glyph.Trophy, ArcadeTheme.Pulse, 2f));
+            UiKit.Text("RANKED", "rk__title f-display", row);
+            UiKit.El("rk__bar", box);
 
-            statusLabel = UIFactory.Text(header.transform, "loading…", ArcadeTheme.FsCaption,
-                                         ArcadeTheme.InkMuted, display: false, bold: true, upper: true,
-                                         tracking: 3f);
-            statusLabel.gameObject.AddComponent<LayoutElement>().preferredHeight = 22f;
+            // This week's points and the coin balance: the two numbers a ranked result moves.
+            var tools = UiKit.El("rk__tools", header);
+            pointsChip = new UiPointsChip();
+            tools.Add(pointsChip);
+            coinChip = new UiCoinChip();
+            coinChip.AddToClassList("rk__coin-chip");
+            tools.Add(coinChip);
         }
 
-        /// <summary>
-        /// The money line: what this week has already paid, or what it is on course to pay.
-        ///
-        /// One row that is always saying something, rather than a claim banner that appears out of
-        /// nowhere once a week. Ranked is the game's main source of coins and, before this row, the
-        /// screen never mentioned coins at all — a player could climb three leagues without learning
-        /// that the ladder is what funds the store.
-        ///
-        /// The payout is <see cref="RankedRewards"/>'s to compute; this only draws it.
-        /// </summary>
-        private void BuildReward(Transform parent)
+        private void BuildSide()
         {
-            var strip = UIFactory.Child(parent, "WeeklyReward");
-            strip.AddComponent<LayoutElement>().preferredHeight = 56f;
-            rewardBackground = UIFactory.RoundedImage(strip, ArcadeTheme.RadSm,
-                                                      ArcadeTheme.Coin.WithAlpha(0.10f), false);
+            var side = UiKit.Frame("frame--panel rk__side", root);
 
-            var h = strip.AddComponent<HorizontalLayoutGroup>();
-            h.padding = new RectOffset(14, 10, 0, 0);
-            h.spacing = ArcadeTheme.Sm;
-            h.childAlignment = TextAnchor.MiddleLeft;
-            h.childForceExpandWidth = false;
-            h.childForceExpandHeight = false;
-            h.childControlWidth = true;
-            h.childControlHeight = true;
+            // Who you are in the ladder: the badge, the league, and where you sit.
+            var top = UiKit.El("rk__id", side);
+            badgeHolder = UiKit.El("rk__badge", top);
+            var words = UiKit.El("rk__id-words", top);
+            leagueName = UiKit.Text("RANKED", "rk__league f-display", words);
+            standingLine = UiKit.Text(string.Empty, "rk__standing f-display-semi", words);
 
-            var coinCell = UIFactory.Child(strip.transform, "Coin");
-            var cle = coinCell.AddComponent<LayoutElement>();
-            cle.preferredWidth = 30f;
-            cle.minWidth = 30f;
-            cle.preferredHeight = 30f;
-            UIFactory.CoinGlyph(coinCell.transform, 30f);
+            zoneBox = UiKit.El("rk__zone", side);
+            zoneChip = UiKit.Text(string.Empty, "rk__zone-label f-display", zoneBox);
+            var timer = UiKit.El("rk__timer", zoneBox);
+            timer.Add(new UiIcon(UiIcon.Glyph.Clock, ArcadeTheme.InkMuted, 2f));
+            timerLabel = UiKit.Text(string.Empty, "rk__timer-label f-display-semi", timer);
 
-            rewardLabel = UIFactory.Text(strip.transform, string.Empty, ArcadeTheme.FsCaption,
-                                         ArcadeTheme.Coin, display: false, bold: true, upper: true,
-                                         tracking: 2f, align: TextAlignmentOptions.Left,
-                                         richText: false);
-            rewardLabel.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
-            // The strip is a fixed-width row inside a 660-wide panel and the Collect button takes 168
-            // of it, so the message has about thirty characters when there is something to claim. It
-            // is written to fit; the ellipsis is the guard for when it one day is not.
-            rewardLabel.overflowMode = TextOverflowModes.Ellipsis;
-
-            rewardClaimHolder = UIFactory.Child(strip.transform, "ClaimHolder");
-            var hle = rewardClaimHolder.AddComponent<LayoutElement>();
-            hle.preferredWidth = 168f;
-            hle.minWidth = 168f;
-
-            var v = rewardClaimHolder.AddComponent<VerticalLayoutGroup>();
-            v.childAlignment = TextAnchor.MiddleCenter;
-            v.childForceExpandWidth = true;
-            v.childForceExpandHeight = false;
-            v.childControlWidth = true;
-            v.childControlHeight = true;
-
-            UIFactory.Button(rewardClaimHolder.transform, "Collect", MenuButton.Variant.Primary,
-                             ClaimWeekly, 42f);
-        }
-
-        /// <summary>
-        /// Collects the weekly payout and says so on the strip itself. The coins land in
-        /// <see cref="Wallet"/>, which every coin pill in the game is already listening to, so the
-        /// number moves everywhere at once without this screen telling any of them.
-        /// </summary>
-        private void ClaimWeekly()
-        {
-            int coins = RankedRewards.Claim();
-            RedrawReward();
-
-            if (coins > 0 && rewardLabel != null)
+            // The four rungs, top one first; yours is lit.
+            var rungs = UiKit.El("rk__rungs", side);
+            for (int i = Leagues.Count - 1; i >= 0; i--)
             {
-                rewardLabel.text = $"+{coins} COINS COLLECTED";
-            }
-        }
+                League league = (League)i;
+                Color metal = UIFactory.LeagueColor(league);
 
-        private void RedrawReward()
-        {
-            if (rewardLabel == null)
-            {
-                return;
+                var rung = UiKit.El("rk__rung", rungs);
+                rung.userData = league;
+                var dot = UiKit.El("rk__rung-dot", rung);
+                dot.style.backgroundColor = metal;
+                UiKit.Text(Leagues.ShortName(league).ToUpperInvariant(), "rk__rung-name f-display-semi", rung);
+                var you = UiKit.Text("YOU", "rk__rung-you f-display", rung);
+                you.style.color = metal;
+                ladderRows.Add(rung);
             }
 
-            if (RankedRewards.HasPending)
-            {
-                League league = RankedRewards.PendingLeague;
-                rewardLabel.text = $"{Leagues.Name(league).ToUpperInvariant()} WEEK REWARD  ·  " +
-                                   $"{RankedRewards.PendingCoins}";
-                rewardLabel.color = ArcadeTheme.Coin;
-                rewardBackground.color = ArcadeTheme.Coin.WithAlpha(0.18f);
-                rewardClaimHolder.SetActive(true);
-                return;
-            }
+            // What the week pays.
+            payBox = UiKit.Frame("rk__pay", side);
+            payCoin = new UiCoin();
+            payBox.Add(payCoin);
+            payLabel = UiKit.Text(string.Empty, "rk__pay-label f-display-semi", payBox);
+            payClaim = UiKit.Button("COLLECT", "reward", ClaimWeekly, payBox);
+            payClaim.AddToClassList("rk__pay-claim");
 
-            // Nothing to collect, so the row does the other half of its job: telling the player what
-            // holding this position through to the lock is worth. A projection, not a promise — the
-            // pod is still moving, and so is this number.
-            int projected = RankedRewards.ProjectedCoins();
-            rewardLabel.text = projected > 0
-                ? $"FINISH HERE AND THIS WEEK PAYS {projected} COINS"
-                : "PLAY RANKED TO EARN COINS EACH WEEK";
-            rewardLabel.color = ArcadeTheme.InkMuted;
-            rewardBackground.color = ArcadeTheme.BgRaised;
-            rewardClaimHolder.SetActive(false);
+            play = UiKit.Button("PLAY RANKED", "pulse", () => OnPlayRanked?.Invoke(), side);
+            play.AddToClassList("rk__play");
+
+            BuildDebug(side);
         }
 
-        private static void BuildLegend(Transform parent)
+        private void BuildPodiumArea()
         {
-            var row = UIFactory.Child(parent, "Legend");
-            row.AddComponent<LayoutElement>().preferredHeight = 22f;
-
-            var h = row.AddComponent<HorizontalLayoutGroup>();
-            h.spacing = ArcadeTheme.Lg;
-            h.childAlignment = TextAnchor.MiddleCenter;
-            h.childForceExpandWidth = false;
-            h.childForceExpandHeight = false;
-            h.childControlWidth = true;
-            h.childControlHeight = true;
-
-            Tag(row.transform, "▲ TOP 3 PROMOTE", ArcadeTheme.Pitch);
-            Tag(row.transform, "▼ BOTTOM 2 RELEGATE", ArcadeTheme.Red);
+            var area = UiKit.El("rk__center", root);
+            Heading(area, UiIcon.Glyph.Trophy, "TOP 3 GO UP", ArcadeTheme.Pulse);
+            podium = UiKit.El("rk__podium", area);
         }
 
-        private static void Tag(Transform parent, string text, Color color)
+        private void BuildListArea()
         {
-            var t = UIFactory.Text(parent, text, ArcadeTheme.FsCaption, color,
-                                   display: false, bold: true, upper: true, tracking: 2f);
-            t.gameObject.AddComponent<LayoutElement>().preferredWidth = 260f;
+            var area = UiKit.El("rk__right", root);
+            Heading(area, UiIcon.Glyph.TwoPlayers, "YOUR POD", ArcadeTheme.Pulse);
+            list = new ScrollView(ScrollViewMode.Vertical) { horizontalScrollerVisibility = ScrollerVisibility.Hidden };
+            list.AddToClassList("rk__list");
+            list.verticalScrollerVisibility = ScrollerVisibility.Hidden;
+            area.Add(list);
         }
 
-        private void BuildList(Transform parent)
+        private static void Heading(VisualElement parent, UiIcon.Glyph glyph, string text, Color color)
         {
-            var holder = UIFactory.Child(parent, "ListHolder");
-            var le = holder.AddComponent<LayoutElement>();
-            le.preferredHeight = 420f;
-            le.flexibleHeight = 1f;
-            // The one element allowed to give up space when the panel is too short for everything
-            // below it — never below a scrollable minimum — so the fixed-height rows beneath it
-            // (Play/Debug/Back) always get the room they asked for instead of drifting into overlap.
-            le.minHeight = 140f;
-
-            listContent = UIFactory.ScrollList(holder.transform, ArcadeTheme.Xs);
-        }
-
-        private void BuildPlay(Transform parent)
-        {
-            var holder = UIFactory.Child(parent, "PlayRow");
-            holder.AddComponent<LayoutElement>().preferredHeight = 62f;
-
-            var v = holder.AddComponent<VerticalLayoutGroup>();
-            v.childForceExpandWidth = true;
-            v.childForceExpandHeight = true;
-            v.childControlWidth = true;
-            v.childControlHeight = true;
-
-            UIFactory.Button(holder.transform, "Play Ranked", MenuButton.Variant.Primary,
-                             () => OnPlayRanked?.Invoke());
+            var head = UiKit.El("rk__heading", parent);
+            head.Add(new UiIcon(glyph, color, 2f));
+            var label = UiKit.Text(text, "rk__heading-label f-display", head);
+            label.style.color = color;
+            UiKit.El("rk__heading-rule", head);
         }
 
         /// <summary>
@@ -275,72 +192,50 @@ namespace TableFootball.UI
         /// direct calls into <see cref="Ladder.SubmitResult"/>/<see cref="Ladder.AdvanceWeekForTesting"/>)
         /// inside the shipped assembly, findable and callable by anyone who went looking.
         /// </summary>
-        private void BuildDebug(Transform parent)
+        private void BuildDebug(VisualElement parent)
         {
 #if UNITY_EDITOR
-            var row = UIFactory.Child(parent, "DebugRow");
-            row.AddComponent<LayoutElement>().preferredHeight = 56f;
-
-            var h = row.AddComponent<HorizontalLayoutGroup>();
-            h.spacing = ArcadeTheme.Sm;
-            h.childAlignment = TextAnchor.MiddleCenter;
-            h.childForceExpandWidth = true;
-            h.childForceExpandHeight = true;
-            h.childControlWidth = true;
-            h.childControlHeight = true;
-
-            UIFactory.Button(row.transform, "DEBUG Win", MenuButton.Variant.Neutral,
-                             () => Ladder.SubmitResult(0, true));
-            UIFactory.Button(row.transform, "DEBUG Loss", MenuButton.Variant.Neutral,
-                             () => Ladder.SubmitResult(0, false));
-            UIFactory.Button(row.transform, "DEBUG +Week", MenuButton.Variant.Ghost,
-                             Ladder.AdvanceWeekForTesting);
+            var row = UiKit.El("rk__debug", parent);
+            UiKit.Button("DEBUG WIN", "ghost", () => Ladder.SubmitResult(0, true), row);
+            UiKit.Button("DEBUG LOSS", "ghost", () => Ladder.SubmitResult(0, false), row);
+            UiKit.Button("+WEEK", "ghost", Ladder.AdvanceWeekForTesting, row);
 #endif
         }
 
-        /// <summary>
-        /// Built INSIDE the panel's own column, immediately after Play/Debug, rather than pinned to a
-        /// fixed offset from the whole screen's bottom edge. A screen-anchored Back sat at a position
-        /// computed independently of the panel's actual content — correct on the aspect ratio it was
-        /// tuned against, but free to drift onto Play Ranked on a very different one (a phone's aspect
-        /// under this canvas's width/height-blended scaler is nothing like a desktop's). Inside the
-        /// same VerticalLayoutGroup, Back can never land on its neighbours: the layout group resizes
-        /// the scrollable list above it to make room instead.
-        /// </summary>
+        // ---------- state ----------
+
         public void Open()
         {
             if (root == null) return;
 
-            Ladder.OnChanged -= Redraw;
+            Unsubscribe();
             Ladder.OnChanged += Redraw;
             // Its own event as well as the ladder's: a payout is banked by RankedRewards.Sync when the
             // week turns over, which happens in response to the ladder refresh below rather than
             // before it — so the reward strip has to be told separately or it draws the week that has
             // just ended as if it were still running.
-            RankedRewards.OnChanged -= Redraw;
             RankedRewards.OnChanged += Redraw;
 
-            root.SetActive(true);
-            root.transform.SetAsLastSibling();
-            group.blocksRaycasts = true;
+            Redraw();
+
+            UiKit.Show(root, true);
+            root.BringToFront();
+            root.style.opacity = 0f;
+            UiKit.Fade(root, 1f, ArcadeTheme.TFast);
+            GameSfx.PlayUi(UiSound.Open);
 
             Ladder.Refresh(); // fills the cache, then fires Redraw through OnChanged
-            Redraw();          // draw whatever is already cached, immediately
         }
 
         public void Close()
         {
-            Ladder.OnChanged -= Redraw;
-            RankedRewards.OnChanged -= Redraw;
-
-            if (root != null)
-            {
-                group.blocksRaycasts = false;
-                root.SetActive(false);
-            }
+            Unsubscribe();
+            if (root != null) UiKit.Show(root, false);
         }
 
-        private void OnDestroy()
+        private void OnDestroy() => Unsubscribe();
+
+        private void Unsubscribe()
         {
             Ladder.OnChanged -= Redraw;
             RankedRewards.OnChanged -= Redraw;
@@ -352,133 +247,249 @@ namespace TableFootball.UI
             OnBack?.Invoke();
         }
 
-        private void Redraw()
+        /// <summary>
+        /// Collects the weekly payout. The coins land in <see cref="Wallet"/>, which every coin chip in
+        /// the game is already listening to, so the number moves everywhere at once without this
+        /// screen telling any of them.
+        /// </summary>
+        private void ClaimWeekly()
         {
-            if (leagueLabel == null) return;
-
+            int coins = RankedRewards.Claim();
             RedrawReward();
 
+            if (coins > 0)
+            {
+                payLabel.text = "+" + coins.ToString("N0") + " COLLECTED";
+                RewardFly.Play(RewardFly.Kind.Coins, payBox, coinChip, coins);
+            }
+        }
+
+        /// <summary>
+        /// Flies trophies from the league badge to the points chip when this week's points are higher
+        /// than the last time the player looked — which is how a ranked win shows up when they come back
+        /// here. The first look of a session, and a new week, only set the baseline.
+        /// </summary>
+        private void CheckPointsGain()
+        {
             LadderStanding s = Ladder.Standing;
+            if (!s.Valid || pointsFlying) return;
+
+            int gain = seenWeek == s.WeekIndex && seenPoints >= 0 ? s.WeeklyPoints - seenPoints : 0;
+            int before = seenPoints;
+            seenWeek = s.WeekIndex;
+            seenPoints = s.WeeklyPoints;
+
+            if (gain <= 0) return;
+
+            // Hold the chip at what it showed, then let the trophies carry it up.
+            pointsFlying = true;
+            pointsChip.Freeze(true);
+            pointsChip.SetNow(before);
+            pointsChip.schedule.Execute(() =>
+            {
+                // Left the screen in the meantime: nothing to watch, so just settle the number.
+                if (!IsOpen)
+                {
+                    pointsChip.Freeze(false);
+                    pointsFlying = false;
+                    return;
+                }
+
+                RewardFly.Play(RewardFly.Kind.Trophies, badgeHolder, pointsChip, gain, () => pointsFlying = false);
+            }).StartingIn(450);
+        }
+
+        private void Redraw()
+        {
+            if (root == null) return;
+
+            RedrawReward();
+            CheckPointsGain();
+
+            LadderStanding s = Ladder.Standing;
+            badgeHolder.Clear();
 
             if (!s.Valid)
             {
-                leagueLabel.text = "RANKED";
-                leagueLabel.color = ArcadeTheme.Gold;
-                statusLabel.text = "loading…";
-                UIFactory.ClearChildren(listContent);
+                badgeHolder.Add(UiArt.LeagueBadge(League.Bronze, 84f));
+                leagueName.text = "RANKED";
+                leagueName.style.color = ArcadeTheme.Ink;
+                standingLine.text = "LOADING…";
+                UiKit.Show(zoneBox, false);
+                foreach (var rung in ladderRows) rung.RemoveFromClassList("is-here");
+                podium.Clear();
+                list.Clear();
                 return;
             }
 
-            Color tier = LeagueColor(s.League);
-            leagueLabel.text = $"{Leagues.Name(s.League).ToUpperInvariant()}   ·   {s.WeeklyPoints} PTS";
-            leagueLabel.color = tier;
-            // Tinted with the same tier colour the text itself uses, matching the reward strip's own
-            // coin-tinted background below it — the header now visibly belongs to the league it names.
-            if (headerBackground != null) headerBackground.color = Color.Lerp(ArcadeTheme.BgRaised, tier, 0.14f);
+            Color metal = UIFactory.LeagueColor(s.League);
+            badgeHolder.Add(UiArt.LeagueBadge(s.League, 84f));
+            leagueName.text = Leagues.ShortName(s.League).ToUpperInvariant();
+            leagueName.style.color = metal;
+            standingLine.text = "#" + s.RankInPod + " OF " + s.PodSize + "  ·  " + s.WeeklyPoints + " PTS";
 
-            string zone = s.InPromotionZone ? "PROMOTION ZONE"
-                        : s.InRelegationZone ? "RELEGATION ZONE"
-                        : "HOLDING";
-            statusLabel.text = $"{Ordinal(s.RankInPod)} OF {s.PodSize}   ·   {zone}   ·   " +
-                               $"RESETS IN {FormatCountdown(s.SecondsToRollover)}";
+            UiKit.Show(zoneBox, true);
+            zoneChip.text = s.InPromotionZone ? "PROMOTION ZONE"
+                          : s.InRelegationZone ? "RELEGATION ZONE"
+                          : "HOLDING";
+            zoneChip.style.color = s.InPromotionZone ? ArcadeTheme.Pulse
+                                 : s.InRelegationZone ? ArcadeTheme.Danger
+                                 : ArcadeTheme.InkMuted;
+            timerLabel.text = FormatCountdown(s.SecondsToRollover);
 
-            UIFactory.ClearChildren(listContent);
+            foreach (var rung in ladderRows)
+            {
+                rung.EnableInClassList("is-here", (League)rung.userData == s.League);
+            }
 
             var pod = Ladder.Pod;
-            for (int i = 0; i < pod.Count; i++)
+            RedrawPodium(s, pod);
+            RedrawList(s, pod);
+            UiFonts.Apply(podium);
+            UiFonts.Apply(list);
+        }
+
+        private void RedrawReward()
+        {
+            if (payLabel == null) return;
+
+            if (RankedRewards.HasPending)
+            {
+                payLabel.text = Leagues.ShortName(RankedRewards.PendingLeague).ToUpperInvariant() +
+                                " WEEK  ·  " + RankedRewards.PendingCoins.ToString("N0");
+                payLabel.style.color = ArcadeTheme.Reward;
+                payBox.OverrideEdge(ArcadeTheme.Reward);
+                UiKit.Show(payClaim, true);
+                return;
+            }
+
+            // Nothing to collect, so the row does the other half of its job: telling the player what
+            // holding this position through to the lock is worth. A projection, not a promise — the
+            // pod is still moving, and so is this number.
+            int projected = RankedRewards.ProjectedCoins();
+            payLabel.text = projected > 0
+                ? "THIS WEEK PAYS  " + projected.ToString("N0")
+                : "PLAY TO EARN COINS";
+            payLabel.style.color = ArcadeTheme.InkMuted;
+            payBox.OverrideEdge(ArcadeTheme.LineLit);
+            UiKit.Show(payClaim, false);
+        }
+
+        // ---------- podium ----------
+
+        private void RedrawPodium(LadderStanding s, IReadOnlyList<LadderEntry> pod)
+        {
+            podium.Clear();
+            bool goesUp = Leagues.CanPromote(s.League);
+
+            // Second, first, third: the winner stands in the middle and tallest.
+            int[] order = { 2, 1, 3 };
+            foreach (int rank in order)
+            {
+                LadderEntry entry = rank <= pod.Count ? pod[rank - 1] : default;
+                bool present = rank <= pod.Count;
+                Color metal = rank == 1 ? ArcadeTheme.Reward : rank == 2 ? Silver : Bronze;
+
+                var col = UiKit.El("rk__step-col", podium);
+                if (rank == 1) col.AddToClassList("rk__step-col--first");
+
+                if (present)
+                {
+                    var hex = new UiHex { Edge = entry.IsYou ? ArcadeTheme.Pulse : metal };
+                    hex.AddToClassList("rk__pod-hex");
+                    if (rank == 1) hex.AddToClassList("rk__pod-hex--first");
+                    string initial = string.IsNullOrEmpty(entry.Name) ? "?" : entry.Name.Substring(0, 1).ToUpperInvariant();
+                    var letter = UiKit.Text(initial, "rk__pod-initial f-display", hex);
+                    letter.style.color = entry.IsYou ? ArcadeTheme.Pulse : metal;
+                    col.Add(hex);
+
+                    var name = new UiShineLabel();
+                    name.AddToClassList("rk__pod-name");
+                    name.AddToClassList("f-display-semi");
+                    col.Add(name);
+                    name.Set(entry.IsYou ? "YOU" : entry.Name, entry.IsYou);
+                    // Your own step keeps the cyan unless the gold name style is worn, which paints itself.
+                    if (!entry.IsYou) name.style.color = ArcadeTheme.Ink;
+                    else if (!Inventory.IsEquipped(LevelPath.GoldNameId)) name.style.color = ArcadeTheme.Pulse;
+                    UiKit.Text(entry.Points + " PTS", "rk__pod-pts f-display", col);
+                }
+
+                var step = UiKit.Frame("rk__step", col);
+                step.style.height = StepHeights[rank - 1];
+                step.OverrideEdge(present && entry.IsYou ? ArcadeTheme.Pulse : metal);
+                step.OverrideFill(Color.Lerp(ArcadeTheme.BgPanel, metal, rank == 1 ? 0.18f : 0.10f));
+
+                var number = UiKit.Text(rank.ToString(), "rk__step-rank f-display", step);
+                number.style.color = metal;
+
+                if (goesUp)
+                {
+                    var up = new UiIcon(UiIcon.Glyph.ChevronRight, ArcadeTheme.Pulse, 2.8f);
+                    up.AddToClassList("rk__up");
+                    step.Add(up);
+                }
+
+                if (present && entry.IsYou)
+                {
+                    var tag = UiKit.Text("YOU", "rk__you-tag f-display", step);
+                    tag.AddToClassList("rk__you-tag--pod");
+                }
+            }
+        }
+
+        // ---------- the rest of the pod ----------
+
+        private void RedrawList(LadderStanding s, IReadOnlyList<LadderEntry> pod)
+        {
+            list.Clear();
+
+            int firstOutsidePodium = Leagues.PromoteCount;
+            for (int i = firstOutsidePodium; i < pod.Count; i++)
             {
                 int rank = i + 1;
-                bool promo = rank <= Leagues.PromoteCount && Leagues.CanPromote(s.League);
+                LadderEntry entry = pod[i];
                 bool releg = rank > s.PodSize - Leagues.RelegateCount && Leagues.CanRelegate(s.League);
-                AddRow(i, rank, pod[i], promo, releg, s.PodSize);
-            }
-        }
 
-        /// <summary>
-        /// A zone tint that TAPERS toward the boundary rather than cutting off flat — 1st place in the
-        /// promotion zone reads strongest, the last promoting place reads weakest, so the row right
-        /// below the cutoff is a small step down rather than a hard edge from full green to none.
-        /// Softer and more legible than a flat colour block, and it costs nothing extra to compute:
-        /// each row already knows its own rank.
-        /// </summary>
-        private void AddRow(int index, int rank, LadderEntry entry, bool promo, bool releg, int podSize)
-        {
-            Color bg;
-            if (entry.IsYou)
-            {
-                bg = ArcadeTheme.Gold.WithAlpha(0.16f);
-            }
-            else if (promo)
-            {
-                float t = Leagues.PromoteCount > 1 ? (float)(rank - 1) / (Leagues.PromoteCount - 1) : 0f;
-                bg = ArcadeTheme.Pitch.WithAlpha(Mathf.Lerp(0.22f, 0.09f, t));
-            }
-            else if (releg)
-            {
-                int zoneTop = podSize - Leagues.RelegateCount + 1;
-                float t = Leagues.RelegateCount > 1 ? (float)(rank - zoneTop) / (Leagues.RelegateCount - 1) : 1f;
-                bg = ArcadeTheme.Red.WithAlpha(Mathf.Lerp(0.08f, 0.20f, t));
-            }
-            else
-            {
-                // A subtle zebra stripe for the rows with no zone of their own — the flat single
-                // colour every non-zone row shared read as "no pattern" rather than as consistent
-                // banding; alternating two very close shades gives the list a rhythm to scan by.
-                bg = index % 2 == 0 ? ArcadeTheme.BgRaised : Color.Lerp(ArcadeTheme.BgRaised, ArcadeTheme.BgPanel, 0.6f);
-            }
+                var row = UiKit.Frame("rk__row", list.contentContainer);
+                if (entry.IsYou)
+                {
+                    row.AddToClassList("rk__row--you");
+                    var glow = UiKit.El("rk__row-glow", row);
+                    glow.pickingMode = PickingMode.Ignore;
+                    glow.SendToBack();
+                    row.OverrideEdge(ArcadeTheme.Pulse);
+                    row.OverrideFill(new Color32(0x0B, 0x2A, 0x3C, 0xFF));
+                }
+                else if (releg)
+                {
+                    row.AddToClassList("rk__row--down");
+                    row.OverrideEdge(new Color(ArcadeTheme.Danger.r, ArcadeTheme.Danger.g, ArcadeTheme.Danger.b, 0.55f));
+                    row.OverrideFill(new Color32(0x1A, 0x0B, 0x11, 0xFF));
+                }
 
-            Color fg = entry.IsYou ? ArcadeTheme.Gold : ArcadeTheme.Ink;
+                UiKit.Text(rank.ToString(), "rk__row-rank f-display", row);
 
-            var row = UIFactory.Child(listContent, "Row");
-            // Raycastable: with nothing else in the scroll view to hit, a non-raycast row leaves no
-            // surface for a drag or mouse-wheel event to land on, and the list cannot be scrolled at
-            // all — not merely scrolled poorly. The row itself never handles the event; it only needs
-            // to be hit so Unity's event system can bubble the drag up to the ScrollRect above it.
-            UIFactory.RoundedImage(row, ArcadeTheme.RadSm, bg, true);
-            row.AddComponent<LayoutElement>().preferredHeight = 44f;
+                var words = UiKit.El("rk__row-words", row);
+                var rowName = new UiShineLabel();
+                rowName.AddToClassList("rk__row-name");
+                rowName.AddToClassList("f-display-semi");
+                words.Add(rowName);
+                rowName.Set(entry.IsYou ? entry.Name + "  (YOU)" : entry.Name, entry.IsYou);
+                if (entry.IsYou && pod.Count >= Leagues.PromoteCount)
+                {
+                    int gap = pod[Leagues.PromoteCount - 1].Points - entry.Points;
+                    string chase = gap <= 0 ? "TIED FOR TOP 3" : gap + " PTS TO TOP 3";
+                    UiKit.Text(chase, "rk__row-gap f-display", words);
+                }
 
-            var h = row.AddComponent<HorizontalLayoutGroup>();
-            h.padding = new RectOffset(16, 16, 0, 0);
-            h.spacing = ArcadeTheme.Md;
-            h.childAlignment = TextAnchor.MiddleLeft;
-            h.childForceExpandWidth = false;
-            h.childForceExpandHeight = true;
-            h.childControlWidth = true;
-            h.childControlHeight = true;
+                if (releg)
+                {
+                    var down = new UiIcon(UiIcon.Glyph.ChevronRight, ArcadeTheme.Danger, 2.8f);
+                    down.AddToClassList("rk__down");
+                    row.Add(down);
+                }
 
-            var rankT = UIFactory.Text(row.transform, rank.ToString(), ArcadeTheme.FsBody, fg,
-                                       display: false, bold: true, upper: false, tracking: 0f,
-                                       align: TextAlignmentOptions.Left);
-            rankT.gameObject.AddComponent<LayoutElement>().preferredWidth = 44f;
-
-            var nameT = UIFactory.Text(row.transform, entry.Name, ArcadeTheme.FsBody, fg,
-                                       display: false, bold: entry.IsYou, upper: false, tracking: 0f,
-                                       align: TextAlignmentOptions.Left);
-            nameT.gameObject.AddComponent<LayoutElement>().flexibleWidth = 1f;
-
-            var ptsT = UIFactory.Text(row.transform, entry.Points.ToString(), ArcadeTheme.FsBody, fg,
-                                      display: false, bold: true, upper: false, tracking: 0f,
-                                      align: TextAlignmentOptions.Right);
-            ptsT.gameObject.AddComponent<LayoutElement>().preferredWidth = 96f;
-        }
-
-        /// <summary>
-        /// Delegated rather than switched on here. The badge glyph, the store's badge tab and this
-        /// screen all have to agree on what Silver looks like, and three copies of the same switch is
-        /// three places for one of them to be edited alone.
-        /// </summary>
-        private static Color LeagueColor(League league) => UIFactory.LeagueColor(league);
-
-        private static string Ordinal(int n)
-        {
-            int mod100 = n % 100;
-            if (mod100 >= 11 && mod100 <= 13) return n + "TH";
-            switch (n % 10)
-            {
-                case 1: return n + "ST";
-                case 2: return n + "ND";
-                case 3: return n + "RD";
-                default: return n + "TH";
+                UiKit.Text(entry.Points.ToString(), "rk__row-pts f-display", row);
             }
         }
 
@@ -488,9 +499,9 @@ namespace TableFootball.UI
             long d = seconds / 86400;
             long h = (seconds % 86400) / 3600;
             long m = (seconds % 3600) / 60;
-            if (d > 0) return $"{d}D {h}H";
-            if (h > 0) return $"{h}H {m}M";
-            return $"{m}M";
+            if (d > 0) return d + "D " + h + "H";
+            if (h > 0) return h + "H " + m + "M";
+            return m + "M";
         }
     }
 }

@@ -73,6 +73,12 @@ namespace TableFootball
             // Textured kit over plain shorts.
             { "figure.stripes", new Recipe("Stripes", null, Hex("#8A5F33"), false, false, 0f, 0.45f) },
 
+            // Club kits: the same colours on either side, since the club is the identity. Still
+            // shipped as _KitRed/_KitBlue pairs so they load through the same path as every other
+            // textured kit; the two files are identical. No crest and no sponsor — trademarks.
+            { "figure.blaugrana",    new Recipe("Blaugrana",   null, Hex("#8A5F33"), false, false, 0f, 0.45f) },
+            { "figure.royal_whites", new Recipe("RoyalWhites", null, Hex("#8A5F33"), false, false, 0f, 0.45f) },
+
             // Fully textured.
             { "figure.gladiators", new Recipe("Gladiators", null, null, true, true, 0.50f, 0.55f) },
             { "figure.robots",     new Recipe("Robots",     null, null, true, true, 0.85f, 0.72f) },

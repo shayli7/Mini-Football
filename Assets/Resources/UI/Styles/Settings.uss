@@ -1,0 +1,586 @@
+/* Settings. See SettingsScreen.cs. Laid out against a 760-unit-high panel.
+   Frame colours are literal hex on purpose (see UiFrame): they mirror ArcadeTheme. */
+
+/* ---------- header ---------- */
+
+.settings .settings__header {
+    position: absolute;
+    left: 40px;
+    right: 40px;
+    top: 24px;
+    height: 58px;
+    align-items: center;
+    justify-content: center;
+}
+
+.settings .settings__title-box { align-items: center; }
+
+.settings .settings__title-row {
+    flex-direction: row;
+    align-items: center;
+}
+
+.settings .settings__title {
+    font-size: 32px;
+    letter-spacing: 7px;
+    margin-left: 12px;
+}
+
+.settings .settings__title-row .icon { width: 26px; height: 26px; }
+
+.settings .settings__bar {
+    width: 44px;
+    height: 3px;
+    margin-top: 6px;
+    background-color: var(--pulse);
+}
+
+/* The square icon buttons: back, close. */
+.settings .sq {
+    width: 55px;
+    height: 55px;
+    align-items: center;
+    justify-content: center;
+    --frame-fill: #0F1C31;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1.5;
+    --frame-cut: 10;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.settings .sq:hover { scale: 1.05 1.05; }
+.settings .sq:active { scale: 0.95 0.95; }
+.settings .sq .icon { width: 26px; height: 26px; }
+
+.settings .settings__back {
+    position: absolute;
+    left: 0;
+    top: 0;
+}
+
+/* ---------- category rail ---------- */
+
+.settings .settings__rail {
+    position: absolute;
+    left: 40px;
+    top: 124px;
+    width: 250px;
+}
+
+.settings .tab {
+    flex-direction: row;
+    align-items: center;
+    height: 60px;
+    margin-bottom: 10px;
+    padding: 0 18px;
+    --frame-fill: #0A1322;
+    --frame-edge: #1D3557;
+    --frame-edge-width: 1.5;
+    --frame-cut: 12;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.settings .tab:hover { scale: 1.02 1.02; }
+.settings .tab:active { scale: 0.98 0.98; }
+.settings .tab.is-active { --frame-fill: #0B2436; --frame-edge: #3DE3FF; }
+
+.settings .tab .icon { width: 22px; height: 22px; }
+
+.settings .tab__label {
+    flex-grow: 1;
+    margin-left: 14px;
+    font-size: 15px;
+    letter-spacing: 3px;
+    color: var(--muted);
+}
+
+.settings .tab.is-active .tab__label { color: var(--ink); }
+
+.settings .tab__num {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.settings .tab.is-active .tab__num { color: var(--pulse); }
+
+/* ---------- the list ---------- */
+
+.settings .settings__scroll {
+    position: absolute;
+    left: 330px;
+    right: 40px;
+    top: 104px;
+    bottom: 0;
+}
+
+.settings .settings__list {
+    padding: 0 4px 140px 0;
+}
+
+.settings .sec-head {
+    flex-direction: row;
+    align-items: center;
+    padding: 20px 2px 8px 2px;
+}
+
+.settings .sec-head__num {
+    font-size: 13px;
+    color: var(--pulse);
+}
+
+.settings .sec-head__title {
+    font-size: 16px;
+    letter-spacing: 6px;
+    color: var(--pulse);
+    margin-left: 14px;
+}
+
+.settings .sec-head__rule {
+    flex-grow: 1;
+    height: 1px;
+    margin-left: 14px;
+    background-color: #1D3557;
+}
+
+.settings .sec-head--first { padding-top: 6px; }
+
+/* A row: an icon tile, a label, then whatever the row carries. */
+.settings .srow {
+    flex-direction: row;
+    align-items: center;
+    height: 70px;
+    margin-bottom: 10px;
+    padding: 0 22px 0 14px;
+    --frame-fill: #0B1628;
+    --frame-edge: #1D3557;
+    --frame-edge-width: 1;
+    --frame-cut: 12;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.settings .srow--tap:hover { scale: 1.01 1.01; }
+.settings .srow--tap:active { scale: 0.99 0.99; }
+
+.settings .srow__tile {
+    width: 44px;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+    --frame-fill: #16294A;
+    --frame-edge-width: 0;
+    --frame-cut: 8;
+}
+
+.settings .srow__tile .icon { width: 22px; height: 22px; }
+
+.settings .srow__label {
+    flex-grow: 1;
+    margin-left: 18px;
+    font-size: 17px;
+    letter-spacing: 3px;
+}
+
+.settings .srow__chevron { width: 22px; height: 22px; }
+
+.settings .srow__value {
+    font-size: 17px;
+    letter-spacing: 1px;
+    color: var(--muted);
+}
+
+.settings .srow--info { --frame-fill: #08101E; --frame-edge: #16294A; }
+.settings .srow--info .srow__tile { --frame-fill: #0F1C31; }
+.settings .srow--info .srow__label { color: var(--muted); }
+
+/* Sign up: the one row on the screen that glows. */
+.settings .srow--feature {
+    height: 78px;
+    --frame-fill: #0B2436;
+    --frame-edge: #3DE3FF;
+    --frame-edge-width: 1.5;
+}
+
+.settings .srow--feature .srow__tile { --frame-fill: #3DE3FF; }
+
+.settings .srow__sub {
+    font-size: 14px;
+    color: var(--muted);
+    margin-top: 3px;
+}
+
+.settings .srow__words {
+    flex-grow: 1;
+    margin-left: 18px;
+}
+
+.settings .srow__words .srow__label {
+    flex-grow: 0;
+    margin-left: 0;
+}
+
+/* Delete: red, and last. */
+.settings .srow--danger {
+    margin-top: 12px;
+    --frame-fill: #120A10;
+    --frame-edge: #5A2130;
+}
+
+.settings .srow--danger .srow__tile { --frame-fill: #2A1019; }
+.settings .srow--danger .srow__label { color: var(--danger); }
+
+/* ---------- identity ---------- */
+
+.settings .identity {
+    flex-direction: row;
+    align-items: center;
+    padding: 4px 2px 12px 2px;
+}
+
+.settings .identity__hex {
+    width: 64px;
+    height: 64px;
+    align-items: center;
+    justify-content: center;
+}
+
+.settings .identity__initial {
+    font-size: 24px;
+    color: var(--pulse);
+    -unity-text-align: middle-center;
+}
+
+.settings .identity__words { margin-left: 18px; }
+
+.settings .identity__name {
+    font-size: 22px;
+    letter-spacing: 2px;
+}
+
+.settings .identity__state {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 6px;
+}
+
+.settings .chip-state {
+    flex-direction: row;
+    align-items: center;
+    height: 26px;
+    padding: 0 10px;
+    border-width: 1.5px;
+    border-color: var(--pulse);
+}
+
+.settings .chip-state .icon { width: 12px; height: 12px; margin-right: 6px; }
+
+.settings .chip-state__label {
+    font-size: 12px;
+    letter-spacing: 2px;
+    color: var(--pulse);
+}
+
+.settings .chip-state--guest { border-color: var(--reward); }
+.settings .chip-state--guest .chip-state__label { color: var(--reward); }
+
+.settings .identity__note {
+    font-size: 14px;
+    color: var(--muted);
+    margin-left: 10px;
+}
+
+/* ---------- energy cells ---------- */
+
+.settings .cells {
+    flex-direction: row;
+    align-items: center;
+    padding-right: 8px;
+}
+
+.settings .cell {
+    width: 26px;
+    height: 36px;
+    margin-left: 6px;
+    --frame-fill: #16294A;
+    --frame-edge-width: 0;
+    --frame-slant: 9;
+}
+
+.settings .cell.is-lit { --frame-fill: #3DE3FF; }
+
+.settings .srow__readout {
+    width: 64px;
+    font-size: 20px;
+    -unity-text-align: middle-right;
+}
+
+.settings .srow__readout--word { font-size: 15px; letter-spacing: 1px; }
+
+/* ---------- switch ---------- */
+
+.settings .switch {
+    width: 84px;
+    height: 38px;
+    --frame-fill: #060B14;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1.5;
+    --frame-cut: 8;
+}
+
+.settings .switch.is-on { --frame-fill: #0B2E3A; --frame-edge: #3DE3FF; }
+
+.settings .switch__word {
+    position: absolute;
+    top: 10px;
+    right: 9px;
+    font-size: 12px;
+    letter-spacing: 1px;
+    color: var(--dim);
+}
+
+.settings .switch.is-on .switch__word { left: 11px; right: auto; color: var(--pulse); }
+
+.settings .switch__knob {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    width: 29px;
+    height: 29px;
+    background-color: #56698A;
+    transition-property: left, background-color;
+    transition-duration: 0.12s;
+}
+
+.settings .switch.is-on .switch__knob { left: 51px; background-color: #3DE3FF; }
+
+/* ---------- sheets ---------- */
+
+.settings .sheet-layer {
+    background-color: rgba(2, 4, 8, 0.82);
+    align-items: center;
+    justify-content: center;
+}
+
+.settings .sheet {
+    padding: 28px 34px 32px 34px;
+    --frame-fill: #0A1322;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1;
+    --frame-cut: 16;
+    --frame-tab: #3DE3FF;
+}
+
+.settings .sheet__head {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.settings .sheet__title {
+    flex-grow: 1;
+    margin-left: 16px;
+    font-size: 22px;
+    letter-spacing: 4px;
+}
+
+.settings .sheet__head .srow__tile { width: 46px; height: 46px; }
+.settings .sheet__head .sq { width: 44px; height: 44px; --frame-fill: #16294A; --frame-edge-width: 0; --frame-cut: 8; }
+.settings .sheet__head .sq .icon { width: 20px; height: 20px; }
+
+.settings .sheet__center { align-items: center; }
+
+.settings .sheet__badge {
+    width: 84px;
+    height: 84px;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 16px;
+}
+
+.settings .sheet__badge .icon { width: 34px; height: 34px; }
+
+.settings .sheet__big {
+    font-size: 26px;
+    letter-spacing: 5px;
+    margin-bottom: 10px;
+}
+
+.settings .sheet__line {
+    font-size: 17px;
+    color: var(--muted);
+}
+
+.settings .sheet__line--gold { color: var(--reward); margin-top: 6px; }
+
+.settings .sheet__buttons {
+    flex-direction: row;
+    margin-top: 22px;
+}
+
+.settings .sheet__buttons .btn { flex-grow: 1; flex-basis: 0; margin-left: 14px; }
+.settings .sheet__buttons .btn:first-child { margin-left: 0; }
+
+/* Between two buttons that must not touch; adds to the margin on the one after it. */
+.settings .sheet__gap { width: 10px; flex-shrink: 0; }
+
+.settings .sheet__status {
+    font-size: 15px;
+    color: #FF8A9A;
+    margin-top: 12px;
+    -unity-text-align: middle-center;
+    white-space: normal;
+}
+
+.settings .sheet__lost {
+    flex-direction: row;
+    margin: 6px 0 2px 0;
+}
+
+.settings .sheet__lost-item {
+    flex-direction: row;
+    align-items: center;
+    margin: 0 11px;
+    font-size: 15px;
+    color: var(--muted);
+}
+
+.settings .sheet__lost-item .icon { width: 18px; height: 18px; margin-right: 8px; }
+
+/* steps */
+.settings .steps { flex-direction: row; margin-bottom: 20px; }
+.settings .step { flex-grow: 1; flex-basis: 0; margin-right: 8px; }
+.settings .step:last-child { margin-right: 0; }
+.settings .step__bar { height: 4px; background-color: #16294A; }
+.settings .step__label { font-size: 12px; letter-spacing: 2px; color: #56698A; margin-top: 6px; }
+.settings .step.is-on .step__bar { background-color: #3DE3FF; }
+.settings .step.is-on .step__label { color: #3DE3FF; }
+
+/* text fields */
+.settings .field-label {
+    font-size: 13px;
+    letter-spacing: 3px;
+    color: var(--muted);
+    margin-bottom: 8px;
+}
+
+.settings .field-wrap { margin-bottom: 16px; }
+
+.settings .field {
+    flex-direction: row;
+    align-items: center;
+    height: 54px;
+    padding: 0 6px 0 16px;
+    --frame-fill: #060B14;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1.5;
+    --frame-cut: 10;
+}
+
+.settings .field.is-focus, .settings .field.is-ok { --frame-edge: #3DE3FF; }
+.settings .field.is-warn { --frame-edge: #FFC23D; }
+.settings .field.is-bad { --frame-edge: #FF5C72; }
+
+.settings .field .icon { width: 20px; height: 20px; }
+
+.settings .field__input {
+    flex-grow: 1;
+    flex-shrink: 1;
+    margin: 0 0 0 12px;
+    padding: 0;
+    min-width: 0;
+}
+
+.settings .field__input .unity-base-text-field__input,
+.settings .field__input .unity-text-field__input {
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 0;
+    margin: 0;
+    padding: 0;
+    color: var(--ink);
+    font-size: 19px;
+    -unity-text-align: middle-left;
+}
+
+.settings .field__eye {
+    width: 44px;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+}
+
+.settings .field__eye .icon { width: 20px; height: 20px; }
+
+.settings .rules { flex-direction: row; flex-wrap: wrap; margin-bottom: 4px; }
+
+.settings .rule {
+    flex-direction: row;
+    align-items: center;
+    height: 32px;
+    padding: 0 12px;
+    margin: 0 8px 8px 0;
+    border-width: 1.5px;
+    border-color: #2C5A8E;
+}
+
+.settings .rule__dot {
+    width: 6px;
+    height: 6px;
+    margin-right: 7px;
+    background-color: #8EA4C2;
+    rotate: 45deg;
+}
+
+.settings .rule__label {
+    font-size: 13px;
+    color: var(--muted);
+}
+
+.settings .rule.is-ok { border-color: #3DE3FF; }
+.settings .rule.is-ok .rule__dot { background-color: #3DE3FF; }
+.settings .rule.is-ok .rule__label { color: #3DE3FF; }
+
+/* hold to delete */
+.settings .hold { overflow: hidden; }
+
+.settings .hold__fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    background-color: rgba(255, 92, 114, 0.38);
+}
+
+.settings .hold .icon { width: 18px; height: 18px; margin-right: 10px; }
+
+/* ---------- toast ---------- */
+
+.settings .toast-wrap {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 30px;
+    align-items: center;
+}
+
+.settings .toast {
+    flex-direction: row;
+    align-items: center;
+    height: 50px;
+    padding: 0 22px;
+    --frame-fill: #0B2436;
+    --frame-edge: #3DE3FF;
+    --frame-edge-width: 1;
+    --frame-cut: 10;
+    transition-property: opacity;
+    transition-duration: 0.2s;
+}
+
+.settings .toast .icon { width: 18px; height: 18px; margin-right: 10px; }
+
+.settings .toast__label {
+    font-size: 15px;
+    letter-spacing: 3px;
+}

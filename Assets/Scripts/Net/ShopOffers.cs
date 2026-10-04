@@ -5,8 +5,8 @@ using UnityEngine;
 namespace TableFootball.Net
 {
     /// <summary>
-    /// The store's two ad offers: a free chest once a day (the daily deal) and a small coin top-up a
-    /// few times a day. Same shape as <see cref="Wallet"/>: static, PlayerPrefs-backed, read
+    /// The store's day-by-day offers: a free chest once a day (the daily deal), a small coin top-up a few
+    /// times a day, and three skins on sale for coins (the daily items). Same shape as <see cref="Wallet"/>: static, PlayerPrefs-backed, read
     /// synchronously, with an <see cref="OnChanged"/> event for screens to redraw on. It holds the
     /// rules, so the store screen only asks and shows.
     ///
@@ -31,9 +31,13 @@ namespace TableFootball.Net
         /// </summary>
         private const int RareDealChance = 30;
 
+        /// <summary>How many skins go on sale each day.</summary>
+        public const int DailyItemCount = 3;
+
         private const string DayKey = "TableFootball.Shop.Day";
         private const string DealClaimedKey = "TableFootball.Shop.DealClaimed";
         private const string AdsUsedKey = "TableFootball.Shop.AdsUsed";
+        private const string DailyItemsKey = "TableFootball.Shop.DailyItems";
 
         /// <summary>Raised when an offer is used. A new day resetting them does not raise it; see RollDayIfNeeded.</summary>
         public static event Action OnChanged;
@@ -135,6 +139,89 @@ namespace TableFootball.Net
         }
 
         /// <summary>
+        /// Today's skins for sale: up to <see cref="DailyItemCount"/> that the player did not own when
+        /// the day began, the same all day. Chosen once per local day and then stored, so buying one
+        /// leaves it on the shelf marked owned rather than rerolling the other two. Only skins that
+        /// can drop from a chest are offered — never a league badge, which is earned.
+        /// </summary>
+        public static CosmeticItem[] DailyItems
+        {
+            get
+            {
+                RollDayIfNeeded();
+
+                var picked = new System.Collections.Generic.List<CosmeticItem>();
+                string stored = PlayerPrefs.GetString(DailyItemsKey, string.Empty);
+                if (!string.IsNullOrEmpty(stored))
+                {
+                    foreach (string id in stored.Split(','))
+                    {
+                        CosmeticItem item = CosmeticCatalog.Get(id);
+                        if (item.Valid && item.CanDropFromChest) picked.Add(item);
+                    }
+                }
+
+                if (picked.Count == 0)
+                {
+                    picked = RollDailyItems();
+                    var ids = new string[picked.Count];
+                    for (int i = 0; i < ids.Length; i++) ids[i] = picked[i].Id;
+                    PlayerPrefs.SetString(DailyItemsKey, string.Join(",", ids));
+                    PlayerPrefs.Save();
+                }
+
+                return picked.ToArray();
+            }
+        }
+
+        /// <summary>What a daily item costs. One place, so the price list is a single edit.</summary>
+        public static int DailyItemPrice(CosmeticItem item) => item.Price;
+
+        /// <summary>
+        /// Buys one of today's items with coins. False if it is not on today's shelf, is already owned,
+        /// or cannot be afforded — nothing is spent then. The coins are taken first and the skin granted
+        /// second, in the same call, so an item is never given without being paid for.
+        /// </summary>
+        public static bool BuyDailyItem(string id)
+        {
+            CosmeticItem found = default;
+            foreach (CosmeticItem item in DailyItems)
+            {
+                if (item.Id == id) found = item;
+            }
+
+            if (!found.Valid || Inventory.Owns(found.Id)) return false;
+            if (!Wallet.TrySpend(DailyItemPrice(found))) return false;
+
+            Inventory.Grant(found.Id);
+            OnChanged?.Invoke();
+            return true;
+        }
+
+        private static System.Collections.Generic.List<CosmeticItem> RollDailyItems()
+        {
+            var pool = new System.Collections.Generic.List<CosmeticItem>();
+            foreach (CosmeticItem item in CosmeticCatalog.All)
+            {
+                if (item.CanDropFromChest && item.IsForSale && !Inventory.Owns(item.Id)) pool.Add(item);
+            }
+
+            // A shuffle seeded by the date, so a reinstall on the same day sees the same shelf.
+            DateTime d = DateTime.Now.Date;
+            var rng = new System.Random(d.Year * 372 + d.Month * 31 + d.Day);
+            for (int i = pool.Count - 1; i > 0; i--)
+            {
+                int j = rng.Next(i + 1);
+                CosmeticItem tmp = pool[i];
+                pool[i] = pool[j];
+                pool[j] = tmp;
+            }
+
+            if (pool.Count > DailyItemCount) pool.RemoveRange(DailyItemCount, pool.Count - DailyItemCount);
+            return pool;
+        }
+
+        /// <summary>
         /// Clears yesterday's counters the first time anything is read on a new day. Lazy rather than
         /// timed, so a phone left on the store screen across midnight still resets on the next read.
         /// The store's countdown redraw is what triggers that read.
@@ -153,6 +240,7 @@ namespace TableFootball.Net
             PlayerPrefs.SetString(DayKey, today);
             PlayerPrefs.SetInt(DealClaimedKey, 0);
             PlayerPrefs.SetInt(AdsUsedKey, 0);
+            PlayerPrefs.SetString(DailyItemsKey, string.Empty);
             PlayerPrefs.Save();
         }
     }

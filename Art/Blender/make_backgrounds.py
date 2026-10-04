@@ -447,11 +447,277 @@ def royal_palace():
     return None
 
 
+def lava_ground_mat():
+    """Cracked basalt with lava glowing in the seams.
+
+    Voronoi distance-to-edge IS a crack network: zero along every cell boundary, rising into each
+    plate. A narrow ramp on it gives thin seams, which is the whole look — and keeps the glow to a
+    small fraction of the surface, so the floor under the table reads as lava without becoming the
+    brightest thing on screen.
+
+    Driven by WORLD position, never the "Object" texture coordinate: Object is measured before the
+    object's scale, so on this 120 m ground (a unit cube scaled up) the whole plane spans one unit
+    and a single crack cell covers all of it — the first render came out flat brown with no seams.
+    """
+    m = bpy.data.materials.new("lavaGround")
+    m.use_nodes = True
+    nt = m.node_tree
+    b = nt.nodes["Principled BSDF"]
+    b.inputs["Roughness"].default_value = 0.85
+
+    coord = nt.nodes.new("ShaderNodeNewGeometry")       # Position = world space, in metres
+    vor = nt.nodes.new("ShaderNodeTexVoronoi")
+    vor.feature = "DISTANCE_TO_EDGE"
+    vor.inputs["Scale"].default_value = 2.2
+    crack = nt.nodes.new("ShaderNodeValToRGB")
+    crack.color_ramp.elements[0].position = 0.0
+    crack.color_ramp.elements[0].color = (1, 1, 1, 1)
+    # Narrow and dim on purpose: at 0.035 wide and strength 3.5 the seams burned out to pale yellow
+    # and netted the whole floor, pulling the eye off the ball.
+    crack.color_ramp.elements[1].position = 0.018
+    crack.color_ramp.elements[1].color = (0, 0, 0, 1)
+
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 6.0
+    rock = nt.nodes.new("ShaderNodeValToRGB")
+    rock.color_ramp.elements[0].color = rgb("#141010")
+    rock.color_ramp.elements[1].color = rgb("#2A2222")
+
+    mix = nt.nodes.new("ShaderNodeMix")
+    mix.data_type = "RGBA"
+    mix.inputs[7].default_value = rgb("#E0380C")          # B colour: the lava
+    strength = nt.nodes.new("ShaderNodeMath")
+    strength.operation = "MULTIPLY"
+    strength.inputs[1].default_value = 1.2
+
+    L = nt.links.new
+    L(coord.outputs["Position"], vor.inputs["Vector"])
+    L(coord.outputs["Position"], noise.inputs["Vector"])
+    L(vor.outputs["Distance"], crack.inputs["Fac"])
+    L(noise.outputs["Fac"], rock.inputs["Fac"])
+    L(crack.outputs["Color"], mix.inputs[0])              # factor
+    L(rock.outputs["Color"], mix.inputs[6])               # A colour: the basalt
+    L(mix.outputs[2], b.inputs["Base Color"])
+    b.inputs["Emission Color"].default_value = rgb("#E0380C")
+    L(crack.outputs["Color"], strength.inputs[0])
+    L(strength.outputs["Value"], b.inputs["Emission Strength"])
+    return m
+
+
+def snow_ground_mat():
+    """Wind-packed snow: faintly blue-white, with a soft bump so it reads as a surface.
+
+    Held a step below pure white on purpose. The floor draws UNLIT in game, so a white baked here
+    is a white on screen, and a glaring field around the table would bury the white ball.
+    """
+    m = bpy.data.materials.new("snowGround")
+    m.use_nodes = True
+    nt = m.node_tree
+    b = nt.nodes["Principled BSDF"]
+    b.inputs["Roughness"].default_value = 0.6
+
+    coord = nt.nodes.new("ShaderNodeNewGeometry")       # Position = world space, in metres
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 9.0   # fine grain, not cloud-sized blotches
+    noise.inputs["Detail"].default_value = 6.0
+
+    # Wind-scoured patches at a larger scale: where the snow is thin it shows the grey under it.
+    # This is what stops the field reading as one flat sheet of white — two scales of variation,
+    # and a real grey in the mix rather than white with a blue cast.
+    scour = nt.nodes.new("ShaderNodeTexNoise")
+    scour.inputs["Scale"].default_value = 2.6
+    scour.inputs["Detail"].default_value = 3.0
+
+    tint = nt.nodes.new("ShaderNodeValToRGB")
+    tint.color_ramp.elements[0].color = rgb("#B6C0CB")
+    tint.color_ramp.elements[1].color = rgb("#EEF2F6")
+    patch = nt.nodes.new("ShaderNodeValToRGB")
+    patch.color_ramp.elements[0].position = 0.28
+    patch.color_ramp.elements[0].color = rgb("#AEB8C4")
+    patch.color_ramp.elements[1].position = 0.40
+    patch.color_ramp.elements[1].color = (1, 1, 1, 1)
+    mul = nt.nodes.new("ShaderNodeMix")
+    mul.data_type = "RGBA"
+    mul.blend_type = "MULTIPLY"
+    mul.inputs[0].default_value = 1.0
+
+    # Wind ripples (sastrugi): noise stretched along one axis, as a bump only.
+    stretch = nt.nodes.new("ShaderNodeMapping")
+    stretch.inputs["Scale"].default_value = (1.0, 7.0, 1.0)
+    ripple = nt.nodes.new("ShaderNodeTexNoise")
+    ripple.inputs["Scale"].default_value = 5.0
+    add = nt.nodes.new("ShaderNodeMath")
+    add.operation = "ADD"
+    bump = nt.nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.45
+
+    L = nt.links.new
+    L(coord.outputs["Position"], noise.inputs["Vector"])      # world metres; see lava_ground_mat
+    L(coord.outputs["Position"], scour.inputs["Vector"])
+    L(coord.outputs["Position"], stretch.inputs["Vector"])
+    L(stretch.outputs["Vector"], ripple.inputs["Vector"])
+    L(noise.outputs["Fac"], tint.inputs["Fac"])
+    L(scour.outputs["Fac"], patch.inputs["Fac"])
+    L(tint.outputs["Color"], mul.inputs[6])
+    L(patch.outputs["Color"], mul.inputs[7])
+    L(mul.outputs[2], b.inputs["Base Color"])
+    L(noise.outputs["Fac"], add.inputs[0])
+    L(ripple.outputs["Fac"], add.inputs[1])
+    L(add.outputs["Value"], bump.inputs["Height"])
+    L(bump.outputs["Normal"], b.inputs["Normal"])
+    return m
+
+
+def cone(name, loc, r, h, material, segs=24):
+    """A mountain: a cone standing ON `loc`, not centred on it."""
+    bpy.ops.mesh.primitive_cone_add(vertices=segs, radius1=r, radius2=0, depth=h,
+                                    location=(loc[0], loc[1], loc[2] + h / 2))
+    o = bpy.context.object
+    o.name = name
+    o.data.materials.append(material)
+    bpy.ops.object.shade_smooth()
+    return o
+
+
+def lava_mountain():
+    """Standing on a volcano's cracked flank at dusk, with more volcanoes glowing on the skyline."""
+    rnd = random.Random(21)
+    world_gradient(rgb("#2B0E0A"), rgb("#8A3414"), 0.8)
+
+    box("Ground", (0, 0, FLOOR - 0.05), (120, 120, 0.1), lava_ground_mat())
+
+    basalt = mat("basalt", rgb("#1E1818"), rough=0.9)
+    glow = mat("crater", rgb("#FF6A1A"), emit=rgb("#FF5010"), emit_strength=25.0)
+    for i, (a, d, r, h) in enumerate([(20, 38, 16, 22), (95, 52, 22, 30), (170, 34, 12, 15),
+                                      (230, 46, 18, 26), (300, 40, 14, 18)]):
+        x, y = math.cos(math.radians(a)) * d, math.sin(math.radians(a)) * d
+        cone(f"Volcano{i}", (x, y, FLOOR), r, h, basalt)
+        # The crater's glow: a flattened emissive dome sunk into the peak.
+        sphere(f"Crater{i}", (x, y, FLOOR + h * 0.97), r * 0.12, glow, segs=16)
+        point(f"CraterLight{i}", (x, y, FLOOR + h + 2), 4000, (1.0, 0.45, 0.15), 3.0)
+
+    # A few basalt boulders close enough to show past the table rails.
+    for i, (x, y) in enumerate([(0.75, -0.42), (-0.82, 0.38), (1.5, 0.9), (-1.4, -1.1)]):
+        s = rnd.uniform(0.07, 0.13)
+        sphere(f"Boulder{i}", (x, y, FLOOR + s * 0.4), s, basalt, segs=12)
+
+    sun("Dusk", (math.radians(72), 0, math.radians(-30)), 1.6, (1.0, 0.55, 0.35))
+    return None
+
+
+def snow_mountain():
+    """A snowfield under clear sky, ringed by snow-capped peaks and a few pines."""
+    rnd = random.Random(33)
+    world_gradient(rgb("#4F86C9"), rgb("#D5E3F1"), 1.0)
+
+    # Top a few mm below the drift terrain, so the two never z-fight where the drifts are flat.
+    box("Ground", (0, 0, FLOOR - 0.056), (120, 120, 0.1), snow_ground_mat())
+
+    rock = mat("rock", rgb("#5E646E"), rough=0.9)
+    cap = mat("cap", rgb("#EEF3F8"), rough=0.5)
+    for i, (a, d, r, h) in enumerate([(10, 44, 20, 26), (70, 58, 26, 34), (140, 40, 15, 20),
+                                      (205, 50, 22, 30), (275, 38, 16, 22), (330, 55, 24, 31)]):
+        x, y = math.cos(math.radians(a)) * d, math.sin(math.radians(a)) * d
+        cone(f"Peak{i}", (x, y, FLOOR), r, h, rock)
+        # The cap is a smaller cone sharing the same apex: the top 40% of the mountain goes white.
+        cone(f"Cap{i}", (x, y, FLOOR + h * 0.6), r * 0.4 * 1.02, h * 0.4 + 0.05, cap)
+
+    pine = mat("pine", rgb("#1E3B2C"), rough=0.85)
+    for i in range(22):
+        a = rnd.random() * math.tau
+        d = rnd.uniform(8, 20)
+        s = rnd.uniform(0.8, 1.4)
+        cone(f"Pine{i}", (math.cos(a) * d, math.sin(a) * d, FLOOR), 0.9 * s, 3.2 * s, pine, segs=10)
+
+    # No ice patches: tried as thin boxes, and from straight overhead a rectangle with hard edges
+    # reads as a UI panel lying on the snow, not as ice.
+    for i, (x, y) in enumerate([(0.86, -0.36), (-1.05, -0.48), (1.6, -1.2)]):
+        s = rnd.uniform(0.06, 0.11)
+        sphere(f"Rock{i}", (x, y, FLOOR + s * 0.35), s, rock, segs=12)
+
+    # ---- Depth for the strip of snow seen past the table rails. Everything here sits in the
+    # margin the gameplay camera actually sees (table ~ +/-0.56 x +/-0.33, view ~ +/-0.89 x +/-0.5),
+    # mostly in the CORNERS, which are the largest visible patches.
+
+    # Drifts as REAL TERRAIN: the ground itself rises into soft mounds. Tried first as squashed
+    # spheres, and from straight overhead those read as flat ovals with hard outlines pasted on the
+    # snow. A heightfield has no outline at all — only shading and the low sun's shadows, which is
+    # what a drift actually looks like from above.
+    snow = snow_ground_mat()
+    # Heights are generous on purpose: at a few centimetres the first version's mounds shaded to
+    # almost nothing from straight overhead. Tall enough that the low sun gives each drift a lit
+    # face and a shadowed one is what makes them read.
+    drifts = [  # x, y, spread x, spread y, height (metres)
+        (0.98, 0.10, 0.18, 0.35, 0.20), (-0.98, -0.05, 0.16, 0.40, 0.18),
+        (0.25, 0.56, 0.35, 0.10, 0.14), (-0.35, -0.57, 0.40, 0.10, 0.14),
+        (0.62, -0.55, 0.18, 0.09, 0.11), (1.40, 0.90, 0.35, 0.30, 0.30),
+        (-1.35, 0.95, 0.30, 0.30, 0.26), (-0.60, 0.62, 0.25, 0.08, 0.10)]
+
+    def height(x, y):
+        return sum(h * math.exp(-(((x - dx) / sx_) ** 2 + ((y - dy) / sy_) ** 2))
+                   for dx, dy, sx_, sy_, h in drifts)
+
+    bpy.ops.mesh.primitive_grid_add(x_subdivisions=180, y_subdivisions=180, size=4.4,
+                                    location=(0, 0, FLOOR))
+    terrain = bpy.context.object
+    terrain.name = "Drifts"
+    for v in terrain.data.vertices:
+        v.co.z = height(v.co.x, v.co.y)
+    terrain.data.materials.append(snow)
+    bpy.ops.object.shade_smooth()
+
+    def on_ground(x, y, lift=0.0):
+        return (x, y, FLOOR + height(x, y) + lift)
+
+    # A snowman in the corner. From straight overhead it is mostly hat and shoulders, so the long
+    # shadow from the low sun below is what tells the eye what it is.
+    coal = mat("coal", rgb("#1A1A1E"), rough=0.6)
+    sx, sy = -0.78, 0.43
+    gx, gy, gz = on_ground(sx, sy)
+    sphere("SnowBase", (gx, gy, gz + 0.075), 0.085, snow, segs=24)
+    sphere("SnowBody", (gx, gy, gz + 0.19), 0.062, snow, segs=24)
+    sphere("SnowHead", (gx, gy, gz + 0.285), 0.045, snow, segs=24)
+    bpy.ops.mesh.primitive_torus_add(major_radius=0.042, minor_radius=0.012,
+                                     location=(gx, gy, gz + 0.245))
+    bpy.context.object.data.materials.append(mat("scarf", rgb("#C7303A"), rough=0.8))
+    bpy.ops.mesh.primitive_cylinder_add(radius=0.056, depth=0.008, location=(gx, gy, gz + 0.318))
+    bpy.context.object.data.materials.append(coal)
+    bpy.ops.mesh.primitive_cylinder_add(radius=0.034, depth=0.055, location=(gx, gy, gz + 0.348))
+    bpy.context.object.data.materials.append(coal)
+    bpy.ops.mesh.primitive_cone_add(vertices=12, radius1=0.009, radius2=0, depth=0.05,
+                                    location=(gx + 0.065, gy, gz + 0.285),
+                                    rotation=(0, math.radians(90), 0))
+    bpy.context.object.data.materials.append(mat("carrot", rgb("#E8731E"), rough=0.7))
+    for ey in (-0.016, 0.016):
+        sphere(f"Eye{ey}", (gx + 0.04, gy + ey, gz + 0.3), 0.006, coal, segs=8)
+
+    # Footprints walking in to the snowman: shallow grey prints, alternating feet, sitting ON the
+    # drifts rather than buried under them.
+    print_mat = mat("print", rgb("#97A2B0"), rough=0.9)
+    for k in range(9):
+        px = sx + 0.12 + k * 0.11
+        py = sy - 0.02 + (0.03 if k % 2 else -0.03)
+        bpy.ops.mesh.primitive_cylinder_add(radius=0.022, depth=0.004, location=on_ground(px, py, 0.002))
+        o = bpy.context.object
+        o.scale = (1.5, 1.0, 1.0)
+        o.data.materials.append(print_mat)
+
+    # A small pine in the opposite corner.
+    cone("CornerPine", on_ground(0.84, -0.44), 0.11, 0.42, pine, segs=10)
+
+    # Lower than before so everything casts a long shadow — from straight overhead, shadows are
+    # most of what reads as depth.
+    sun("Sun", (math.radians(66), 0, math.radians(35)), 2.6, (1.0, 0.96, 0.90))
+    return None
+
+
 SCENES = [
     ("LivingRoom", living_room),
     ("DarkRoom", dark_room),
     ("DiscoRoom", disco_room),
     ("RoyalPalace", royal_palace),
+    ("LavaMountain", lava_mountain),
+    ("SnowMountain", snow_mountain),
     ("OuterSpace", outer_space),
     ("StadiumLights", stadium_lights),
     ("MedievalDungeon", medieval_dungeon),

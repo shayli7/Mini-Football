@@ -1,0 +1,84 @@
+/*
+ * The pre-match versus screen (VersusScreen.cs). The two diagonal halves are drawn in code; this sheet
+ * places each player's card in the middle of their own side and VS on the seam. Team colours come from
+ * Base.uss (--red, --blue): here they mean team identity, not UI chrome.
+ */
+
+/* No overflow clipping: the halves reach past the safe area to the true screen edge. */
+.versus {
+    background-color: var(--black);
+}
+
+.versus__half {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* Centred on the middle of its own side: the seam crosses the screen's middle, so each side's centre
+   sits a quarter of the way in from its edge. */
+.versus__card {
+    position: absolute;
+    top: 50%;
+    width: 420px;
+    translate: -50% -50%;
+    align-items: center;
+}
+
+.versus__card--red { left: 25%; }
+.versus__card--blue { left: 75%; }
+
+.versus__hex {
+    width: 150px;
+    height: 150px;
+    align-items: center;
+    justify-content: center;
+}
+
+.versus__initial {
+    font-size: 64px;
+    -unity-text-align: middle-center;
+}
+
+.versus__name-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    margin-top: 22px;
+}
+
+.versus__name {
+    font-size: 34px;
+    letter-spacing: 2px;
+    color: var(--ink);
+    -unity-text-align: middle-center;
+}
+
+.versus__badge {
+    margin-left: 14px;
+    flex-shrink: 0;
+}
+
+.versus__level {
+    margin-top: 12px;
+    font-size: 16px;
+    letter-spacing: 1px;
+    color: var(--ink);
+    background-color: rgba(4, 7, 13, 0.45);
+    padding: 5px 12px;
+}
+
+.versus__vs {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 260px;
+    height: 160px;
+    translate: -50% -50%;
+    font-size: 120px;
+    letter-spacing: 6px;
+    color: var(--ink);
+    -unity-text-align: middle-center;
+}

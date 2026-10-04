@@ -1,0 +1,332 @@
+/* Profile. See ProfileMenu.cs. Laid out against a 760-unit-high panel.
+   Every selector is under .profile so it outranks the shared frame defaults in Base.uss. */
+
+/* ---------- header ---------- */
+
+.profile .prof__header {
+    position: absolute;
+    left: 40px;
+    right: 40px;
+    top: 24px;
+    height: 58px;
+    align-items: center;
+    justify-content: center;
+}
+
+.profile .prof__back { position: absolute; left: 0; top: 0; }
+.profile .prof__title-box { align-items: center; }
+.profile .prof__title { font-size: 32px; letter-spacing: 7px; }
+.profile .prof__bar { width: 44px; height: 3px; margin-top: 6px; background-color: var(--pulse); }
+
+.profile .sq {
+    width: 55px;
+    height: 55px;
+    align-items: center;
+    justify-content: center;
+    --frame-fill: #0F1C31;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1.5;
+    --frame-cut: 10;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.profile .sq:hover { scale: 1.05 1.05; }
+.profile .sq:active { scale: 0.95 0.95; }
+.profile .sq .icon { width: 26px; height: 26px; }
+
+.profile .sq--lit { --frame-fill: #0B2436; --frame-edge: #3DE3FF; }
+
+.profile .sq--small { width: 44px; height: 44px; margin-left: 12px; --frame-fill: #16294A; --frame-edge-width: 0; --frame-cut: 8; }
+.profile .sq--small .icon { width: 20px; height: 20px; }
+
+.profile .prof__gear { position: absolute; right: 0; top: 0; }
+
+.profile .prof__collection {
+    position: absolute;
+    right: 72px;
+    top: 0;
+    flex-direction: row;
+    align-items: center;
+    height: 55px;
+    padding: 0 20px;
+    --frame-fill: #0B1628;
+    --frame-edge: rgba(61, 227, 255, 0.6);
+    --frame-edge-width: 1.5;
+    --frame-cut: 10;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.profile .prof__collection:hover { scale: 1.03 1.03; }
+.profile .prof__collection:active { scale: 0.97 0.97; }
+.profile .prof__collection .icon { width: 20px; height: 20px; }
+.profile .prof__collection-label { font-size: 15px; letter-spacing: 3px; margin-left: 10px; }
+
+/* ---------- identity ---------- */
+
+.profile .prof__panel {
+    position: absolute;
+    left: 40px;
+    top: 116px;
+    width: 500px;
+    height: 610px;
+    padding: 30px 36px 28px 36px;
+    align-items: center;
+}
+
+.profile .prof__hex {
+    width: 150px;
+    height: 150px;
+    align-items: center;
+    justify-content: center;
+}
+
+.profile .prof__initial {
+    font-size: 60px;
+    color: var(--pulse);
+    -unity-text-align: middle-center;
+}
+
+.profile .prof__badge-slot { margin-right: 12px; }
+
+.profile .prof__name-row {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 16px;
+}
+
+.profile .prof__name {
+    font-size: 30px;
+    letter-spacing: 3px;
+    max-width: 320px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.profile .prof__level { align-self: stretch; margin-top: 16px; }
+
+.profile .prof__level-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.profile .prof__pill {
+    font-size: 15px;
+    letter-spacing: 1px;
+    color: var(--pulse);
+    background-color: rgba(61, 227, 255, 0.14);
+    padding: 5px 10px;
+}
+
+.profile .prof__xp { font-size: 15px; color: var(--muted); }
+
+.profile .prof__segments { flex-direction: row; }
+
+.profile .prof__seg {
+    flex-grow: 1;
+    flex-basis: 0;
+    height: 12px;
+    margin-right: 4px;
+    background-color: #16294A;
+}
+
+.profile .prof__seg:last-child { margin-right: 0; }
+.profile .prof__seg.is-lit { background-color: #3DE3FF; }
+
+/* Level Road: gold-edged. */
+.profile .prof__road {
+    flex-direction: row;
+    align-items: center;
+    align-self: stretch;
+    height: 61px;
+    margin-top: 18px;
+    padding: 0 18px;
+    --frame-fill: #15130D;
+    --frame-edge: #FFC23D;
+    --frame-edge-width: 1.5;
+    --frame-cut: 12;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.profile .prof__road:hover { scale: 1.02 1.02; }
+.profile .prof__road:active { scale: 0.98 0.98; }
+.profile .prof__road .icon { width: 24px; height: 24px; }
+.profile .prof__road-label { flex-grow: 1; margin-left: 14px; font-size: 17px; letter-spacing: 4px; }
+
+.profile .prof__road-badge {
+    min-width: 26px;
+    height: 26px;
+    padding: 0 6px;
+    margin-right: 10px;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--reward);
+}
+
+.profile .prof__road-badge-label { font-size: 14px; color: var(--on-reward); }
+.profile .prof__arrow { width: 22px; height: 22px; }
+
+/* League: pinned to the foot of the panel. */
+.profile .prof__league {
+    flex-direction: row;
+    align-items: center;
+    align-self: stretch;
+    height: 80px;
+    margin-top: auto;
+    padding: 0 20px;
+    --frame-fill: #0F1626;
+    --frame-edge: #5C4A1C;
+    --frame-edge-width: 1;
+    --frame-cut: 12;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.profile .prof__league:hover { scale: 1.02 1.02; }
+.profile .prof__league:active { scale: 0.98 0.98; }
+
+.profile .prof__league-hex {
+    width: 54px;
+    height: 54px;
+    align-items: center;
+    justify-content: center;
+}
+
+.profile .prof__league-hex .icon { width: 24px; height: 24px; }
+.profile .prof__league-words { flex-grow: 1; margin-left: 16px; }
+.profile .prof__league-name { font-size: 18px; letter-spacing: 2px; }
+.profile .prof__league-note { font-size: 14px; color: var(--muted); margin-top: 2px; }
+
+/* ---------- record + wearing ---------- */
+
+.profile .prof__right {
+    position: absolute;
+    left: 580px;
+    right: 40px;
+    top: 116px;
+}
+
+.profile .prof__heading {
+    flex-direction: row;
+    align-items: center;
+    padding: 4px 2px;
+    margin-bottom: 14px;
+}
+
+.profile .prof__heading-label { font-size: 15px; letter-spacing: 6px; color: var(--pulse); }
+
+.profile .prof__heading-rule {
+    flex-grow: 1;
+    height: 1px;
+    margin-left: 14px;
+    background-color: #24456F;
+}
+
+.profile .prof__tiles { flex-direction: row; margin-bottom: 26px; }
+
+.profile .prof__tile {
+    flex-grow: 1;
+    flex-basis: 0;
+    height: 126px;
+    margin-right: 14px;
+    padding: 18px 20px;
+    justify-content: space-between;
+    --frame-fill: #0A1322;
+    --frame-edge: #24456F;
+    --frame-edge-width: 1;
+    --frame-cut: 12;
+}
+
+.profile .prof__tile:last-child { margin-right: 0; }
+.profile .prof__tile .icon { width: 22px; height: 22px; }
+.profile .prof__tile-value { font-size: 40px; }
+.profile .prof__tile-value--lit { color: var(--pulse); }
+.profile .prof__tile-caption { font-size: 13px; letter-spacing: 3px; color: var(--muted); }
+
+.profile .prof__wearing { flex-direction: row; }
+
+.profile .prof__worn {
+    flex-grow: 1;
+    flex-basis: 0;
+    height: 262px;
+    margin-right: 14px;
+    padding: 14px;
+    --frame-fill: #0B1628;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1.5;
+    --frame-cut: 12;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.profile .prof__worn:last-child { margin-right: 0; }
+.profile .prof__worn:hover { scale: 1.02 1.02; }
+.profile .prof__worn:active { scale: 0.97 0.97; }
+
+.profile .prof__worn-art { flex-grow: 1; margin-bottom: 12px; }
+.profile .prof__worn-name { font-size: 15px; letter-spacing: 2px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.profile .prof__worn-line { font-size: 12px; letter-spacing: 2px; margin-top: 3px; }
+
+/* ---------- rename sheet ---------- */
+
+.profile .prof__sheet-layer {
+    background-color: rgba(2, 4, 8, 0.82);
+    align-items: center;
+    justify-content: center;
+}
+
+.profile .prof__sheet {
+    width: 560px;
+    padding: 28px 34px 30px 34px;
+    --frame-fill: #0A1322;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1;
+    --frame-cut: 16;
+    --frame-tab: #3DE3FF;
+}
+
+.profile .prof__sheet-title { font-size: 22px; letter-spacing: 4px; margin-bottom: 20px; }
+
+.profile .prof__field {
+    flex-direction: row;
+    align-items: center;
+    height: 54px;
+    padding: 0 16px;
+    --frame-fill: #060B14;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1.5;
+    --frame-cut: 10;
+}
+
+.profile .prof__field.is-focus { --frame-edge: #3DE3FF; }
+.profile .prof__field .icon { width: 20px; height: 20px; }
+
+.profile .prof__field-input { flex-grow: 1; margin: 0 0 0 12px; padding: 0; min-width: 0; }
+
+.profile .prof__field-input .unity-base-text-field__input,
+.profile .prof__field-input .unity-text-field__input {
+    background-color: rgba(0, 0, 0, 0);
+    border-width: 0;
+    margin: 0;
+    padding: 0;
+    color: var(--ink);
+    font-size: 19px;
+    -unity-text-align: middle-left;
+}
+
+.profile .prof__sheet-buttons { flex-direction: row; margin-top: 22px; }
+.profile .prof__sheet-buttons .btn { flex-grow: 1; flex-basis: 0; margin-left: 14px; }
+.profile .prof__sheet-buttons .btn:first-child { margin-left: 0; }
+
+.profile .prof__sheet-status {
+    font-size: 15px;
+    color: #FF8A9A;
+    margin-top: 12px;
+    -unity-text-align: middle-center;
+    white-space: normal;
+}

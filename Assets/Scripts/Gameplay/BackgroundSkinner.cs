@@ -82,6 +82,7 @@ namespace TableFootball
             // background that a match can actually show. The skybox is front-end dressing; this is
             // what the player sees around the table while playing.
             ApplyFloor(id);
+            ApplyWeather(id);
 
             Material sky = BackgroundSkins.Resolve(id);
 
@@ -143,6 +144,132 @@ namespace TableFootball
             floorRenderer.enabled = true;
         }
 
+        // ── Weather: falling snow on the Snow Mountain stage ───────────────────────────────────
+
+        private ParticleSystem snowfall;
+        private Material snowMaterial;
+        private Bounds? measured;
+
+        /// <summary>
+        /// Lets snow drift round the table while the Snow Mountain stage is worn.
+        ///
+        /// The flakes fall in the room BELOW the table — between the floor and the underside of the
+        /// pitch — never above it. The gameplay camera looks straight down, so the table itself hides
+        /// every flake that would be over the pitch: the snow shows only in the margin of room around
+        /// the table and physically cannot cover the ball. A snowfall over the pitch would look
+        /// livelier for a second and then be in the way of every shot.
+        /// </summary>
+        private void ApplyWeather(string id)
+        {
+            bool snowing = id == "background.snow_mountain";
+            if (!snowing)
+            {
+                if (snowfall != null) snowfall.gameObject.SetActive(false);
+                return;
+            }
+
+            if (snowfall == null && !BuildSnowfall()) return;
+            snowfall.gameObject.SetActive(true);
+            if (!snowfall.isPlaying) snowfall.Play();
+        }
+
+        private bool BuildSnowfall()
+        {
+            Bounds table = Measured();
+
+            snowMaterial = SkinMaterials.CreateTrailMaterial(Color.white, null);
+            if (snowMaterial == null) return false;   // no usable shader: the stage just has no snow
+            SkinMaterials.SetBaseMap(snowMaterial, SoftDot());
+
+            var go = new GameObject("Snowfall");
+            go.transform.SetParent(transform, false);
+
+            // Between the floor and the pitch's underside, so the table occludes it from above.
+            float floorY = table.min.y;
+            float ceilingY = floorY + (table.size.y * 0.55f);
+            go.transform.position = new Vector3(table.center.x, ceilingY, table.center.z);
+            go.transform.rotation = Quaternion.identity;
+
+            snowfall = go.AddComponent<ParticleSystem>();
+            snowfall.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+            var main = snowfall.main;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(5f, 8f);
+            main.startSpeed = 0f;
+            main.startSize = new ParticleSystem.MinMaxCurve(0.008f, 0.018f);
+            main.startColor = new Color(1f, 1f, 1f, 0.9f);
+            main.maxParticles = 400;
+            main.prewarm = true;                // the stage opens already snowing, not starting to
+            main.loop = true;
+
+            // Spawns over the whole visible room, with plenty past the screen edge for the wind.
+            var shape = snowfall.shape;
+            shape.enabled = true;
+            shape.shapeType = ParticleSystemShapeType.Box;
+            shape.scale = new Vector3(3.6f, 0.02f, 2.4f);
+
+            var emission = snowfall.emission;
+            emission.rateOverTime = 45f;
+
+            // A slow fall with a gentle wind, and a wander so no two flakes move alike.
+            var vel = snowfall.velocityOverLifetime;
+            vel.enabled = true;
+            vel.space = ParticleSystemSimulationSpace.World;
+            vel.x = new ParticleSystem.MinMaxCurve(0.03f, 0.07f);
+            vel.y = new ParticleSystem.MinMaxCurve(-0.09f, -0.05f);
+            vel.z = new ParticleSystem.MinMaxCurve(-0.015f, 0.015f);
+
+            var noise = snowfall.noise;
+            noise.enabled = true;
+            noise.strength = 0.03f;
+            noise.frequency = 0.6f;
+            noise.scrollSpeed = 0.2f;
+
+            var col = snowfall.colorOverLifetime;
+            col.enabled = true;
+            var fade = new Gradient();
+            fade.SetKeys(
+                new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(1f, 0.1f),
+                        new GradientAlphaKey(1f, 0.85f), new GradientAlphaKey(0f, 1f) });
+            col.color = new ParticleSystem.MinMaxGradient(fade);
+
+            var rend = snowfall.GetComponent<ParticleSystemRenderer>();
+            rend.renderMode = ParticleSystemRenderMode.Billboard;
+            rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            rend.receiveShadows = false;
+            rend.sharedMaterial = snowMaterial;
+            return true;
+        }
+
+        /// <summary>A soft round flake, made in code — no imported art.</summary>
+        private static Texture2D SoftDot()
+        {
+            const int n = 32;
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+            var px = new Color32[n * n];
+            for (int j = 0; j < n; j++)
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    float x = (i + 0.5f) / n * 2f - 1f, y = (j + 0.5f) / n * 2f - 1f;
+                    float a = Mathf.Clamp01(1f - Mathf.Sqrt(x * x + y * y));
+                    px[j * n + i] = new Color32(255, 255, 255, (byte)(Mathf.SmoothStep(0f, 1f, a) * 255f));
+                }
+            }
+            tex.SetPixels32(px);
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        /// <summary>The table's bounds, measured once and reused by the floor and the weather.</summary>
+        private Bounds Measured()
+        {
+            if (!measured.HasValue) measured = MeasureTable();
+            return measured.Value;
+        }
+
         private void EnsureFloor()
         {
             if (roomFloor != null)
@@ -152,7 +279,7 @@ namespace TableFootball
 
             // Measured BEFORE the plane exists, so the floor's own renderer can never be folded into
             // the bounds that position it.
-            Bounds table = MeasureTable();
+            Bounds table = Measured();
 
             var go = GameObject.CreatePrimitive(PrimitiveType.Plane);
             go.name = "RoomFloor";

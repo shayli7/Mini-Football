@@ -1,33 +1,46 @@
 /*
- * Mini Football — base styles for the UI Toolkit screens.
+ * Mini Football — base styles for the UI Toolkit screens. "Holo Arena".
  *
- * Black, blue and gold at roughly 60 / 30 / 10: black is the floor, blue the panels and ordinary
- * buttons, gold only the one thing to press next. The same hex values as ArcadeTheme.cs; if one
- * changes, change both.
+ * Dark navy glass with one light per meaning: cyan (--pulse) is go / confirm / focus, gold
+ * (--reward) is "you get something" and nothing else, red (--danger) is "you lose something".
+ * Panels and buttons have their top-left and bottom-right corners cut, drawn by UiFrame from the
+ * --frame-* properties below (USS cannot clip a corner off a box).
+ *
+ * The same hex values as ArcadeTheme.cs; if one changes, change both.
  *
  * Fonts are set from code by class (f-display, f-display-semi, f-body-medium, f-body-semi) — see
  * UiFonts.cs. Sizes are in panel units against a fixed 760-unit height (UiToolkitHost).
  */
 
 :root {
-    --black: #07090E;
-    --panel: #0F2036;
-    --panel-2: #122742;
-    --raised: #16304F;
-    --line: #1E3A5E;
-    --line-2: #23446B;
-    --blue-fill: #1C4675;
-    --blue-line: #2A5A8F;
-    --blue-soft: #7FA6D1;
-    --ink: #E9EEF5;
-    --muted: #93A1B5;
-    --dim: #5F6E84;
-    --gold: #D6A73A;
-    --gold-soft: rgba(214, 167, 58, 0.14);
-    --on-gold: #1A1304;
-    --red: #C24A5A;
-    --blue: #3E78B8;
-    --danger: #D98A93;
+    --black: #04070D;
+    --panel: #0A1322;
+    --panel-2: #0F1C31;
+    --row: #0B1628;
+    --plate: #0F1C31;
+    --raised: #16294A;
+    --line: #1D3557;
+    --line-lit: #24456F;
+    --line-2: #2C5A8E;
+    --blue-fill: #16294A;
+    --blue-line: #2C5A8E;
+    --blue-soft: #3DE3FF;
+    --ink: #EAF4FF;
+    --muted: #8EA4C2;
+    --dim: #56698A;
+    --pulse: #3DE3FF;
+    --pulse-press: #22B7D6;
+    --on-pulse: #03161C;
+    --reward: #FFC23D;
+    --reward-press: #E0A82F;
+    --on-reward: #1E1400;
+    --gold: #FFC23D;
+    --gold-soft: rgba(255, 194, 61, 0.14);
+    --on-gold: #1E1400;
+    --red: #FF4F6D;
+    --blue: #3D8BFF;
+    --danger: #FF5C72;
+    --danger-fill: #1A0B11;
 }
 
 .app {
@@ -61,6 +74,59 @@ Label {
     bottom: -200px;
 }
 
+/* The Arena background (UiBackdrop): a floor sprite and two light cones. Insets are set in code so it
+   reaches the true screen edge. */
+.arena {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+}
+
+.arena__base {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    -unity-background-scale-mode: stretch-to-fill;
+}
+
+.arena__cone {
+    position: absolute;
+    top: -10%;
+    width: 60%;
+    height: 120%;
+    -unity-background-scale-mode: stretch-to-fill;
+}
+
+.arena__cone--left { left: -5%; }
+.arena__cone--right { left: 45%; }
+
+/* Pictures (UiArt): a cosmetic's tile, and the coin and chest drawings. */
+.cosart {
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.cosart .icon { width: 44px; height: 44px; }
+.cosart__name { font-size: 26px; letter-spacing: 3px; -unity-text-align: middle-center; }
+
+.cosart__img {
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    top: 6px;
+    bottom: 6px;
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.coin { width: 24px; height: 24px; flex-shrink: 0; }
+.chest { width: 120px; height: 120px; flex-shrink: 0; }
+
 .row { flex-direction: row; align-items: center; }
 .col { flex-direction: column; }
 .grow { flex-grow: 1; }
@@ -87,34 +153,41 @@ Label {
     border-radius: 22px;
 }
 
-.chip {
-    flex-direction: row;
-    align-items: center;
-    background-color: var(--panel);
-    border-width: 1px;
-    border-color: var(--line);
-    border-radius: 14px;
-    height: 52px;
-    padding: 0 18px 0 12px;
+/* ---------- cut-corner frame (UiFrame) ---------- */
+
+/* UiFrame paints its own fill, edge and accent tab from these. Transparent by default so a frame with
+   nothing set draws nothing. --frame-cut is the length of the diagonal cut along each edge. */
+.frame {
+    --frame-fill: #0A1322;
+    --frame-edge: #24456F;
+    --frame-edge-width: 1;
+    --frame-cut: 12;
+    --frame-tab: rgba(0, 0, 0, 0);
+    --frame-slant: 0;
 }
 
-.chip__value {
-    font-size: 20px;
-    margin-left: 10px;
+.frame--panel {
+    --frame-fill: #0A1322;
+    --frame-edge: #24456F;
+    --frame-cut: 16;
+    --frame-tab: #3DE3FF;
 }
 
 /* ---------- buttons ---------- */
 
+/* A button is a UiFrame (UiKit.Button builds one). Its look is the --frame-* properties of the
+   variant; the label colour is set per variant below because the global Label rule would otherwise
+   win over anything inherited from the button. */
 .btn {
     flex-direction: row;
     align-items: center;
     justify-content: center;
     height: 54px;
     padding: 0 24px;
-    border-width: 1px;
-    border-radius: 14px;
-    transition-property: scale, background-color, border-color, opacity;
-    transition-duration: 0.12s, 0.12s, 0.12s, 0.2s;
+    --frame-cut: 12;
+    --frame-edge-width: 1.5;
+    transition-property: scale, opacity;
+    transition-duration: 0.12s, 0.2s;
     transition-timing-function: ease-out-cubic;
 }
 
@@ -127,20 +200,37 @@ Label {
     -unity-text-align: middle-center;
 }
 
-.btn--gold { background-color: var(--gold); border-color: var(--gold); color: var(--on-gold); }
-.btn--gold:active { background-color: #BE9230; }
-.btn--blue { background-color: var(--blue-fill); border-color: var(--blue-line); color: var(--ink); }
-.btn--blue:active { background-color: #173C66; }
-.btn--ghost { background-color: var(--raised); border-color: var(--line-2); color: var(--ink); }
-.btn--ghost:active { background-color: #122842; }
-.btn--danger { background-color: rgba(0, 0, 0, 0); border-color: #4A2A33; color: var(--danger); }
+/* Cyan fill: go / confirm. */
+.btn--pulse { --frame-fill: #3DE3FF; --frame-edge: #3DE3FF; }
+.btn--pulse .btn__label { color: var(--on-pulse); }
+.btn--pulse:active { --frame-fill: #22B7D6; --frame-edge: #22B7D6; }
+
+/* Gold fill: take a reward. .btn--gold is the old name for the same button. */
+.btn--reward, .btn--gold { --frame-fill: #FFC23D; --frame-edge: #FFC23D; }
+.btn--reward .btn__label, .btn--gold .btn__label { color: var(--on-reward); }
+.btn--reward:active, .btn--gold:active { --frame-fill: #E0A82F; --frame-edge: #E0A82F; }
+
+/* Cyan outline: open a screen. */
+.btn--blue { --frame-fill: #0B1628; --frame-edge: rgba(61, 227, 255, 0.6); }
+.btn--blue .btn__label { color: var(--ink); }
+.btn--blue:active { --frame-fill: #0F1C31; --frame-edge: #3DE3FF; }
+
+/* Quiet: back, cancel, later. */
+.btn--ghost { --frame-fill: #0F1C31; --frame-edge: #2C5A8E; }
+.btn--ghost .btn__label { color: var(--ink); }
+.btn--ghost:active { --frame-fill: #0A1322; }
+
+/* Red outline: you lose something. */
+.btn--danger { --frame-fill: #1A0B11; --frame-edge: #FF5C72; }
+.btn--danger .btn__label { color: var(--danger); }
+.btn--danger:active { --frame-fill: #240F17; }
 
 .btn.is-disabled {
-    background-color: var(--raised);
-    border-color: var(--line-2);
-    color: var(--dim);
+    --frame-fill: #16294A;
+    --frame-edge: #16294A;
     scale: 1 1;
 }
+.btn.is-disabled .btn__label { color: var(--dim); }
 
 .icon-btn {
     width: 44px;
@@ -211,7 +301,7 @@ Label {
 .bar__fill {
     height: 100%;
     border-radius: 4px;
-    background-color: var(--gold);
+    background-color: var(--pulse);
     transition-property: width;
     transition-duration: 0.9s;
     transition-timing-function: ease-out-cubic;
@@ -248,3 +338,22 @@ Label {
 .reduced-motion .bar__fill {
     transition-duration: 0s;
 }
+
+/* ---------- coin balance chip (UiCoinChip) ---------- */
+
+.coinchip {
+    flex-direction: row;
+    align-items: center;
+    height: 52px;
+    padding: 0 18px 0 14px;
+    --frame-fill: #0A1322;
+    --frame-edge: #24456F;
+    --frame-edge-width: 1.5;
+    --frame-cut: 8;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.coinchip .coin { width: 24px; height: 24px; }
+.coinchip .icon { width: 24px; height: 24px; }
+.coinchip__value { font-size: 20px; margin-left: 10px; min-width: 56px; }

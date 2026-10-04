@@ -11,8 +11,9 @@ using UnityEngine.InputSystem;
 namespace TableFootball.UI
 {
     /// <summary>
-    /// Owns the pause access and the menu overlay: the top-right pause button, the main/pause menu
-    /// (Resume / Settings / Quit) and the Settings panel (Master + SFX volume, AI difficulty).
+    /// Owns the pause access and the menu overlay: the top-right pause button and the pause menu
+    /// (Resume / Main Menu, with a confirmation before leaving). Settings no longer lives here — it is
+    /// its own screen, opened from the gear on the profile.
     ///
     /// Pausing is real: <c>Time.timeScale = 0</c> and <c>AudioListener.pause = true</c> while the menu
     /// is open. Because MatchManager and TeamAI both idle on their own timers, that alone freezes play;
@@ -28,15 +29,12 @@ namespace TableFootball.UI
         private CanvasGroup overlayCg;
         private Transform menuPanel;
         private GameObject mainGroup;
-        private GameObject settingsGroup;
         private GameObject confirmGroup;
         private MenuButton resumeButton;
-        private MenuButton backButton;
         private MenuButton stayButton;
         private TextMeshProUGUI confirmBody;
 
         private bool isOpen;
-        private bool standalone;
         private Coroutine overlayRoutine;
 
         /// <summary>
@@ -69,11 +67,10 @@ namespace TableFootball.UI
         {
             if (BackPressedThisFrame())
             {
-                // Back steps out of whichever sub-screen is up before it closes the menu. Escape on
-                // the confirmation must mean "no" — closing the menu outright there would resume a
+                // Back steps out of the confirmation before it closes the menu. Escape on the
+                // confirmation must mean "no" — closing the menu outright there would resume a
                 // match the player was in the middle of deciding to leave.
                 if (isOpen && confirmGroup.activeSelf) HideLeaveConfirm();
-                else if (isOpen && settingsGroup.activeSelf) HideSettings();
                 else Toggle();
             }
         }
@@ -106,7 +103,7 @@ namespace TableFootball.UI
         public void SetPauseButtonVisible(bool visible)
         {
             pauseButtonAllowed = visible;
-            if (!standalone && pauseButton != null)
+            if (pauseButton != null)
             {
                 pauseButton.SetActive(!isOpen && pauseButtonAllowed);
             }
@@ -118,13 +115,6 @@ namespace TableFootball.UI
         /// whole session.
         /// </summary>
         public Action OnLeaveMatch;
-
-        /// <summary>
-        /// Raised when Settings, opened straight from the main menu, is closed. GameFlow hides the
-        /// main menu while it is up and reopens it here: the menu is drawn by UI Toolkit and this panel
-        /// by uGUI, and which of the two draws on top is not something either system promises.
-        /// </summary>
-        public Action OnStandaloneClosed;
 
         public void Quit()
         {
@@ -145,30 +135,13 @@ namespace TableFootball.UI
 #endif
         }
 
-        /// <summary>
-        /// Opens straight into Settings from the main menu, without pausing anything.
-        ///
-        /// The pause path owns timeScale and AudioListener while it is up, which is right mid-match
-        /// and wrong here: the front end is already frozen by GameFlow, and closing this would hand
-        /// back a timeScale of 1 and set the table running behind the menu.
-        /// </summary>
-        public void OpenSettingsStandalone()
-        {
-            standalone = true;
-            SetOpen(true);
-            ShowSettings();
-        }
-
         private void SetOpen(bool open, bool instant = false)
         {
             isOpen = open;
 
-            if (!standalone)
-            {
-                Time.timeScale = open ? 0f : 1f;
-                AudioListener.pause = open;
-                if (pauseButton != null) pauseButton.SetActive(!open && pauseButtonAllowed);
-            }
+            Time.timeScale = open ? 0f : 1f;
+            AudioListener.pause = open;
+            if (pauseButton != null) pauseButton.SetActive(!open && pauseButtonAllowed);
 
             overlayCg.blocksRaycasts = open;
             overlayCg.interactable = open;
@@ -209,44 +182,16 @@ namespace TableFootball.UI
         private void ShowMain()
         {
             mainGroup.SetActive(true);
-            settingsGroup.SetActive(false);
             confirmGroup.SetActive(false);
-        }
-
-        public void ShowSettings()
-        {
-            mainGroup.SetActive(false);
-            settingsGroup.SetActive(true);
-            confirmGroup.SetActive(false);
-            if (EventSystem.current != null && backButton != null)
-                EventSystem.current.SetSelectedGameObject(backButton.gameObject);
-        }
-
-        public void HideSettings()
-        {
-            // Opened from the main menu there is no pause screen to go back to, so Back closes the
-            // overlay outright — and clears the flag, so the next real pause behaves normally again.
-            if (standalone)
-            {
-                SetOpen(false);
-                standalone = false;
-                OnStandaloneClosed?.Invoke();
-                return;
-            }
-
-            ShowMain();
-            if (EventSystem.current != null && resumeButton != null)
-                EventSystem.current.SetSelectedGameObject(resumeButton.gameObject);
         }
 
         /// <summary>
-        /// Asks before leaving. Worth the extra tap: Main Menu sits directly under Settings in a menu
+        /// Asks before leaving. Worth the extra tap: Main Menu sits directly under Resume in a menu
         /// reached mid-match, and online it does not merely end the match — it hands it over.
         /// </summary>
         public void ShowLeaveConfirm()
         {
             mainGroup.SetActive(false);
-            settingsGroup.SetActive(false);
             confirmGroup.SetActive(true);
 
             if (confirmBody != null)
@@ -344,7 +289,6 @@ namespace TableFootball.UI
             vlg.childControlWidth = true; vlg.childControlHeight = true;
 
             BuildMainGroup(fill);
-            BuildSettingsGroup(fill);
             BuildConfirmGroup(fill);
         }
 
@@ -378,7 +322,6 @@ namespace TableFootball.UI
 
             Spacer(group.transform, 8f);
             resumeButton = UIFactory.Button(group.transform, "Resume", MenuButton.Variant.Primary, Resume);
-            UIFactory.Button(group.transform, "Settings", MenuButton.Variant.Ghost, ShowSettings);
             UIFactory.Button(group.transform, "Main Menu", MenuButton.Variant.Danger, ShowLeaveConfirm);
         }
 
@@ -405,77 +348,6 @@ namespace TableFootball.UI
             stayButton = UIFactory.Button(group.transform, "Stay", MenuButton.Variant.Primary,
                                           HideLeaveConfirm);
             UIFactory.Button(group.transform, "Leave", MenuButton.Variant.Danger, Quit);
-        }
-
-        private void BuildSettingsGroup(Transform parent)
-        {
-            var group = Group(parent, "SettingsGroup");
-            settingsGroup = group.gameObject;
-
-            // Title with a close button beside it, so the way out of a pop-up is where pop-ups keep
-            // it rather than only at the bottom of the panel.
-            var head = UIFactory.Child(group.transform, "Head");
-            head.AddComponent<LayoutElement>().preferredHeight = 52f;
-            var title = UIFactory.Text(head.transform, "SETTINGS", ArcadeTheme.FsTitle * 0.6f, ArcadeTheme.Ink,
-                                       display: true, bold: true, upper: true, tracking: 6f,
-                                       align: TextAlignmentOptions.Left);
-            UIFactory.Stretch(UIFactory.Rt(title.gameObject), 0);
-            var close = UIFactory.IconButton(head.transform, "Close", UIFactory.Icon.Close,
-                                             MenuButton.Variant.Ghost, HideSettings, 48f);
-            var crt = UIFactory.Rt(close.gameObject);
-            crt.anchorMin = crt.anchorMax = new Vector2(1f, 0.5f);
-            crt.pivot = new Vector2(1f, 0.5f);
-            crt.anchoredPosition = Vector2.zero;
-            Spacer(group.transform, 4f);
-
-            var music = SettingRow(group.transform, "MUSIC", GameAudio.Music);
-            UIFactory.Slider(group.transform, GameAudio.Music, v =>
-            {
-                GameAudio.Music = v;
-                music.text = Percent(v);
-            });
-
-            var sfx = SettingRow(group.transform, "SOUND EFFECTS", GameAudio.Sfx);
-            UIFactory.Slider(group.transform, GameAudio.Sfx, v =>
-            {
-                GameAudio.Sfx = v;
-                sfx.text = Percent(v);
-            });
-
-            Spacer(group.transform, 4f);
-            SettingLabel(group.transform, "AI DIFFICULTY");
-            UIFactory.Segmented(group.transform, new[] { "EASY", "NORMAL", "HARD" }, (int)GameAudio.Difficulty,
-                                i => GameAudio.Difficulty = (AiLevel)i);
-
-            Spacer(group.transform, 12f);
-            backButton = UIFactory.Button(group.transform, "Done", MenuButton.Variant.Blue, HideSettings, 54f);
-        }
-
-        /// <summary>A setting's name on the left and its current value, as a percentage, on the right.</summary>
-        private TextMeshProUGUI SettingRow(Transform parent, string text, float value)
-        {
-            var row = UIFactory.Child(parent, "Row_" + text);
-            row.AddComponent<LayoutElement>().preferredHeight = 24f;
-
-            var label = UIFactory.Text(row.transform, text, ArcadeTheme.FsCaption, ArcadeTheme.InkMuted,
-                                       display: false, bold: true, upper: true, tracking: 8f,
-                                       align: TextAlignmentOptions.Left);
-            UIFactory.Stretch(UIFactory.Rt(label.gameObject), 0);
-
-            var readout = UIFactory.Text(row.transform, Percent(value), ArcadeTheme.FsCaption, ArcadeTheme.Ink,
-                                         display: true, bold: true, align: TextAlignmentOptions.Right);
-            UIFactory.Stretch(UIFactory.Rt(readout.gameObject), 0);
-            return readout;
-        }
-
-        private static string Percent(float v) => Mathf.RoundToInt(Mathf.Clamp01(v) * 100f) + "%";
-
-        private void SettingLabel(Transform parent, string text)
-        {
-            var t = UIFactory.Text(parent, text, ArcadeTheme.FsCaption, ArcadeTheme.InkMuted,
-                                   display: false, bold: true, upper: true, tracking: 14f,
-                                   align: TextAlignmentOptions.Left);
-            t.gameObject.AddComponent<LayoutElement>().preferredHeight = 20f;
         }
 
         private static void Spacer(Transform parent, float height) => UIFactory.Spacer(parent, height);

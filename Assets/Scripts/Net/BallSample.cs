@@ -55,7 +55,18 @@ namespace TableFootball.Net
 
         public BallSampleFlags Flags;
 
+        /// <summary>The team that last touched the ball in the sender's simulation (a <see cref="Team"/>
+        /// as a byte), or <see cref="NoTeam"/>. Carried so a machine taking the simulation over inherits
+        /// it — the stall rule counts against the team that touched the ball last.</summary>
+        public byte LastTouch;
+
+        public const byte NoTeam = byte.MaxValue;
+
         public bool Has(BallSampleFlags flag) => (Flags & flag) != 0;
+
+        public Team? LastTouchTeam => LastTouch == NoTeam ? (Team?)null : (Team)LastTouch;
+
+        public static byte Encode(Team? team) => team.HasValue ? (byte)team.Value : NoTeam;
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
         {
@@ -66,6 +77,7 @@ namespace TableFootball.Net
             serializer.SerializeValue(ref Rot);
             serializer.SerializeValue(ref Epoch);
             serializer.SerializeValue(ref AuthorityTeam);
+            serializer.SerializeValue(ref LastTouch);
 
             byte flags = (byte)Flags;
             serializer.SerializeValue(ref flags);

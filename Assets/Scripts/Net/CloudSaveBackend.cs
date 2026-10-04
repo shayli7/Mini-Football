@@ -68,5 +68,19 @@ namespace TableFootball.Net
 
             return result?.doc;
         }
+
+        /// <summary>
+        /// Erases this player's server-side document — the part of "delete my account" that
+        /// <c>AuthenticationService.DeleteAccountAsync</c> does not reach, because the document lives in
+        /// game data only Cloud Code can touch. Must be called while still signed in. Throws on a
+        /// service failure (including the <c>progress</c> script not yet being redeployed with the
+        /// <c>delete</c> action), which <see cref="CloudSync.EraseRemoteAsync"/> catches.
+        /// </summary>
+        internal static async Task DeleteAsync()
+        {
+            await Unity.Services.CloudCode.CloudCodeService.Instance
+                .CallEndpointAsync<object>("progress",
+                    new Dictionary<string, object> { { "action", "delete" } });
+        }
     }
 }

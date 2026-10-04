@@ -36,7 +36,9 @@ namespace TableFootball
             { "background.living_room",  "LivingRoom" },
             { "background.dark_room",    "DarkRoom" },
             { "background.disco_room",   "DiscoRoom" },
-            { "background.royal_palace", "RoyalPalace" }
+            { "background.royal_palace", "RoyalPalace" },
+            { "background.lava_mountain", "LavaMountain" },
+            { "background.snow_mountain", "SnowMountain" }
         };
 
         /// <summary>
@@ -49,7 +51,9 @@ namespace TableFootball
             { "background.living_room",  new Color(0.36f, 0.30f, 0.25f) },
             { "background.dark_room",    new Color(0.08f, 0.09f, 0.11f) },
             { "background.disco_room",   new Color(0.14f, 0.11f, 0.20f) },
-            { "background.royal_palace", new Color(0.62f, 0.54f, 0.44f) }
+            { "background.royal_palace", new Color(0.62f, 0.54f, 0.44f) },
+            { "background.lava_mountain", new Color(0.16f, 0.09f, 0.07f) },
+            { "background.snow_mountain", new Color(0.78f, 0.83f, 0.89f) }
         };
 
         private static readonly Dictionary<string, Material> Cache = new();

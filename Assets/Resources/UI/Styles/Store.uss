@@ -1,0 +1,313 @@
+/* Store. See StoreMenu.cs. Laid out against a 760-unit-high panel.
+   Every selector is under .store so it outranks the shared frame defaults in Base.uss. */
+
+/* ---------- header ---------- */
+
+.store .st__header {
+    position: absolute;
+    left: 40px;
+    right: 40px;
+    top: 24px;
+    height: 58px;
+    align-items: center;
+    justify-content: center;
+}
+
+.store .st__back { position: absolute; left: 0; top: 0; }
+.store .st__title-box { align-items: center; }
+.store .st__title-row { flex-direction: row; align-items: center; }
+.store .st__title-row .icon { width: 26px; height: 26px; }
+.store .st__title { font-size: 32px; letter-spacing: 7px; margin-left: 12px; }
+.store .st__bar { width: 44px; height: 3px; margin-top: 6px; background-color: var(--pulse); }
+
+.store .st__tools { position: absolute; right: 0; top: 3px; flex-direction: row; align-items: center; }
+
+.store .st__collection {
+    flex-direction: row;
+    align-items: center;
+    height: 52px;
+    padding: 0 18px;
+    margin-right: 12px;
+    --frame-fill: #0B1628;
+    --frame-edge: rgba(61, 227, 255, 0.6);
+    --frame-edge-width: 1.5;
+    --frame-cut: 10;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.store .st__collection:hover { scale: 1.03 1.03; }
+.store .st__collection:active { scale: 0.97 0.97; }
+.store .st__collection .icon { width: 22px; height: 22px; }
+.store .st__collection-label { font-size: 15px; letter-spacing: 3px; margin-left: 10px; }
+
+.store .sq {
+    width: 55px;
+    height: 55px;
+    align-items: center;
+    justify-content: center;
+    --frame-fill: #0F1C31;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1.5;
+    --frame-cut: 10;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.store .sq:hover { scale: 1.05 1.05; }
+.store .sq:active { scale: 0.95 0.95; }
+.store .sq .icon { width: 26px; height: 26px; }
+
+/* ---------- the shelf ---------- */
+
+.store .st__shelf {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100px;
+    bottom: 96px;
+}
+
+.store .st__sections {
+    flex-direction: row;
+    align-items: flex-start;
+    padding: 6px 60px 0 40px;
+}
+
+.store .st__section { flex-shrink: 0; }
+
+.store .st__divider {
+    flex-shrink: 0;
+    width: 1px;
+    height: 400px;
+    margin: 46px 34px 0 34px;
+    background-color: #1D3557;
+}
+
+.store .st__heading {
+    flex-direction: row;
+    align-items: center;
+    height: 34px;
+    margin-bottom: 12px;
+}
+
+.store .st__heading .icon { width: 20px; height: 20px; }
+.store .st__heading-label { font-size: 15px; letter-spacing: 5px; color: var(--pulse); margin-left: 10px; }
+.store .st__heading-rule { flex-grow: 1; height: 1px; margin: 0 14px; background-color: #24456F; }
+.store .st__heading-timer { flex-direction: row; align-items: center; }
+.store .st__heading-timer .icon { width: 16px; height: 16px; }
+.store .st__heading-time { font-size: 14px; letter-spacing: 1px; color: var(--muted); margin-left: 6px; }
+
+.store .st__cards { flex-direction: row; align-items: flex-start; }
+
+/* ---------- cards ---------- */
+
+.store .st__card {
+    align-items: center;
+    height: 430px;
+    padding: 14px 14px 16px 14px;
+    margin-right: 14px;
+    --frame-fill: #0A1322;
+    --frame-edge: #24456F;
+    --frame-edge-width: 2;
+    --frame-cut: 16;
+}
+
+.store .st__cards > .st__card:last-child { margin-right: 0; }
+
+.store .st__card--chest { width: 204px; }
+.store .st__card--deal { width: 288px; }
+.store .st__card--coins { width: 248px; }
+.store .st__card--item { width: 208px; }
+
+.store .st__tag {
+    position: absolute;
+    left: 16px;
+    top: 14px;
+    font-size: 12px;
+    letter-spacing: 3px;
+}
+
+.store .st__tag--right { left: auto; right: 16px; }
+
+.store .st__stage {
+    align-self: stretch;
+    height: 190px;
+    align-items: center;
+    justify-content: center;
+    margin-top: 10px;
+}
+
+.store .st__halo {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    top: 16px;
+    bottom: 10px;
+    border-radius: 90px;
+}
+
+.store .st__halo--gold { background-color: rgba(255, 194, 61, 0.10); }
+
+.store .st__chest { width: 172px; height: 160px; }
+.store .st__deal-art { width: 200px; height: 170px; align-items: center; justify-content: center; }
+.store .st__deal-art .chest { width: 190px; height: 170px; }
+
+.store .st__name { font-size: 19px; letter-spacing: 3px; margin-top: 4px; }
+.store .st__name--item { font-size: 17px; letter-spacing: 1px; margin-top: 12px; -unity-text-align: middle-center; }
+.store .st__kind { font-size: 12px; letter-spacing: 3px; margin-top: 4px; }
+.store .st__blurb { font-size: 11px; letter-spacing: 3px; color: var(--muted); margin-top: 8px; }
+
+.store .st__odds { flex-direction: row; margin-top: 14px; }
+.store .st__odd { width: 12px; height: 12px; border-radius: 6px; margin: 0 5px; }
+
+/* The price button / watch button sits at the foot of every card. */
+.store .st__buy {
+    position: absolute;
+    left: 14px;
+    right: 14px;
+    bottom: 16px;
+    height: 54px;
+    padding: 0 12px;
+}
+
+.store .st__buy .coin { width: 24px; height: 24px; margin-right: 8px; }
+.store .st__buy .icon { width: 20px; height: 20px; margin-right: 8px; }
+.store .st__buy .btn__label { font-size: 18px; letter-spacing: 2px; }
+.store .st__watch .btn__label { font-size: 15px; letter-spacing: 3px; }
+
+/* Cannot afford it: grey, but still tappable so it can say why. */
+.store .st__buy.is-poor { --frame-fill: #16294A; --frame-edge: #16294A; }
+.store .st__buy.is-poor .btn__label { color: var(--dim); }
+
+.store .st__owned .btn__label { color: var(--pulse); }
+
+/* ---------- daily reward ---------- */
+
+.store .st__glow {
+    position: absolute;
+    left: -8px;
+    right: -8px;
+    top: -8px;
+    bottom: -8px;
+    background-color: rgba(255, 194, 61, 0.10);
+}
+
+.store .st__free {
+    position: absolute;
+    left: 16px;
+    top: 12px;
+    font-size: 12px;
+    letter-spacing: 3px;
+    color: var(--on-reward);
+    background-color: #FFC23D;
+    padding: 3px 9px;
+}
+
+/* ---------- coins ---------- */
+
+.store .st__pile { width: 170px; height: 130px; }
+.store .st__pile-coin { position: absolute; }
+.store .st__pile-coin .coin { width: 100%; height: 100%; }
+.store .st__pile-coin--l { left: 4px; top: 52px; width: 66px; height: 66px; }
+.store .st__pile-coin--r { right: 4px; top: 52px; width: 66px; height: 66px; }
+.store .st__pile-coin--m { left: 37px; top: 12px; width: 96px; height: 96px; }
+
+.store .st__amount { font-size: 40px; letter-spacing: 2px; color: var(--reward); margin-top: 4px; }
+
+.store .st__pips { flex-direction: row; margin-top: 12px; }
+.store .st__pip { width: 22px; height: 8px; margin: 0 3px; background-color: #16294A; }
+.store .st__pip.is-lit { background-color: #FFC23D; }
+.store .st__left { font-size: 12px; letter-spacing: 3px; color: var(--muted); margin-top: 8px; }
+
+/* ---------- daily items ---------- */
+
+.store .st__item-art { width: 172px; height: 164px; margin-top: 16px; }
+.store .st__empty { font-size: 14px; letter-spacing: 3px; color: var(--muted); margin-top: 60px; }
+
+/* ---------- section bar ---------- */
+
+.store .st__nav {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 22px;
+    height: 58px;
+    flex-direction: row;
+    justify-content: center;
+}
+
+.store .st__tab {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    width: 210px;
+    height: 54px;
+    margin: 0 6px;
+    --frame-fill: #0A1322;
+    --frame-edge: #1D3557;
+    --frame-edge-width: 1.5;
+    --frame-cut: 10;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.store .st__tab:hover { scale: 1.03 1.03; }
+.store .st__tab:active { scale: 0.97 0.97; }
+.store .st__tab .icon { width: 22px; height: 22px; }
+.store .st__tab-label { font-size: 13px; letter-spacing: 3px; color: var(--muted); margin-left: 10px; }
+
+.store .st__tab.is-active { --frame-fill: #0B2436; --frame-edge: #3DE3FF; }
+.store .st__tab.is-active .st__tab-label { color: var(--pulse); }
+
+.store .st__dot {
+    position: absolute;
+    right: 12px;
+    top: 8px;
+    width: 10px;
+    height: 10px;
+    border-radius: 5px;
+    background-color: #FFC23D;
+}
+
+/* ---------- toast ---------- */
+
+.store .st__toast {
+    position: absolute;
+    left: 40px;
+    right: 40px;
+    bottom: 92px;
+    font-size: 15px;
+    letter-spacing: 3px;
+    color: var(--reward);
+    -unity-text-align: middle-center;
+}
+
+/* ---------- confirm ---------- */
+
+.store .st__sheet-layer {
+    background-color: rgba(2, 4, 8, 0.82);
+    align-items: center;
+    justify-content: center;
+}
+
+.store .st__sheet {
+    width: 460px;
+    padding: 26px 30px 28px 30px;
+    align-items: center;
+    --frame-fill: #0A1322;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1;
+    --frame-cut: 16;
+    --frame-tab: #3DE3FF;
+}
+
+.store .st__sheet-art { width: 240px; height: 170px; align-items: center; justify-content: center; }
+.store .st__sheet-art .chest { width: 190px; height: 170px; }
+.store .st__sheet-art .cosart { width: 240px; height: 170px; }
+.store .st__sheet-title { font-size: 22px; letter-spacing: 3px; margin-top: 14px; -unity-text-align: middle-center; white-space: normal; }
+.store .st__sheet-price { flex-direction: row; align-items: center; margin-top: 12px; }
+.store .st__sheet-price .coin { width: 30px; height: 30px; }
+.store .st__sheet-amount { font-size: 30px; color: var(--reward); margin-left: 10px; }
+.store .st__sheet-buttons { flex-direction: row; align-self: stretch; margin-top: 22px; }
+.store .st__sheet-buttons .btn { flex-grow: 1; flex-basis: 0; margin: 0 5px; }
