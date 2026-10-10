@@ -163,6 +163,10 @@ namespace TableFootball.UI
 
         /// <summary>Seconds an error toast stays up.</summary>
         public const float TToast = 3.5f;
+
+        /// <summary>Seconds the "be right back" card is held before an interstitial plays, so the ad
+        /// never arrives out of nowhere.</summary>
+        public const float TBeRightBack = 1.6f;
         public const float Stagger = 0.04f;
 
         // The light sweep across the screen's one gold "start here" control (UIShine): a quick pass,

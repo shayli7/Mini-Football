@@ -55,6 +55,29 @@ namespace TableFootball.Net
         public static int GamesSinceInterstitial => PlayerPrefs.GetInt(GamesKey, 0);
 
         /// <summary>
+        /// Whether <see cref="ShowInterstitialIfDue"/> is about to actually play an ad: enough matches
+        /// have finished AND an ad is loaded. Ask this before putting up the "be right back" card, so
+        /// the card never announces an ad that then does not come. Off Android (the placeholder) it
+        /// reports the count alone, so the card can be previewed in the Editor.
+        /// </summary>
+        public static bool InterstitialWillPlay
+        {
+            get
+            {
+                if (GamesSinceInterstitial < GamesPerInterstitial)
+                {
+                    return false;
+                }
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+                return interstitial != null && interstitial.CanShowAd();
+#else
+                return true;
+#endif
+            }
+        }
+
+        /// <summary>
         /// Counts one finished match toward the next interstitial. Call it once per match that ran to a
         /// result; a match walked out of never gets here.
         /// </summary>

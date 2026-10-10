@@ -926,8 +926,30 @@ namespace TableFootball.UI
             Freeze();
 
             // Behind the loading curtain, so an interstitial lands between the match and the menu and
-            // never during play. It is a no-op until enough matches have finished.
-            loading.Show(transitionLoadSeconds, () => AdService.ShowInterstitialIfDue(OpenMenu));
+            // never during play. The curtain is held for the ad (RunAdBreak) and does nothing at all
+            // until enough matches have finished.
+            loading.Show(transitionLoadSeconds, OpenMenu, RunAdBreak);
+        }
+
+        /// <summary>
+        /// The ad break on the way back to the menu. When an interstitial is actually about to play,
+        /// the curtain says "be right back" for a moment first so the ad never arrives out of nowhere;
+        /// otherwise it lets the curtain clear at once. <paramref name="next"/> is always called —
+        /// the ad closing, failing or never being there all end the same way.
+        /// </summary>
+        private void RunAdBreak(System.Action next)
+        {
+            if (!AdService.InterstitialWillPlay)
+            {
+                next();
+                return;
+            }
+
+            loading.BeRightBack(() => AdService.ShowInterstitialIfDue(() =>
+            {
+                loading.ClearBeRightBack();
+                next();
+            }));
         }
 
         /// <summary>
