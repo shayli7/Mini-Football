@@ -20,9 +20,11 @@ namespace TableFootball.Net
     /// Nothing here ever blocks or throws: an ad that is not ready, fails or is declined reports that
     /// and the game carries on. A phone with no signal must play exactly like one with a connection.
     ///
-    /// TEST IDS. The three ids below are Google's published test ids; they always fill and never pay.
-    /// Swap them for the real ones from AdMob before release — and never tap a live ad on your own
-    /// device, which can get the account banned.
+    /// TEST vs LIVE. Development builds (and the Editor) request Google's published test units, which
+    /// always fill and never pay; release builds request the live units below. Never tap a live ad on
+    /// your own device, which can get the account banned. The App ID is separate: it lives in
+    /// Google Mobile Ads Settings and is baked into the manifest at build time, so it is the real one
+    /// for a release build and cannot be switched here.
     ///
     /// AUDIENCE. Nothing here marks the app child-directed. If the Play Console target audience
     /// includes under-13s, set <c>RequestConfiguration.TagForChildDirectedTreatment</c> (and
@@ -35,9 +37,19 @@ namespace TableFootball.Net
 
         private const string GamesKey = "TableFootball.Ads.GamesSinceInterstitial";
 
-        // Google's test ids. Replace before release.
-        private const string RewardedUnitId = "ca-app-pub-9480491937603942/8050679080";
-        private const string InterstitialUnitId = "ca-app-pub-9480491937603942/5827840421";
+        // The real ad units, served only by release builds.
+        private const string LiveRewardedUnitId = "ca-app-pub-9480491937603942/8050679080";
+        private const string LiveInterstitialUnitId = "ca-app-pub-9480491937603942/5827840421";
+
+        // Google's published test units: always fill, never pay, and are safe to tap.
+        private const string TestRewardedUnitId = "ca-app-pub-3940256099942544/5224354917";
+        private const string TestInterstitialUnitId = "ca-app-pub-3940256099942544/1033173712";
+
+        // A development build shows TEST ads, a release build shows live ones. Debug.isDebugBuild is
+        // true for the Editor and for any build made with "Development Build" ticked, so a device
+        // build that has not been through the store can never request, or accidentally tap, a live ad.
+        private static string RewardedUnitId => Debug.isDebugBuild ? TestRewardedUnitId : LiveRewardedUnitId;
+        private static string InterstitialUnitId => Debug.isDebugBuild ? TestInterstitialUnitId : LiveInterstitialUnitId;
 
         /// <summary>Matches finished since the last interstitial, kept across app restarts.</summary>
         public static int GamesSinceInterstitial => PlayerPrefs.GetInt(GamesKey, 0);
