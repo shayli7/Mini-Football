@@ -14,6 +14,7 @@ Run: blender --background --factory-startup --python make_thumbnails.py -- <fbx>
 import bpy
 import sys
 import math
+import os
 from mathutils import Vector, Matrix
 
 argv = sys.argv[sys.argv.index("--") + 1:]
@@ -24,13 +25,13 @@ BALLS = [
     ("ball.classic", None), ("ball.retro_orange", "RetroOrange"),
     ("ball.solid_red", "SolidRed"), ("ball.solid_blue", "SolidBlue"),
     ("ball.soccer", "Soccer"), ("ball.basketball", "Basketball"), ("ball.camo", "Camo"),
-    ("ball.disco", "Disco"), ("ball.ice", "Ice"), ("ball.golden", "Golden"),
+    ("ball.disco", "Disco"), ("ball.ice", "Ice"), ("ball.golden", "SolarCrown"),
 ]
-BALL_PACKED = {"Disco", "Ice", "Golden"}
+BALL_PACKED = {"Disco", "Ice", "SolarCrown"}
 BALL_FINISH = {
     "RetroOrange": (0.0, 0.42), "SolidRed": (0.0, 0.38), "SolidBlue": (0.0, 0.38),
     "Soccer": (0.0, 0.34), "Basketball": (0.0, 0.62), "Camo": (0.0, 0.55),
-    "Disco": (1.0, 0.15), "Ice": (0.0, 0.26), "Golden": (1.0, 0.12),
+    "Disco": (1.0, 0.15), "Ice": (0.0, 0.26), "SolarCrown": (0.9, 0.6),
 }
 
 FIELDS = [
@@ -49,6 +50,8 @@ FIGURES = [
     ("figure.gladiators", "Gladiators_Body",   "Gladiators",   "Gladiators_Head"),
     ("figure.robots",     "Robots_Body",       "Robots",       "Robots_Head"),
     ("figure.trojan",     "Trojan_Body",       "Trojan",       "Trojan_Head"),
+    ("figure.blaugrana",  "#8A5F33",           "Blaugrana",    None),
+    ("figure.royal_whites", "#8A5F33",         "RoyalWhites",  None),
 ]
 FIG_FINISH = {"Gladiators": (0.50, 0.55), "Robots": (0.85, 0.72), "Trojan": (0.50, 0.62)}
 
@@ -260,7 +263,9 @@ for cid, stem in BALLS:
         ball.data.materials[0] = BALL_ORIG
     else:
         metal, smooth = BALL_FINISH[stem]
-        m = mat_image(f"T_{stem}", f"{TEXROOT}/BallSkins/BallSkin_{stem}_Albedo.png", metal, smooth)
+        emis = f"{TEXROOT}/BallSkins/BallSkin_{stem}_Emission.png"
+        m = mat_image(f"T_{stem}", f"{TEXROOT}/BallSkins/BallSkin_{stem}_Albedo.png", metal, smooth,
+                      emis if os.path.exists(emis) else None)
         ball.data.materials[0] = m
     render(cam_ball, cid)
 

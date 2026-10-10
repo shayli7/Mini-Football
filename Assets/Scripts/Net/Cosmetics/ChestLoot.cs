@@ -134,7 +134,14 @@ namespace TableFootball.Net
 
         /// <summary>The tier's display name, for a reward chip or a reveal card.</summary>
         public static string TierName(ChestTier tier) =>
-            CosmeticCatalog.RarityName((Rarity)(int)tier) + " Chest";
+            CosmeticCatalog.RarityName((Rarity)(int)tier) + " Lucky Chest";
+
+        /// <summary>
+        /// The chance, out of 100, that a chest of <paramref name="tier"/> rolls <paramref name="rarity"/>
+        /// — the odds the store shows as dots. The rows of the weight table sum to 100.
+        /// </summary>
+        public static int Chance(ChestTier tier, Rarity rarity) =>
+            Weights[Mathf.Clamp((int)tier, 0, Weights.Length - 1)][Mathf.Clamp((int)rarity, 0, 3)];
 
         private static int RollRarity(ChestTier tier)
         {

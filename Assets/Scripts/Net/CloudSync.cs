@@ -87,6 +87,34 @@ namespace TableFootball.Net
         /// the OnChanged redraw corrects them — but boot flow can check it if it wants to.</summary>
         public static bool Loaded { get; private set; }
 
+        /// <summary>Whether the most recent <see cref="LoadAsync"/> actually applied a cloud document
+        /// (or confirmed there was none). Unlike <see cref="Loaded"/>, which latches true for the
+        /// session, this answers for the last call alone.</summary>
+        public static bool LastLoadSucceeded { get; private set; }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        private const string DevSandboxKey = "TableFootball.Dev.CollectionSandbox";
+
+        /// <summary>
+        /// DEVELOPMENT ONLY. While set, progression sync is paused entirely — no load, no flush — so a
+        /// collection unlocked or emptied for testing (<see cref="DevCollection"/>) neither leaks into
+        /// the real account nor gets merged back over. Saved, so it survives a restart of the Editor.
+        /// Writes made meanwhile still mark the stores dirty; they simply wait until it is cleared.
+        /// </summary>
+        public static bool DevSandbox
+        {
+            get => PlayerPrefs.GetInt(DevSandboxKey, 0) != 0;
+            set
+            {
+                PlayerPrefs.SetInt(DevSandboxKey, value ? 1 : 0);
+                PlayerPrefs.Save();
+            }
+        }
+#else
+        /// <summary>Always false in a release build: the dev sandbox does not exist there.</summary>
+        private static bool DevSandbox => false;
+#endif
+
         /// <summary>
         /// The whole save document, as one flat serializable shape for <see cref="JsonUtility"/>.
         ///
@@ -150,7 +178,7 @@ namespace TableFootball.Net
         /// <summary>Whether the runner should flush this frame: dirty, idle past the debounce, past
         /// any backoff from a failed flush, not already flushing, not suspended, and signed in.</summary>
         internal static bool ShouldFlush() =>
-            dirty && !flushing && !suspendFlush && GameServices.IsSignedIn
+            dirty && !flushing && !suspendFlush && !DevSandbox && GameServices.IsSignedIn
             && Time.unscaledTime - lastDirtyTime >= DebounceSeconds
             && Time.unscaledTime >= nextRetryTime;
 
@@ -168,6 +196,14 @@ namespace TableFootball.Net
         public static async Task LoadAsync()
         {
             Ensure();
+            LastLoadSucceeded = false;
+
+            // A dev sandbox is local by definition: pulling the account's collection in would union
+            // it straight back over a deliberately emptied one. See DevCollection.
+            if (DevSandbox)
+            {
+                return;
+            }
 
             if (!await GameServices.EnsureSignedInAsync())
             {
@@ -197,6 +233,7 @@ namespace TableFootball.Net
                 SaveDoc merged = remote == null ? local : Merge(local, remote);
                 ApplyLocal(merged);
                 Loaded = true;
+                LastLoadSucceeded = true;
 
                 // Push the merge back up when the cloud did not already hold exactly it — a first-ever
                 // save, or a local that had earned something offline. A no-op otherwise.
@@ -204,6 +241,46 @@ namespace TableFootball.Net
                 {
                     MarkDirty();
                 }
+            }
+            finally
+            {
+                suspendFlush = false;
+            }
+        }
+
+        // ── Erase ──────────────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Deletes this player's server-side document, for account deletion. Stops uploads first and
+        /// lets any flush already in the air land, because a flush arriving after the delete would
+        /// quietly re-create the document under the same id. Best effort: returns false instead of
+        /// throwing, since a player must still be able to delete their account when this fails (for
+        /// instance before the <c>progress</c> script is redeployed with its <c>delete</c> action).
+        /// </summary>
+        internal static async Task<bool> EraseRemoteAsync()
+        {
+            if (DevSandbox || !GameServices.IsSignedIn)
+            {
+                return false;
+            }
+
+            suspendFlush = true;
+            try
+            {
+                float deadline = Time.unscaledTime + 10f;
+                while (flushing && Time.unscaledTime < deadline)
+                {
+                    await Task.Yield();
+                }
+
+                dirty = false;
+                await CloudSaveBackend.DeleteAsync();
+                return true;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"CloudSync could not erase the server copy: {e.Message}");
+                return false;
             }
             finally
             {
@@ -228,7 +305,7 @@ namespace TableFootball.Net
         /// </summary>
         public static async Task FlushAsync()
         {
-            if (flushing || suspendFlush || !GameServices.IsSignedIn || !dirty)
+            if (flushing || suspendFlush || DevSandbox || !GameServices.IsSignedIn || !dirty)
             {
                 return;
             }

@@ -1,0 +1,155 @@
+/* Collection. See CollectionScreen.cs. Laid out against a 760-unit-high panel.
+   Every selector is under .collection so it outranks the shared frame defaults in Base.uss. */
+
+.collection .coll__header {
+    position: absolute;
+    left: 40px;
+    right: 40px;
+    top: 24px;
+    height: 58px;
+    align-items: center;
+    justify-content: center;
+}
+
+.collection .coll__back { position: absolute; left: 0; top: 0; }
+
+.collection .coll__title-box { align-items: center; }
+.collection .coll__title-row { flex-direction: row; align-items: center; }
+.collection .coll__title-row .icon { width: 26px; height: 26px; }
+.collection .coll__title { font-size: 32px; letter-spacing: 7px; margin-left: 12px; }
+.collection .coll__bar { width: 44px; height: 3px; margin-top: 6px; background-color: var(--pulse); }
+
+.collection .sq {
+    width: 55px;
+    height: 55px;
+    align-items: center;
+    justify-content: center;
+    --frame-fill: #0F1C31;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1.5;
+    --frame-cut: 10;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.collection .sq:hover { scale: 1.05 1.05; }
+.collection .sq:active { scale: 0.95 0.95; }
+.collection .sq .icon { width: 26px; height: 26px; }
+
+/* ---------- tabs ---------- */
+
+.collection .coll__tabs {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 104px;
+    flex-direction: row;
+    justify-content: center;
+}
+
+.collection .ctab {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    width: 170px;
+    height: 52px;
+    margin: 0 5px;
+    --frame-fill: #0A1322;
+    --frame-edge: #1D3557;
+    --frame-edge-width: 1.5;
+    --frame-cut: 10;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.collection .ctab:hover { scale: 1.03 1.03; }
+.collection .ctab:active { scale: 0.97 0.97; }
+.collection .ctab.is-active { --frame-fill: #0B2436; --frame-edge: #3DE3FF; }
+.collection .ctab .icon { width: 20px; height: 20px; }
+
+.collection .ctab__label {
+    font-size: 14px;
+    letter-spacing: 3px;
+    margin-left: 10px;
+    color: var(--muted);
+}
+
+.collection .ctab.is-active .ctab__label { color: var(--ink); }
+
+.collection .coll__caption {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 170px;
+    font-size: 15px;
+    color: var(--muted);
+    -unity-text-align: middle-center;
+}
+
+/* ---------- the grid ---------- */
+
+.collection .coll__scroll {
+    position: absolute;
+    left: 40px;
+    right: 40px;
+    top: 204px;
+    bottom: 0;
+}
+
+.collection .coll__grid {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 4px 0 40px 0;
+}
+
+.collection .ccard {
+    width: 232px;
+    height: 238px;
+    margin: 0 7px 14px 7px;
+    padding: 10px;
+    --frame-fill: #0B1628;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1.5;
+    --frame-cut: 12;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.collection .ccard:hover { scale: 1.02 1.02; }
+.collection .ccard:active { scale: 0.97 0.97; }
+.collection .ccard.is-equipped { --frame-fill: #0F1C31; }
+
+.collection .ccard__art {
+    height: 124px;
+}
+
+.collection .ccard__name {
+    font-size: 16px;
+    letter-spacing: 1px;
+    margin-top: 8px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.collection .ccard__rarity {
+    font-size: 11px;
+    letter-spacing: 3px;
+    margin-top: 2px;
+}
+
+.collection .ccard__foot {
+    height: 30px;
+    margin-top: auto;
+    align-items: center;
+    justify-content: center;
+}
+
+.collection .ccard__foot-label {
+    font-size: 12px;
+    letter-spacing: 3px;
+    color: var(--muted);
+}
+
+.collection .ccard__foot-label--on { color: var(--on-pulse); }

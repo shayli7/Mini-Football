@@ -17,7 +17,8 @@ namespace TableFootball.UI.Toolkit
         {
             Person, Sliders, Table, Levels, Quests, Store, Coin, Trophy, TwoPlayers, Robot, Globe,
             Play, ChevronLeft, Close, Check, Lock, Clock, Star, Flame, Bolt, Copy, AddPerson, Trash,
-            Chest, Music, Speaker
+            Chest, Music, Speaker, Gear, Key, LogOut, Mail, Doc, Shield, Info, LinkOut, Vibrate, Touch, Motion,
+            ChevronRight, Eye, WifiOff, Pencil, Crown
         }
 
         private Glyph glyph;
@@ -176,6 +177,14 @@ namespace TableFootball.UI.Toolkit
                     To(12f, 15.1f); To(7f, 17.7f); To(8f, 12.2f); To(4f, 8.3f); To(9.6f, 7.5f); p.ClosePath(); p.Fill();
                     break;
 
+                case Glyph.Crown:
+                    // Three points on a band, each tipped with a bead.
+                    Path(3.5f, 18f); To(2.5f, 7f); To(8f, 12f); To(12f, 5f); To(16f, 12f); To(21.5f, 7f); To(20.5f, 18f);
+                    p.ClosePath(); p.Stroke();
+                    Line(4f, 21f, 20f, 21f);
+                    Circle(2.5f, 6f, 1.2f); Circle(12f, 3.8f, 1.2f); Circle(21.5f, 6f, 1.2f);
+                    break;
+
                 case Glyph.Flame:
                     Path(12f, 3f); Curve(13f, 7f, 17f, 8.5f, 17f, 13f); Curve(17f, 16.3f, 14.8f, 18.5f, 12f, 18.5f);
                     Curve(9.2f, 18.5f, 7f, 16.3f, 7f, 13f); Curve(7f, 10.5f, 8.5f, 9.5f, 9f, 8f);
@@ -218,6 +227,107 @@ namespace TableFootball.UI.Toolkit
                 case Glyph.Speaker:
                     Path(4f, 9f); To(4f, 15f); To(8f, 15f); To(13f, 19f); To(13f, 5f); To(8f, 9f); p.ClosePath(); p.Stroke();
                     Path(16.5f, 8.5f); Curve(18.5f, 10.5f, 18.5f, 13.5f, 16.5f, 15.5f); p.Stroke();
+                    break;
+
+                case Glyph.Gear:
+                    // Eight teeth round a body, then the hub. Computed rather than traced, so the teeth
+                    // stay even at any size.
+                    for (int i = 0; i < 8; i++)
+                    {
+                        float a0 = (i * 45f - 11f) * Mathf.Deg2Rad, a1 = (i * 45f + 11f) * Mathf.Deg2Rad;
+                        float b0 = (i * 45f - 20f) * Mathf.Deg2Rad, b1 = (i * 45f + 20f) * Mathf.Deg2Rad;
+                        if (i == 0) Path(12f + 7.4f * Mathf.Cos(b0), 12f + 7.4f * Mathf.Sin(b0));
+                        else To(12f + 7.4f * Mathf.Cos(b0), 12f + 7.4f * Mathf.Sin(b0));
+                        To(12f + 9.8f * Mathf.Cos(a0), 12f + 9.8f * Mathf.Sin(a0));
+                        To(12f + 9.8f * Mathf.Cos(a1), 12f + 9.8f * Mathf.Sin(a1));
+                        To(12f + 7.4f * Mathf.Cos(b1), 12f + 7.4f * Mathf.Sin(b1));
+                    }
+                    p.ClosePath(); p.Stroke();
+                    Circle(12f, 12f, 3f);
+                    break;
+
+                case Glyph.Key:
+                    Circle(8f, 15f, 4f);
+                    Line(10.8f, 12.2f, 20f, 3f); Line(16f, 7f, 19f, 10f); Line(14f, 9f, 16f, 11f);
+                    break;
+
+                case Glyph.LogOut:
+                    Path(9f, 3f); To(6f, 3f); Curve(4.3f, 3f, 3f, 4.3f, 3f, 6f); To(3f, 18f);
+                    Curve(3f, 19.7f, 4.3f, 21f, 6f, 21f); To(9f, 21f); p.Stroke();
+                    Path(16f, 7f); To(21f, 12f); To(16f, 17f); p.Stroke();
+                    Line(21f, 12f, 9f, 12f);
+                    break;
+
+                case Glyph.Mail:
+                    RoundRect(3f, 5f, 18f, 14f, 2f); p.Stroke();
+                    Path(3f, 7f); To(12f, 13f); To(21f, 7f); p.Stroke();
+                    break;
+
+                case Glyph.Doc:
+                    Path(6f, 3f); To(14f, 3f); To(18f, 7f); To(18f, 21f); To(6f, 21f); p.ClosePath(); p.Stroke();
+                    Path(14f, 3f); To(14f, 7f); To(18f, 7f); p.Stroke();
+                    Line(9f, 12f, 15f, 12f); Line(9f, 16f, 15f, 16f);
+                    break;
+
+                case Glyph.Shield:
+                    Path(12f, 3f); To(20f, 6f); To(20f, 12f); Curve(20f, 17f, 16.5f, 20f, 12f, 21f);
+                    Curve(7.5f, 20f, 4f, 17f, 4f, 12f); To(4f, 6f); p.ClosePath(); p.Stroke();
+                    break;
+
+                case Glyph.Info:
+                    Circle(12f, 12f, 9f);
+                    Line(12f, 11f, 12f, 17f);
+                    Dot(12f, 7.7f, 1.1f);
+                    break;
+
+                case Glyph.LinkOut:
+                    Path(14f, 4f); To(20f, 4f); To(20f, 10f); p.Stroke();
+                    Line(20f, 4f, 11f, 13f);
+                    Path(18f, 14f); To(18f, 20f); To(4f, 20f); To(4f, 6f); To(10f, 6f); p.Stroke();
+                    break;
+
+                case Glyph.Vibrate:
+                    RoundRect(8f, 3f, 8f, 18f, 2f); p.Stroke();
+                    Line(4f, 8f, 4f, 16f); Line(20f, 8f, 20f, 16f);
+                    break;
+
+                case Glyph.Touch:
+                    // A pointer arrow: the touch target.
+                    Path(6f, 3f); To(6f, 19f); To(10f, 15.2f); To(13f, 21f); To(15.6f, 19.7f); To(12.6f, 14f);
+                    To(18f, 14f); p.ClosePath(); p.Stroke();
+                    break;
+
+                case Glyph.Motion:
+                    Line(3f, 12f, 7f, 12f); Line(5f, 7f, 10f, 7f); Line(5f, 17f, 10f, 17f);
+                    Circle(16f, 12f, 5f);
+                    break;
+
+                case Glyph.ChevronRight:
+                    Path(9f, 5f); To(16f, 12f); To(9f, 19f); p.Stroke();
+                    break;
+
+                case Glyph.Pencil:
+                    Path(4f, 20f); To(8f, 20f); To(19f, 9f); To(15f, 5f); To(4f, 16f); p.ClosePath(); p.Stroke();
+                    Line(13f, 7f, 17f, 11f);
+                    break;
+
+                case Glyph.WifiOff:
+                    // Three signal arcs over a dot, struck through.
+                    for (int i = 0; i < 3; i++)
+                    {
+                        float radius = 4.6f + i * 4.7f;
+                        p.BeginPath();
+                        p.Arc(V(12f, 19.5f), radius * s, Angle.Degrees(232f), Angle.Degrees(308f));
+                        p.Stroke();
+                    }
+                    Dot(12f, 19.5f, 1.3f);
+                    Line(3f, 3f, 21f, 21f);
+                    break;
+
+                case Glyph.Eye:
+                    Path(2f, 12f); Curve(2f, 12f, 5.5f, 5f, 12f, 5f); Curve(18.5f, 5f, 22f, 12f, 22f, 12f);
+                    Curve(22f, 12f, 18.5f, 19f, 12f, 19f); Curve(5.5f, 19f, 2f, 12f, 2f, 12f); p.Stroke();
+                    Circle(12f, 12f, 3f);
                     break;
             }
         }

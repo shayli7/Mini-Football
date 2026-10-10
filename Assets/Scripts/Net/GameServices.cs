@@ -106,6 +106,30 @@ namespace TableFootball.Net
             return inFlight;
         }
 
+        /// <summary>
+        /// A test profile named on the command line (<c>-ugsProfile name</c>), or null.
+        ///
+        /// For online testing with two Windows builds on one PC. Two copies share the device's cached
+        /// session token, so without separate profiles they sign in as the same player and can never
+        /// play each other. Testing in the Editor instead is not representative: Unity drops any Editor
+        /// window without focus to 5–10 fps by design, so one side of every match runs crippled. A
+        /// standalone build with Run In Background keeps full speed. Profiles are letters, digits,
+        /// '-' and '_', up to 30 characters.
+        /// </summary>
+        private static string CommandLineProfile()
+        {
+            string[] args = Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length - 1; i++)
+            {
+                if (string.Equals(args[i], "-ugsProfile", StringComparison.OrdinalIgnoreCase))
+                {
+                    return args[i + 1];
+                }
+            }
+
+            return null;
+        }
+
         private static async Task<bool> SignInAsync()
         {
             SetStatus(State.Working, string.Empty);
@@ -117,7 +141,15 @@ namespace TableFootball.Net
                 // coroutine. Awaited Tasks are unaffected by timeScale.
                 if (UnityServices.State != ServicesInitializationState.Initialized)
                 {
-                    await UnityServices.InitializeAsync();
+                    var options = new InitializationOptions();
+                    string profile = CommandLineProfile();
+                    if (profile != null)
+                    {
+                        options.SetProfile(profile);
+                        Debug.Log($"UGS: signing in with test profile '{profile}'.");
+                    }
+
+                    await UnityServices.InitializeAsync(options);
                 }
 
                 // The SDK caches a session token on the device, so a returning player keeps the same

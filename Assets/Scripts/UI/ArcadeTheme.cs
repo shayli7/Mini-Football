@@ -15,34 +15,56 @@ namespace TableFootball.UI
     /// </summary>
     public static class ArcadeTheme
     {
-        // ---- Palette ----
-        // Black, blue and gold at roughly 60 / 30 / 10. Black is the floor every screen stands on;
-        // blue is the panels and the ordinary buttons; gold is kept for the one thing on a screen the
-        // player should press next, so it still means something when it appears. All three are held
-        // back from full brightness — the earlier neon set read as a warning label, not a game.
-        public static readonly Color BgDeep   = Hex("#07090E"); // the black floor
-        public static readonly Color BgPanel  = Hex("#0F2036"); // panel blue
-        public static readonly Color BgRaised = Hex("#16304F"); // rows, inputs and quiet buttons inside a panel
-        public static readonly Color Line      = Hex("#1E3A5E"); // panel hairlines
-        public static readonly Color Ink       = Hex("#E9EEF5");
-        public static readonly Color InkMuted  = Hex("#93A1B5");
-        public static readonly Color Gold      = Hex("#D6A73A"); // highlight — the next thing to press
-        public static readonly Color OnGold    = Hex("#1A1304"); // dark ink for gold primary buttons
-        public static readonly Color Go        = Hex("#4CC38A"); // online status ONLY — a live presence dot
+        // ---- Palette: "Holo Arena" ----
+        // Dark navy glass with one light per meaning. Cyan (Pulse) means go / confirm / focus; gold
+        // (Reward) means "you get something" — a claim, a collect, a coin — and nothing else; red
+        // (Danger) means you lose something. Reading a button's colour tells the player what it does.
+        // The design lives on the Holo Arena canvas; docs/ui-handoff.md lists every value.
+        public static readonly Color BgDeep   = Hex("#04070D"); // the floor
+        public static readonly Color BgPanel  = Hex("#0A1322"); // panels
+        public static readonly Color Row      = Hex("#0B1628"); // list rows
+        public static readonly Color Plate    = Hex("#0F1C31"); // tiles, back-button fill
+        public static readonly Color BgRaised = Hex("#16294A"); // icon tiles, unlit cells, disabled fill
+        public static readonly Color Line      = Hex("#1D3557"); // quiet edges
+        public static readonly Color LineLit   = Hex("#24456F"); // panel edges over the Arena background
+        public static readonly Color Ink       = Hex("#EAF4FF");
+        public static readonly Color InkMuted  = Hex("#8EA4C2");
+        public static readonly Color Dim       = Hex("#56698A"); // disabled text only
 
-        // The main blue button: a step brighter than a panel so it reads as pressable against one.
-        public static readonly Color BlueFill = Hex("#1C4675");
-        public static readonly Color BlueLine = Hex("#2A5A8F");
-        // Soft blue for icons and small accents that sit on blue panels.
-        public static readonly Color BlueSoft = Hex("#7FA6D1");
+        public static readonly Color Pulse   = Hex("#3DE3FF"); // go / confirm / focus / progress
+        public static readonly Color OnPulse = Hex("#03161C"); // dark ink for cyan buttons
+        public static readonly Color Reward   = Hex("#FFC23D"); // claim, collect, free, coins
+        public static readonly Color OnReward = Hex("#1E1400"); // dark ink for gold buttons
 
-        // Team colours. Muted to sit inside the palette rather than shout over it; they still have
-        // to tell two sides apart at a glance, so they differ in lightness as well as hue.
-        public static readonly Color Red       = Hex("#C24A5A");
-        public static readonly Color Blue      = Hex("#3E78B8");
+        // Gold used to be the "press this next" highlight. It is the reward colour now; the old names
+        // stay so every existing reader keeps compiling, and read as the reward colour.
+        public static readonly Color Gold   = Reward;
+        public static readonly Color OnGold = OnReward;
 
-        // Destructive actions (Delete Player): a pale red that reads as a warning on a blue panel.
-        public static readonly Color Danger = Hex("#D98A93");
+        public static readonly Color Go = Hex("#4CE0A0"); // online status ONLY — a live presence dot
+
+        // Secondary buttons and the lines around them. BlueSoft is the icon / accent colour on a panel,
+        // which is cyan in this style.
+        public static readonly Color BlueFill = Hex("#16294A");
+        public static readonly Color BlueLine = Hex("#2C5A8E");
+        public static readonly Color BlueSoft = Pulse;
+
+        // Team colours. They have to tell two sides apart at a glance, so they differ in lightness as
+        // well as hue.
+        public static readonly Color Red       = Hex("#FF4F6D");
+        public static readonly Color Blue      = Hex("#3D8BFF");
+
+        // Destructive actions: outlined in red, never filled.
+        public static readonly Color Danger = Hex("#FF5C72");
+        public static readonly Color DangerFill = Hex("#1A0B11"); // the near-black red inside the outline
+
+        // The screen-rim light: a cool white that lifts the black floor at the edges.
+        public static readonly Color EdgeLight = Hex("#D6E8FF");
+        public const float EdgeLightAlpha = 0.12f;
+
+        // The Arena's two stadium light cones: cyan from the top left, violet from the top right.
+        public static readonly Color ArenaViolet = Hex("#7A6EFF");
+        public const float ArenaConeAlpha = 0.20f;
 
         // The title screen's sky: deep navy at the top lightening to a clear blue at the bottom.
         public static readonly Color SplashTop    = Hex("#02060F");
@@ -59,17 +81,17 @@ namespace TableFootball.UI
         // One accent per league, so a badge or a pod row reads its rank at a glance. Gold reuses the
         // existing brand gold; the other three are tier metals. Kept here, not in Net/, because a
         // colour is a UI fact — the ladder logic never needs to know what Bronze looks like.
-        public static readonly Color Bronze  = Hex("#C77B3B");
-        public static readonly Color Silver  = Hex("#B9C4D0");
-        public static readonly Color Diamond = Hex("#5EE6E0");
+        // The league enum keeps its old names (Bronze…Diamond); the player-facing names are Academy,
+        // Challenger, Premier and Legend League.
+        public static readonly Color Bronze  = Hex("#D08A55");
+        public static readonly Color Silver  = Hex("#C4CFDC");
+        public static readonly Color Diamond = Hex("#7FE3FF");
 
         // ---- Currency ----
-        // The coin is its own yellow, brighter and greener than the brand Gold. They sit two
-        // centimetres apart in the main menu header — the ranked pill in Gold, the coin pill beside it
-        // — and at the same hue one would read as a dimmer version of the other rather than as a
-        // different thing. CoinDark is the coin's rim and the ink punched into its face.
-        public static readonly Color Coin     = Hex("#FFD24A");
-        public static readonly Color CoinDark = Hex("#A96E12");
+        // The coin is the reward gold — gold now means rewards and coins only, so the two no longer
+        // need telling apart. CoinDark is the coin's rim and the ink punched into its face.
+        public static readonly Color Coin     = Hex("#FFC23D");
+        public static readonly Color CoinDark = Hex("#C98A12");
 
         // ---- Cosmetic rarity ----
         // Four steps, deliberately not four arbitrary colours: Common is a neutral so it reads as "no
@@ -80,10 +102,10 @@ namespace TableFootball.UI
         // brightening it would give it a rarity it is not supposed to have. Rare/Epic/Legendary are
         // each pushed a notch more saturated so a wall of cards sorts itself by colour at a glance
         // instead of the three upper tiers reading as similarly muted.
-        public static readonly Color RarityCommon    = Hex("#8FA0B4");
-        public static readonly Color RarityRare      = Hex("#2E9CFF");
-        public static readonly Color RarityEpic      = Hex("#BD4DFF");
-        public static readonly Color RarityLegendary = Hex("#FF7A1A");
+        public static readonly Color RarityCommon    = Hex("#9AAABF");
+        public static readonly Color RarityRare      = Hex("#3DA5FF");
+        public static readonly Color RarityEpic      = Hex("#B15CFF");
+        public static readonly Color RarityLegendary = Hex("#FF8A2B");
 
         // ---- Brand ----
         // The game's name lives here and nowhere else. It used to be spelled three different ways
@@ -125,6 +147,11 @@ namespace TableFootball.UI
         // ---- Radii ----
         public const int RadSm = 8, RadMd = 14, RadLg = 20;
 
+        // ---- Corner cuts ----
+        // Panels and buttons have their top-left and bottom-right corners cut on the diagonal instead
+        // of rounded. Sizes are the length of the cut along each edge, in reference pixels.
+        public const int CutSm = 8, Cut = 12, CutLg = 16;
+
         // ---- Type scale (px at the 1080p reference the CanvasScaler uses) ----
         // Weighted, not uniform: the reference resolution already enlarges everything by 20%, and the
         // sizes that actually fail on a phone are the small ones. Captions and labels get a further
@@ -133,6 +160,13 @@ namespace TableFootball.UI
 
         // ---- Motion durations (seconds) ----
         public const float TFast = 0.12f, TNormal = 0.20f, TSlow = 0.32f, TFlash = 0.70f;
+
+        /// <summary>Seconds an error toast stays up.</summary>
+        public const float TToast = 3.5f;
+
+        /// <summary>Seconds the "be right back" card is held before an interstitial plays, so the ad
+        /// never arrives out of nowhere.</summary>
+        public const float TBeRightBack = 1.6f;
         public const float Stagger = 0.04f;
 
         // The light sweep across the screen's one gold "start here" control (UIShine): a quick pass,
@@ -197,47 +231,147 @@ namespace TableFootball.UI
         public static Sprite Glow(int radius, float feather) => Bake($"glow{radius}_{feather}", radius, feather, true);
 
         /// <summary>
-        /// The menu backdrop: a radial wash from <see cref="BgRaised"/> at the centre out to
-        /// <see cref="BgDeep"/>, with a vignette pulling the corners down further.
+        /// A filled rectangle with its top-left and bottom-right corners cut on the diagonal, 9-sliced.
+        /// Tint via Image.color. The uGUI counterpart of <c>UiFrame</c>.
         ///
-        /// Stretched across the whole screen, so it is baked small and deliberately not 9-sliced —
-        /// a border would pin the gradient's edges and flatten it. The ±1/255 dither is the point of
-        /// the whole thing: a smooth dark gradient banks into visible bands on mobile panels, and
-        /// scattering the rounding error breaks the bands up before the eye can find them.
+        /// <paramref name="cut"/> is how far along each edge the cut runs. A border layer and the fill
+        /// inside it want slightly different cuts (the fill's is a pixel smaller) so the edge keeps an
+        /// even thickness along the diagonal.
         /// </summary>
-        public static Sprite RadialBackdrop()
+        public static Sprite Chamfer(int cut)
         {
-            const string key = "backdrop";
+            cut = Mathf.Max(1, cut);
+            string key = $"chamfer{cut}";
             if (Cache.TryGetValue(key, out var cached) && cached != null) return cached;
 
-            const int size = 256;
+            // Wide enough that both cut corners sit wholly inside the fixed corner regions of the slice.
+            int border = cut + 2;
+            int size = border * 2 + 2;
+
             var tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
             {
                 filterMode = FilterMode.Bilinear,
                 wrapMode = TextureWrapMode.Clamp
             };
 
+            const float invSqrt2 = 0.70710678f;
             var px = new Color32[size * size];
-            float half = size / 2f;
-
             for (int y = 0; y < size; y++)
             {
                 for (int x = 0; x < size; x++)
                 {
-                    float dx = ((x + 0.5f) - half) / half;
-                    float dy = ((y + 0.5f) - half) / half;
-                    float r = Mathf.Clamp01(Mathf.Sqrt(dx * dx + dy * dy) / 1.41421356f);
+                    float fx = x + 0.5f;
+                    float fyTop = size - (y + 0.5f); // texture y runs upward; the cut is measured from the top
+                    float fyBottom = y + 0.5f;
 
-                    // Eased so the lit centre stays broad and the falloff happens out near the edges,
-                    // instead of a bright spot in the middle of an otherwise flat screen.
-                    float t = r * r * (3f - 2f * r);
-                    Color c = Color.Lerp(BgRaised, BgDeep, t);
+                    // Signed distance to each diagonal, positive on the kept side.
+                    float dTopLeft = (fx + fyTop - cut) * invSqrt2;
+                    float dBottomRight = ((size - fx) + fyBottom - cut) * invSqrt2;
 
-                    // Vignette on top of the wash, strongest in the corners.
-                    c *= Mathf.Lerp(1f, 0.72f, t * t);
+                    float a = Mathf.Min(Mathf.Clamp01(dTopLeft + 0.5f), Mathf.Clamp01(dBottomRight + 0.5f));
+                    px[y * size + x] = new Color32(255, 255, 255, (byte)Mathf.RoundToInt(a * 255f));
+                }
+            }
+
+            tex.SetPixels32(px);
+            tex.Apply(false, false);
+
+            var sprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0,
+                                       SpriteMeshType.FullRect, new Vector4(border, border, border, border));
+            sprite.name = "ArcadeTheme_" + key;
+            Cache[key] = sprite;
+            return sprite;
+        }
+
+        /// <summary>Where the Arena's horizon sits, as a fraction of the screen height from the top.</summary>
+        public const float ArenaHorizon = 0.62f;
+
+        /// <summary>
+        /// The Arena background every front-end screen stands on: a dark sky, a glowing horizon line, a
+        /// grid floor running away from the viewer, and a cool-white light around the screen rim.
+        ///
+        /// Baked once and stretched to fill, like the other backdrops — no imported art. The moving
+        /// light cones are separate (<see cref="ArenaCone"/>) so they can drift over it. The rim light
+        /// is measured against a 1600x760 reference screen, so it is the same width on any device, and
+        /// the sprite has to be laid out to the true screen edge for it to show (see
+        /// <c>UIFullScreenFit</c> and <c>UiBackdrop</c>).
+        ///
+        /// The ±1/255 dither is here for the same reason as the other gradients: a dark, smooth
+        /// gradient bands visibly on a mobile panel.
+        /// </summary>
+        public static Sprite ArenaBase()
+        {
+            const string key = "arena";
+            if (Cache.TryGetValue(key, out var cached) && cached != null) return cached;
+
+            const int w = 896, h = 400;
+            const float refW = 1600f, refH = 760f;
+
+            // Grid floor, in a made-up world: depth z = k / (distance below the horizon), lines every
+            // cz in depth and cx across. Picked so the nearest lines are about a tenth of the screen apart.
+            const float k = 0.06f, cz = 0.0415f, cx = 0.0126f;
+
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            Color skyTop = Hex("#0B1A36"), skyMid = Hex("#070E1F"), floorEnd = Hex("#03050B");
+            Color cyan = Pulse;
+            Color rim = EdgeLight;
+
+            var px = new Color32[w * h];
+            for (int y = 0; y < h; y++)
+            {
+                float v = (h - 1 - y + 0.5f) / h; // 0 at the top of the screen, 1 at the bottom
+                Color sky = v < 0.52f ? Color.Lerp(skyTop, skyMid, v / 0.52f)
+                                      : Color.Lerp(skyMid, floorEnd, (v - 0.52f) / 0.48f);
+
+                for (int x = 0; x < w; x++)
+                {
+                    float u = (x + 0.5f) / w;
+                    Color c = sky;
+
+                    float below = v - ArenaHorizon;
+                    if (below > 0.0005f)
+                    {
+                        float z = k / below;
+
+                        // Lines across the floor: distance from the nearest one, on screen.
+                        float nz = z / cz;
+                        float fz = Mathf.Abs(nz - Mathf.Round(nz));
+                        float distH = fz * cz * below * below / k * refH;
+                        float lineH = Mathf.Clamp01(1f - (distH - 1f) / 1.5f);
+
+                        // Lines running away from the viewer.
+                        float nx = (u - 0.5f) * z / cx;
+                        float fx = Mathf.Abs(nx - Mathf.Round(nx));
+                        float distV = fx * cx / z * refW;
+                        float lineV = Mathf.Clamp01(1f - (distV - 1f) / 1.5f);
+
+                        // Faded out toward the horizon, where the lines pack too tight to read.
+                        float fade = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(below / 0.10f));
+                        c = Color.Lerp(c, cyan, Mathf.Max(lineH, lineV) * 0.34f * fade);
+                    }
+
+                    // The horizon: a thin bright line with a wide soft glow, brightest in the middle.
+                    float dvPx = (v - ArenaHorizon) * refH;
+                    float line = 0.85f * Mathf.Exp(-(dvPx * dvPx) / (1.5f * 1.5f));
+                    float glow = 0.22f * Mathf.Exp(-(dvPx * dvPx) / (28f * 28f));
+                    float profile = Mathf.Clamp01(1f - Mathf.Abs(2f * u - 1f));
+                    c = Color.Lerp(c, cyan, Mathf.Clamp01((line + glow) * profile));
+
+                    // The bottom quarter sinks into the darkest colour, so anything sitting there reads.
+                    if (v > 0.74f) c = Color.Lerp(c, floorEnd, (v - 0.74f) / 0.26f);
+
+                    // Rim light: measured from the nearest screen edge, in reference pixels.
+                    float edge = Mathf.Min(Mathf.Min(u * refW, (1f - u) * refW), Mathf.Min(v * refH, (1f - v) * refH));
+                    float rimA = EdgeLightAlpha * Mathf.Exp(-(edge * edge) / (110f * 110f)) + (edge < 1.5f ? 0.07f : 0f);
+                    c = Color.Lerp(c, rim, Mathf.Clamp01(rimA));
 
                     float d = (Hash(x, y) - 0.5f) * (2f / 255f);
-                    px[y * size + x] = new Color32(
+                    px[y * w + x] = new Color32(
                         (byte)Mathf.Clamp(Mathf.RoundToInt((c.r + d) * 255f), 0, 255),
                         (byte)Mathf.Clamp(Mathf.RoundToInt((c.g + d) * 255f), 0, 255),
                         (byte)Mathf.Clamp(Mathf.RoundToInt((c.b + d) * 255f), 0, 255),
@@ -248,7 +382,53 @@ namespace TableFootball.UI
             tex.SetPixels32(px);
             tex.Apply(false, false);
 
-            var sprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0,
+            var sprite = Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 100f, 0,
+                                       SpriteMeshType.FullRect);
+            sprite.name = "ArcadeTheme_" + key;
+            Cache[key] = sprite;
+            return sprite;
+        }
+
+        /// <summary>
+        /// One stadium light cone for the Arena: white, fading from solid at one corner to nothing 46%
+        /// of the way across, on a diagonal. Tint it with Image.color (cyan on the left, violet on the
+        /// right, mirrored) and drift it over <see cref="ArenaBase"/>.
+        /// </summary>
+        public static Sprite ArenaCone()
+        {
+            const string key = "arenacone";
+            if (Cache.TryGetValue(key, out var cached) && cached != null) return cached;
+
+            const int w = 128, h = 122;
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            // The cone covers 60% x 120% of a 1600x760 screen, so the gradient is laid out in that box.
+            const float boxW = 960f, boxH = 912f;
+            float angle = 118f * Mathf.Deg2Rad;
+            float dx = Mathf.Sin(angle), dy = -Mathf.Cos(angle);
+            float length = boxW * Mathf.Abs(dx) + boxH * Mathf.Abs(dy);
+
+            var px = new Color32[w * h];
+            for (int y = 0; y < h; y++)
+            {
+                float v = (h - 1 - y + 0.5f) / h;
+                for (int x = 0; x < w; x++)
+                {
+                    float u = (x + 0.5f) / w;
+                    float t = ((u - 0.5f) * boxW * dx + (v - 0.5f) * boxH * dy) / length + 0.5f;
+                    float a = Mathf.Clamp01(1f - t / 0.46f);
+                    px[y * w + x] = new Color32(255, 255, 255, (byte)Mathf.RoundToInt(a * 255f));
+                }
+            }
+
+            tex.SetPixels32(px);
+            tex.Apply(false, false);
+
+            var sprite = Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 100f, 0,
                                        SpriteMeshType.FullRect);
             sprite.name = "ArcadeTheme_" + key;
             Cache[key] = sprite;

@@ -46,6 +46,19 @@ namespace TableFootball.UI
             return img;
         }
 
+        /// <summary>A filled rectangle with the top-left and bottom-right corners cut on the diagonal —
+        /// the shape of every panel and button. See <see cref="ArcadeTheme.Chamfer"/>.</summary>
+        public static Image ChamferImage(GameObject go, int cut, Color color, bool raycast)
+        {
+            var img = go.AddComponent<Image>();
+            img.sprite = ArcadeTheme.Chamfer(cut);
+            img.type = Image.Type.Sliced;
+            img.pixelsPerUnitMultiplier = 1f;
+            img.color = color;
+            img.raycastTarget = raycast;
+            return img;
+        }
+
         public static Image GlowImage(GameObject go, int radius, float feather, Color color)
         {
             var img = go.AddComponent<Image>();
@@ -95,23 +108,48 @@ namespace TableFootball.UI
         // ---------- backdrop ----------
 
         /// <summary>
-        /// The full-screen menu backdrop. Replaces the flat <see cref="ArcadeTheme.BgDeep"/> fill that
-        /// made every menu read as an empty black rectangle.
+        /// The full-screen menu backdrop: the Arena — a dark sky, a glowing horizon, a grid floor and
+        /// two drifting stadium light cones, with a cool-white light around the screen rim.
         ///
         /// Raycast-blocking, since it is the floor of a menu and nothing behind it should be
-        /// clickable.
+        /// clickable. Fitted to the true screen edge (not the safe area) so the rim light shows; see
+        /// <see cref="UIFullScreenFit"/>. Opaque: the live table no longer shows behind these screens.
         /// </summary>
         public static Image Backdrop(Transform parent, string name = "Backdrop")
         {
             var go = Child(parent, name);
             var img = go.AddComponent<Image>();
-            img.sprite = ArcadeTheme.RadialBackdrop();
+            img.sprite = ArcadeTheme.ArenaBase();
             img.type = Image.Type.Simple;
             img.color = Color.white;
             img.raycastTarget = true;
-            Stretch(Rt(go), -ArcadeTheme.Bleed);
-            go.AddComponent<UIAmbientDrift>();
+            Stretch(Rt(go), 0);
+            go.AddComponent<UIFullScreenFit>();
+
+            // The two light cones, over the floor. Left is cyan; right is the same sprite mirrored, in
+            // violet. Each drifts on its own period so the light is never quite still.
+            ArenaCone(go.transform, ArcadeTheme.Pulse, false, -0.05f, 0.55f, 27f);
+            ArenaCone(go.transform, ArcadeTheme.ArenaViolet, true, 0.45f, 1.05f, 33f);
             return img;
+        }
+
+        private static void ArenaCone(Transform parent, Color color, bool mirrored, float left, float right,
+                                      float period)
+        {
+            var go = Child(parent, mirrored ? "ConeRight" : "ConeLeft");
+            var img = go.AddComponent<Image>();
+            img.sprite = ArcadeTheme.ArenaCone();
+            img.type = Image.Type.Simple;
+            img.color = color.WithAlpha(ArcadeTheme.ArenaConeAlpha);
+            img.raycastTarget = false;
+
+            var rt = Rt(go);
+            rt.anchorMin = new Vector2(left, -0.10f);
+            rt.anchorMax = new Vector2(right, 1.10f);
+            rt.offsetMin = rt.offsetMax = Vector2.zero;
+            if (mirrored) rt.localScale = new Vector3(-1f, 1f, 1f);
+
+            go.AddComponent<UIAmbientDrift>().Configure(22f, period);
         }
 
         /// <summary>
@@ -119,11 +157,9 @@ namespace TableFootball.UI
         /// sheet, full-bleed and raycast-blocking. The lit table (or the frozen match) shows through it
         /// darkened, and nothing behind is clickable.
         ///
-        /// One definition, used by the pause/settings overlay AND the account, friends and online
-        /// screens, so they all wear the exact same background rather than each inventing its own — the
-        /// single design language the front end reads in. It replaced the opaque <see cref="Backdrop"/>
-        /// on those screens, which sealed the table off and made each one look like a different app
-        /// from the menu it was opened from.
+        /// Used for the pause overlay, which sits over a frozen match, and for the small confirmation
+        /// panels that open over a screen. Front-end screens wear the Arena (<see cref="Backdrop"/>)
+        /// instead.
         /// </summary>
         public static Image ScrimDim(Transform parent, float alpha = 0.72f)
         {
@@ -314,7 +350,8 @@ namespace TableFootball.UI
 
         // ---------- panel ----------
 
-        /// <summary>A charcoal panel with a 1.5px neon-neutral border and a soft drop shadow.</summary>
+        /// <summary>A dark glass panel with its top-left and bottom-right corners cut, a 1.5px edge, a
+        /// short cyan tab on the top edge and a soft drop shadow.</summary>
         public static GameObject Panel(Transform parent, string name = "Panel")
         {
             var root = Child(parent, name);
@@ -329,13 +366,26 @@ namespace TableFootball.UI
 
             // border
             var border = Child(root.transform, "Border");
-            RoundedImage(border, ArcadeTheme.RadLg, ArcadeTheme.Line, false);
+            ChamferImage(border, ArcadeTheme.CutLg, ArcadeTheme.LineLit, false);
             Stretch(Rt(border), 0);
 
-            // fill (inset 1.5px shows the border)
+            // fill (inset 1.5px shows the border; its cut is a pixel shorter so the edge stays even
+            // along the diagonals)
             var fill = Child(root.transform, "Fill");
-            RoundedImage(fill, ArcadeTheme.RadLg, ArcadeTheme.BgPanel, true);
+            ChamferImage(fill, ArcadeTheme.CutLg - 1, ArcadeTheme.BgPanel, true);
             Stretch(Rt(fill), 1.5f);
+
+            // The accent tab: a short cyan bar on the top edge. Above the fill, so it is not hidden by
+            // it, and never a raycast target.
+            var tab = Child(root.transform, "Tab");
+            var tabImg = tab.AddComponent<Image>();
+            tabImg.color = ArcadeTheme.Pulse;
+            tabImg.raycastTarget = false;
+            var trt = Rt(tab);
+            trt.anchorMin = trt.anchorMax = new Vector2(0f, 1f);
+            trt.pivot = new Vector2(0f, 1f);
+            trt.sizeDelta = new Vector2(64f, 2f);
+            trt.anchoredPosition = new Vector2(30f, -1f);
 
             return root;
         }
@@ -352,17 +402,17 @@ namespace TableFootball.UI
 
             // glow (back)
             var glowGo = Child(root.transform, "Glow");
-            var glow = GlowImage(glowGo, ArcadeTheme.RadMd, 26f, ArcadeTheme.Gold.WithAlpha(0f));
+            var glow = GlowImage(glowGo, ArcadeTheme.RadMd, 26f, ArcadeTheme.Pulse.WithAlpha(0f));
             Stretch(Rt(glowGo), -16, -16, -16, -16);
 
             // border
             var borderGo = Child(root.transform, "Border");
-            var border = RoundedImage(borderGo, ArcadeTheme.RadMd, ArcadeTheme.Line, false);
+            var border = ChamferImage(borderGo, ArcadeTheme.Cut, ArcadeTheme.Line, false);
             Stretch(Rt(borderGo), 0);
 
             // fill (raycast target)
             var fillGo = Child(root.transform, "Fill");
-            var fill = RoundedImage(fillGo, ArcadeTheme.RadMd, ArcadeTheme.BgRaised, true);
+            var fill = ChamferImage(fillGo, ArcadeTheme.Cut - 1, ArcadeTheme.BgRaised, true);
             Stretch(Rt(fillGo), 1.5f);
 
             // label
@@ -581,7 +631,7 @@ namespace TableFootball.UI
         // ---------- round icon buttons ----------
 
         /// <summary>Which glyph a round icon button draws.</summary>
-        public enum Icon { Door, Person, Sliders, Eye, Dice, Trophy, Store, Path, Quest, Table, Close }
+        public enum Icon { Door, Person, Sliders, Eye, Dice, Trophy, Store, Path, Quest, Table, Close, Gear, Bolt }
 
         private static Image CircleImage(GameObject go, Color color, bool raycast)
         {
@@ -766,6 +816,17 @@ namespace TableFootball.UI
                     Dot(g, ArcadeTheme.Ink, Vector2.zero, 9f);
                     break;
 
+                case Icon.Gear:
+                    // A gear: a round body with four bars crossing it for the teeth, and the hub
+                    // punched out in the button's own fill colour.
+                    Dot(g, ArcadeTheme.Pulse, Vector2.zero, 22f);
+                    Rod(g, ArcadeTheme.Pulse, Vector2.zero, 32f, 7f, 0f);
+                    Rod(g, ArcadeTheme.Pulse, Vector2.zero, 32f, 7f, 90f);
+                    Rod(g, ArcadeTheme.Pulse, Vector2.zero, 32f, 7f, 45f);
+                    Rod(g, ArcadeTheme.Pulse, Vector2.zero, 32f, 7f, -45f);
+                    Dot(g, ArcadeTheme.BgRaised, Vector2.zero, 11f);
+                    break;
+
                 case Icon.Close:
                     // A plain cross — close this pop-up.
                     Rod(g, ArcadeTheme.Ink, Vector2.zero, 24f, 3.5f, 45f);
@@ -805,6 +866,17 @@ namespace TableFootball.UI
                     Dot(die.transform, ArcadeTheme.BgRaised, new Vector2(0f, 0f), 6f);
                     Dot(die.transform, ArcadeTheme.BgRaised, new Vector2(-7f, -7f), 6f);
                     Dot(die.transform, ArcadeTheme.BgRaised, new Vector2(7f, -7f), 6f);
+                    break;
+
+                case Icon.Bolt:
+                    // A lightning bolt in gold: "a match, right now". Three strokes — down-left, across,
+                    // down-left again — with a dot at each bend so the joints read as one zigzag rather
+                    // than three bars laid end to end.
+                    Rod(g, ArcadeTheme.Gold, new Vector2(-0.5f, 7f), 19.5f, 5.5f, 55.5f);
+                    Rod(g, ArcadeTheme.Gold, new Vector2(-1f, -1f), 11f, 5.5f, 0f);
+                    Rod(g, ArcadeTheme.Gold, new Vector2(-0.5f, -8f), 16.5f, 5.5f, 57.3f);
+                    Dot(g, ArcadeTheme.Gold, new Vector2(-6f, -1f), 5.5f);
+                    Dot(g, ArcadeTheme.Gold, new Vector2(4f, -1f), 5.5f);
                     break;
 
                 case Icon.Store:
@@ -1480,6 +1552,11 @@ namespace TableFootball.UI
             var le = row.AddComponent<LayoutElement>();
             le.preferredHeight = height;
             le.minHeight = height;
+            // Explicitly none. A layout group that force-expands its children's height reports a flexible
+            // height of 1 for itself, and a LayoutElement only overrides the values it sets — so without
+            // this the row soaked up every spare pixel of the column and grew to twice the height of the
+            // plain fields and buttons around it.
+            le.flexibleHeight = 0f;
 
             var h = row.AddComponent<HorizontalLayoutGroup>();
             h.spacing = ArcadeTheme.Sm;
@@ -1522,26 +1599,12 @@ namespace TableFootball.UI
 
         // ---------- random username ----------
 
-        private static readonly string[] NameAdjectives =
-            { "Swift", "Turbo", "Mega", "Neon", "Iron", "Wild", "Rapid", "Cosmic", "Golden", "Silent",
-              "Fierce", "Lucky", "Rogue", "Blazing" };
-
-        private static readonly string[] NameNouns =
-            { "Striker", "Keeper", "Baller", "Rocket", "Comet", "Falcon", "Tiger", "Viper", "Maverick",
-              "Blitz", "Champ", "Bolt" };
-
         /// <summary>
-        /// A readable random username within the service's rules (3-20 of letters, digits and a few
-        /// symbols — this uses only letters and digits, which are always allowed). Trimmed to 20 as a
-        /// belt-and-braces cap; the word pairs above never reach it.
+        /// A readable random username: two short words and two digits, at most 12 characters — letters
+        /// and digits only, which the service always allows. The same generator as the guest default
+        /// name (<see cref="PlayerAccount.RandomName"/>), since a username becomes the display name.
         /// </summary>
-        public static string RandomUsername()
-        {
-            string a = NameAdjectives[UnityEngine.Random.Range(0, NameAdjectives.Length)];
-            string n = NameNouns[UnityEngine.Random.Range(0, NameNouns.Length)];
-            string candidate = a + n + UnityEngine.Random.Range(1, 100);
-            return candidate.Length > 20 ? candidate.Substring(0, 20) : candidate;
-        }
+        public static string RandomUsername() => PlayerAccount.RandomName();
 
         /// <summary>Blank vertical space inside a layout group, for separating one run of controls
         /// from the next without a divider.</summary>

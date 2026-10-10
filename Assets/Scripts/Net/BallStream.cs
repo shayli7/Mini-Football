@@ -27,7 +27,10 @@ namespace TableFootball.Net
     /// figure's reaction is exactly the guess that looks worst when it is wrong.
     ///
     /// When a new sample reveals that what was drawn a moment ago was off, the difference is not
-    /// snapped away: it becomes an error offset that decays over <see cref="errorDecay"/>. Only a
+    /// snapped away: it becomes an error offset that the ball closes at a BOUNDED extra speed (a fraction
+    /// of its own pace). An exponential decay looked smooth on paper and was not: its first frame moves a
+    /// 40 cm correction at 8 m/s on top of the ball's own 4, which reads as a lunge. Closing it at a
+    /// steady 60% extra takes a little longer and reads as the ball simply running a bit faster. Only a
     /// difference too large to smooth believably is snapped.
     ///
     /// Plain class, no networking: <see cref="NetworkedBall"/> feeds it and draws from it.
@@ -37,19 +40,21 @@ namespace TableFootball.Net
         private const int Capacity = 32;
         private const int LatenessCapacity = 200;
 
-        /// <summary>The buffer above the fastest path is kept between these, in seconds.</summary>
-        private const double MinBuffer = 0.015;
-        private const double MaxBuffer = 0.06;
-
         /// <summary>How fast the delay may grow or shrink, in seconds per second. Growing is quicker,
-        /// because a starving buffer is worse than a slightly late one.</summary>
+        /// because a starving buffer is worse than a slightly late one — but shrinking has to be quick
+        /// enough to hand back a spike's worth of delay within a couple of seconds, or the ball stays
+        /// late long after the connection has calmed.</summary>
         private const double GrowRate = 0.1;
-        private const double ShrinkRate = 0.02;
+        private const double ShrinkRate = 0.05;
 
         private const double RecalcInterval = 0.25;
 
-        /// <summary>Ceiling for the starvation nudge, so a dead stream cannot push the delay off forever.</summary>
-        private const double MaxStarvedDelay = 0.5;
+        /// <summary>The buffer above the fastest path is kept between these, in seconds, and sized to
+        /// cover this fraction of arrivals. Below 1 on purpose: the late tail is drawn by projection
+        /// instead of waited for, which trades a small correction now and then for less delay always.</summary>
+        private readonly double minBuffer;
+        private readonly double maxBuffer;
+        private readonly float coverage;
 
         private readonly BallSample[] samples = new BallSample[Capacity];
         private int start;
@@ -72,29 +77,61 @@ namespace TableFootball.Net
         private readonly float wallRetention;
         private readonly float maxExtrapolation;
         private readonly float errorSnapDistance;
-        private readonly float errorDecay;
+        private readonly float catchUpMinSpeed;
+        private readonly float catchUpFraction;
 
         private Vector3 errorOffset;
         private bool hasLast;
         private double lastRenderTime;
         private Vector3 lastRawPos;
+        private float lastMaxAhead;
+
+        /// <summary>Gap left between a projected ball and the figure it is about to meet, in metres,
+        /// when the projection is handing over to real physics.</summary>
+        private const float RodStandoff = 0.002f;
+
+        /// <summary>A correction's last stretch closes no faster than "the distance left over this long",
+        /// so it eases to a stop rather than ending at full catch-up speed.</summary>
+        private const float CatchUpTaperSeconds = 0.12f;
 
         // ── diagnostics (read and cleared by NetworkedBall's temporary log) ──
+
+        /// <summary>The fastest arrival seen recently: one-way trip plus clock offset error. Everything
+        /// the delay adds above this is buffer.</summary>
+        public double FastestLateness { get; private set; }
+
+        /// <summary>The delay the buffer is currently easing toward.</summary>
+        public double TargetDelay => targetDelay;
+
         public int Received;
         public int LateDrops;
         public int StarvedFrames;
         public int Frames;
         public double DepthSum;
 
+        /// <summary>The longest wait between two arrivals, in seconds. Samples leave every 10 ms, so
+        /// anything far above that is the link delivering in bursts.</summary>
+        public double MaxGap;
+
+        /// <summary>Frames drawn with the ball held at the projection limit — frozen, waiting for data.</summary>
+        public int ClampedFrames;
+
+        private double lastArrival = -1;
+
         public BallStream(Rigidbody ignoreBody, float radius, float wallRetention, float maxExtrapolation,
-                          float errorSnapDistance, float errorDecay)
+                          float errorSnapDistance, float catchUpMinSpeed, float catchUpFraction,
+                          float minBuffer, float maxBuffer, float coverage)
         {
+            this.minBuffer = Math.Max(0f, minBuffer);
+            this.maxBuffer = Math.Max(this.minBuffer, maxBuffer);
+            this.coverage = Mathf.Clamp(coverage, 0.5f, 0.99f);
             this.ignoreBody = ignoreBody;
             this.radius = radius;
             this.wallRetention = wallRetention;
             this.maxExtrapolation = maxExtrapolation;
             this.errorSnapDistance = errorSnapDistance;
-            this.errorDecay = errorDecay;
+            this.catchUpMinSpeed = Mathf.Max(0.05f, catchUpMinSpeed);
+            this.catchUpFraction = Mathf.Max(0f, catchUpFraction);
         }
 
         public bool HasSamples => count > 0;
@@ -116,6 +153,7 @@ namespace TableFootball.Net
             errorOffset = Vector3.zero;
             hasLast = false;
             LastVelocity = Vector3.zero;
+            lastArrival = -1;
         }
 
         /// <summary>
@@ -143,6 +181,13 @@ namespace TableFootball.Net
 
             Received++;
 
+            if (lastArrival >= 0)
+            {
+                MaxGap = Math.Max(MaxGap, arrivalShared - lastArrival);
+            }
+
+            lastArrival = arrivalShared;
+
             lateness[latenessNext] = (float)(arrivalShared - sample.Time);
             latenessNext = (latenessNext + 1) % LatenessCapacity;
             latenessCount = Math.Min(latenessCount + 1, LatenessCapacity);
@@ -167,12 +212,71 @@ namespace TableFootball.Net
             }
             else if (wasProjecting)
             {
-                EvaluateRaw(lastRenderTime, out Vector3 corrected, out _, out _, out _);
+                EvaluateRaw(lastRenderTime, lastMaxAhead, false, out Vector3 corrected, out _, out _, out _);
                 Vector3 delta = lastRawPos - corrected;
                 errorOffset = delta.magnitude <= errorSnapDistance ? errorOffset + delta : Vector3.zero;
+
+                // The next sample in the same frame is measured from this one's correction, not from
+                // the picture drawn last frame. Samples land two or three to a frame, and measuring
+                // each from the old picture added the whole correction once per sample — the drawn
+                // ball overshot, wobbled, and snapped once the stacked total passed the snap distance.
+                lastRawPos = corrected;
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Starts the stream from a state this machine produced itself — the last moment of its own
+        /// simulation, when it has just handed the ball to the other player. The ball is then drawn on
+        /// from that moment (projected forward) until the other machine's samples arrive, so the hand
+        /// over does not leave a gap. Counts toward nothing: it says nothing about network timing.
+        /// </summary>
+        public void Seed(in BallSample sample)
+        {
+            start = count = 0;
+            samples[0] = sample;
+            count = 1;
+            errorOffset = Vector3.zero;
+            hasLast = false;
+            LastVelocity = sample.Vel;
+            lastArrival = -1; // the time spent simulating here is not a gap in the other's stream
+        }
+
+        /// <summary>
+        /// Starts drawing from where the ball is SHOWN — a simulation this machine has just abandoned —
+        /// rather than jumping straight to the stream: the difference becomes the decaying correction,
+        /// so the ball glides back. Past the snap distance it snaps, as any correction does.
+        /// </summary>
+        public void BlendFrom(Vector3 shown, double t, float maxAhead)
+        {
+            if (!EvaluateRaw(t, maxAhead, false, out Vector3 raw, out _, out _, out _))
+            {
+                return;
+            }
+
+            Vector3 offset = shown - raw;
+            errorOffset = offset.magnitude <= errorSnapDistance ? offset : Vector3.zero;
+            hasLast = false;
+        }
+
+        /// <summary>
+        /// The ball's physical state at <paramref name="t"/>, for a machine about to start simulating it:
+        /// past the newest sample it is carried forward like the drawing is, except that at a rod it stops
+        /// just short of the figure and KEEPS its velocity — so the contact is then resolved by real
+        /// physics against the live figure, instead of starting the simulation from a ball that already
+        /// pretended to stop dead. No smoothing offset: physics needs the state, not the picture.
+        /// </summary>
+        public bool StateAt(double t, float maxAhead, out Vector3 pos, out Vector3 vel, out Quaternion rot)
+        {
+            return EvaluateRaw(t, maxAhead, true, out pos, out vel, out rot, out _);
+        }
+
+        /// <summary>A single sample carried forward <paramref name="seconds"/> the same way as
+        /// <see cref="StateAt"/> — for a hand over that arrives with its own state.</summary>
+        public void ProjectState(in BallSample from, float seconds, out Vector3 pos, out Vector3 vel)
+        {
+            Project(from, Mathf.Max(0f, seconds), true, out pos, out vel);
         }
 
         /// <summary>
@@ -190,13 +294,14 @@ namespace TableFootball.Net
                 Array.Copy(lateness, sortScratch, latenessCount);
                 Array.Sort(sortScratch, 0, latenessCount);
                 double fastest = sortScratch[0];
-                double p95 = sortScratch[(int)(0.95f * (latenessCount - 1))];
+                double covered = sortScratch[(int)(coverage * (latenessCount - 1))];
+                FastestLateness = fastest;
 
                 double interval = count > 1
                     ? (Newest.Time - samples[start].Time) / (count - 1)
                     : 0.01;
 
-                targetDelay = Math.Clamp(p95 + interval, fastest + MinBuffer, fastest + MaxBuffer);
+                targetDelay = Math.Clamp(covered + interval, fastest + minBuffer, fastest + maxBuffer);
 
                 if (renderDelay < 0)
                 {
@@ -220,32 +325,60 @@ namespace TableFootball.Net
         /// </summary>
         public bool Sample(double renderTime, float dt, out Vector3 pos, out Vector3 vel, out Quaternion rot)
         {
-            if (!EvaluateRaw(renderTime, out pos, out vel, out rot, out bool starved))
+            return Sample(renderTime, dt, maxExtrapolation, out pos, out vel, out rot);
+        }
+
+        /// <summary>
+        /// As above, with an explicit limit on how far past the newest sample the ball may be carried.
+        /// Drawing at the present (lane authority) needs a horizon of a whole one-way trip; drawing a
+        /// little in the past needs only enough to bridge a late packet.
+        /// </summary>
+        public bool Sample(double renderTime, float dt, float maxAhead, out Vector3 pos, out Vector3 vel,
+                           out Quaternion rot)
+        {
+            if (!EvaluateRaw(renderTime, maxAhead, false, out pos, out vel, out rot, out bool starved))
             {
                 return false;
             }
 
+            lastMaxAhead = maxAhead;
+
             Frames++;
             DepthSum += Newest.Time - renderTime;
+            // A starved frame is drawn by projection; the delay is NOT nudged up for it. It used to be,
+            // by 2 ms a frame with only a 0.5 s ceiling, and on a bursty link those nudges outran the
+            // shrink and walked the delay far past the buffer's own maximum — the ball ended up drawn
+            // two hundred milliseconds late. Sizing is the recalculation's job alone, and it is bounded.
             if (starved)
             {
                 StarvedFrames++;
+            }
 
-                // Out of samples: this delay is too short for this connection right now. Nudge it
-                // up at once rather than waiting for the next recalculation to notice.
-                if (renderDelay >= 0)
-                {
-                    renderDelay = Math.Min(renderDelay + 0.002, MaxStarvedDelay);
-                }
+            if (renderTime - Newest.Time > maxAhead)
+            {
+                ClampedFrames++;
             }
 
             lastRenderTime = renderTime;
             lastRawPos = pos;
             hasLast = true;
 
-            if (errorDecay > 0f && dt > 0f)
+            if (dt > 0f)
             {
-                errorOffset *= Mathf.Exp(-dt / errorDecay);
+                float remaining = errorOffset.magnitude;
+                if (remaining > 0f)
+                {
+                    // Bounded at the START, tapered at the END. The bound (a fraction of the ball's own
+                    // pace) stops a big correction lunging; the taper (never faster than the distance
+                    // left over CatchUpTaperSeconds) stops it ending in a hard stop. A constant speed
+                    // alone did both badly: a resting ball crept at the floor speed and then halted —
+                    // a step in apparent speed at each end, which the smoothness probe read as jerk.
+                    float cap = Mathf.Max(catchUpMinSpeed, vel.magnitude * catchUpFraction);
+                    float step = Mathf.Min(cap, remaining / CatchUpTaperSeconds) * dt;
+                    errorOffset = remaining <= step || remaining < 0.002f
+                        ? Vector3.zero
+                        : errorOffset * ((remaining - step) / remaining);
+                }
             }
 
             pos += errorOffset;
@@ -253,7 +386,30 @@ namespace TableFootball.Net
             return true;
         }
 
-        private bool EvaluateRaw(double t, out Vector3 pos, out Vector3 vel, out Quaternion rot, out bool starved)
+        /// <summary>
+        /// The goal volumes the projection must not run through — set by <see cref="NetworkedBall"/>.
+        /// Both machines draw a projected ball, and after a goal the projection kept going out of the
+        /// open back of the goal for as long as it took the reset to arrive: the ball seen behind the
+        /// goal. Null leaves the projection as it was.
+        /// </summary>
+        public GoalJudge Goals { get; set; }
+
+        /// <summary>If moving <paramref name="delta"/> from <paramref name="pos"/> meets a goal volume,
+        /// puts the ball at the point of contact and stops it there.</summary>
+        private bool MeetsGoal(ref Vector3 pos, Vector3 delta, ref Vector3 vel)
+        {
+            if (Goals == null || !Goals.FirstContact(pos, pos + delta, out Vector3 point))
+            {
+                return false;
+            }
+
+            pos = point;
+            vel = Vector3.zero;
+            return true;
+        }
+
+        private bool EvaluateRaw(double t, float maxAhead, bool keepVelocityAtRods, out Vector3 pos,
+                                 out Vector3 vel, out Quaternion rot, out bool starved)
         {
             starved = false;
             pos = vel = Vector3.zero;
@@ -278,8 +434,8 @@ namespace TableFootball.Net
             if (t >= newest.Time)
             {
                 starved = t > newest.Time + 0.002;
-                float ahead = Mathf.Min((float)(t - newest.Time), maxExtrapolation);
-                Project(newest, ahead, out pos, out vel);
+                float ahead = Mathf.Min((float)(t - newest.Time), maxAhead);
+                Project(newest, ahead, keepVelocityAtRods, out pos, out vel);
                 rot = newest.Rot;
                 return true;
             }
@@ -342,7 +498,8 @@ namespace TableFootball.Net
         /// the one thing that cannot be guessed, and drawing the ball through a foot is the guess that
         /// looks worst when it is wrong.
         /// </summary>
-        private void Project(in BallSample from, float seconds, out Vector3 pos, out Vector3 vel)
+        private void Project(in BallSample from, float seconds, bool keepVelocityAtRods, out Vector3 pos,
+                             out Vector3 vel)
         {
             pos = from.Pos;
             vel = new Vector3(from.Vel.x, 0f, from.Vel.z);
@@ -380,18 +537,41 @@ namespace TableFootball.Net
 
                 if (nearest < 0)
                 {
+                    if (MeetsGoal(ref pos, dir * distance, ref vel))
+                    {
+                        break;
+                    }
+
                     pos += dir * distance;
                     break;
                 }
 
                 RaycastHit hit = castHits[nearest];
-                pos += dir * hit.distance;
+
+                // The goal line comes first, ahead of the rod or rail the cast found: the goal backs are
+                // not solid, so nothing else would ever stop a guess aimed at the goal.
+                if (MeetsGoal(ref pos, dir * hit.distance, ref vel))
+                {
+                    break;
+                }
 
                 if (hit.collider.GetComponentInParent<RodController>() != null)
                 {
-                    vel = Vector3.zero;
+                    if (keepVelocityAtRods)
+                    {
+                        // Just short of the figure, still moving, so physics resolves the touch.
+                        pos += dir * Mathf.Max(0f, hit.distance - RodStandoff);
+                    }
+                    else
+                    {
+                        pos += dir * hit.distance;
+                        vel = Vector3.zero;
+                    }
+
                     break;
                 }
+
+                pos += dir * hit.distance;
 
                 Vector3 normal = new Vector3(hit.normal.x, 0f, hit.normal.z);
                 if (normal.sqrMagnitude < 1e-6f)

@@ -51,6 +51,12 @@ namespace TableFootball
         [Tooltip("Physics steps per second as a timestep. 0.01 = 100 Hz, which handles a fast " +
                  "small ball far better than the default 0.02. Costs little in this scene.")]
         [SerializeField] private float fixedTimestep = 0.01f;
+        [Tooltip("Longest a single frame may advance game time, in seconds. The project default is " +
+                 "0.333, which after one slow frame runs up to 33 physics steps in a row — each sends a " +
+                 "ball sample and rod updates, so a hitch becomes a burst on the network and a ball " +
+                 "that fast-forwards when the frame ends. Past this the game runs briefly slow instead. " +
+                 "0 leaves Project Settings alone.")]
+        [SerializeField] private float maximumDeltaTime = 0.1f;
 
         private void Awake()
         {
@@ -69,6 +75,12 @@ namespace TableFootball
             if (fixedTimestep > 0f)
             {
                 Time.fixedDeltaTime = fixedTimestep;
+            }
+
+            // Never below one physics step, or a frame could advance game time by less than one.
+            if (maximumDeltaTime > 0f)
+            {
+                Time.maximumDeltaTime = Mathf.Max(maximumDeltaTime, Time.fixedDeltaTime);
             }
 
             Debug.Log($"Physics tuned for tabletop scale: bounceThreshold {bounceThreshold}, " +

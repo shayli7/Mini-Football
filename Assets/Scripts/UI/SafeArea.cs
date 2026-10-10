@@ -18,6 +18,41 @@ namespace TableFootball.UI
     [DisallowMultipleComponent]
     public class SafeArea : MonoBehaviour
     {
+        /// <summary>
+        /// <see cref="Screen.safeArea"/>, pushed further in by any display cutout that sits on the left or
+        /// right edge. In landscape the camera notch is on a side, and some phones report a safe area that
+        /// leaves it out — the screen's left edge then renders under the notch. A cutout on the top or
+        /// bottom edge is left to the safe area, which covers it.
+        ///
+        /// Both UI systems (this component for the uGUI canvas, <c>UiToolkitHost</c> for UI Toolkit) read
+        /// this rather than <see cref="Screen.safeArea"/>, so they can never disagree about the edge.
+        /// </summary>
+        public static Rect Effective
+        {
+            get
+            {
+                Rect safe = Screen.safeArea;
+                float w = Screen.width;
+                float left = safe.xMin;
+                float right = w - safe.xMax;
+
+                foreach (Rect c in Screen.cutouts)
+                {
+                    if (c.width <= 0f || c.height <= 0f) continue;
+
+                    if (c.xMin <= w * 0.02f) left = Mathf.Max(left, c.xMax);
+                    else if (c.xMax >= w * 0.98f) right = Mathf.Max(right, w - c.xMin);
+                }
+
+                // The same margin on both sides, the larger of the two. A notch on one side then leaves the
+                // layout centred rather than lopsided, and an edge the system did not report (a rounded
+                // corner, a gesture area) still has the notch's worth of room. Backgrounds are unaffected:
+                // they reach the true screen edge through UiToolkitHost.SafeInsets and UIFullScreenFit.
+                float side = Mathf.Max(left, right);
+                return Rect.MinMaxRect(side, safe.yMin, w - side, safe.yMax);
+            }
+        }
+
         private RectTransform rt;
         private Rect applied = Rect.zero;
         private ScreenOrientation appliedOrientation;
@@ -33,7 +68,7 @@ namespace TableFootball.UI
         // catch a rotation or a resize. Unity raises no event for either.
         private void Update()
         {
-            if (Screen.safeArea != applied ||
+            if (Effective != applied ||
                 Screen.orientation != appliedOrientation ||
                 Screen.width != appliedResolution.x ||
                 Screen.height != appliedResolution.y)
@@ -46,7 +81,7 @@ namespace TableFootball.UI
         {
             if (rt == null) return;
 
-            Rect safe = Screen.safeArea;
+            Rect safe = Effective;
             applied = safe;
             appliedOrientation = Screen.orientation;
             appliedResolution = new Vector2Int(Screen.width, Screen.height);

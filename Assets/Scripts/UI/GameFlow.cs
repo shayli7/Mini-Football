@@ -21,6 +21,8 @@ namespace TableFootball.UI
     public class GameFlow : MonoBehaviour
     {
         private StartScreen start;
+        private ErrorScreen errors;
+        private VersusScreen versus;
         private OnboardingScreen onboarding;
         private LoadingScreen loading;
 
@@ -34,6 +36,10 @@ namespace TableFootball.UI
         private LevelPathMenu levelPath;
         private FriendsMenu friends;
         private ProfileMenu profile;
+        private SettingsScreen settings;
+        private CollectionScreen collection;
+        /// <summary>True when the wardrobe was opened from the store, so Back returns there.</summary>
+        private bool collectionFromStore;
         private FriendProfileMenu friendProfile;
         private QuestsMenu quests;
         private GameMenu pause;
@@ -58,6 +64,10 @@ namespace TableFootball.UI
 
         /// <summary>Guards progression against counting one match twice. Reset at every kick-off.</summary>
         private bool progressCounted;
+
+        /// <summary>Guards the interstitial count against counting one match twice. Reset at every
+        /// kick-off, and — unlike <see cref="progressCounted"/> — set for every mode, local PvP included.</summary>
+        private bool adCounted;
 
         /// <summary>Set while this player is the one leaving, so their own exit is not read as the opponent's.</summary>
         private bool leavingDeliberately;
@@ -88,12 +98,12 @@ namespace TableFootball.UI
         /// </summary>
         private const float ResumeGraceSeconds = 5f;
 
-        /// <summary>Which door the account screen was entered by, so Back can retrace it.</summary>
-        private bool profileFromFriends;
-
         /// <summary>Which door the league screen was entered by, so Back can retrace it — the main
         /// menu's trophy button, or the online menu's own Ranked button.</summary>
         private bool leagueFromMainMenu;
+
+        /// <summary>True when the league screen was opened from the profile, so Back returns there.</summary>
+        private bool leagueFromProfile;
 
         /// <summary>
         /// True when the current — or most recently finished — match is an online one.
@@ -133,12 +143,15 @@ namespace TableFootball.UI
                           LoadingScreen loadingScreen,
                           MainMenu mainMenu, OnlineMenu onlineMenu, LeagueMenu leagueMenu,
                           StoreMenu storeMenu, LevelPathMenu levelPathMenu,
-                          FriendsMenu friendsMenu, ProfileMenu profileMenu,
+                          FriendsMenu friendsMenu, ProfileMenu profileMenu, SettingsScreen settingsScreen,
+                          CollectionScreen collectionScreen,
                           FriendProfileMenu friendProfileMenu, QuestsMenu questsMenu,
                           GameMenu pauseMenu, ScoreHud scoreHud, CountdownScreen countdownScreen,
-                          MatchManager matchManager, QuestTracker tracker,
-                          float bootSeconds, float transitionSeconds)
+                          MatchManager matchManager, QuestTracker tracker, ErrorScreen errorScreen,
+                          VersusScreen versusScreen, float bootSeconds, float transitionSeconds)
         {
+            errors = errorScreen;
+            versus = versusScreen;
             start = startScreen;
             onboarding = onboardingScreen;
             loading = loadingScreen;
@@ -152,6 +165,8 @@ namespace TableFootball.UI
             levelPath = levelPathMenu;
             friends = friendsMenu;
             profile = profileMenu;
+            settings = settingsScreen;
+            collection = collectionScreen;
             friendProfile = friendProfileMenu;
             quests = questsMenu;
             pause = pauseMenu;
@@ -166,22 +181,22 @@ namespace TableFootball.UI
             {
                 menu.OnStartLocal += StartLocalMatch;
                 menu.OnOpenOnline += OpenOnline;
-                // Reuses the pause menu's settings panel rather than building a second one, so the
-                // sliders and the difficulty control stay in one place.
-                menu.OnOpenSettings += OpenSettings;
                 menu.OnOpenFriends += OpenFriends;
                 menu.OnOpenProfile += OpenProfileFromMenu;
                 menu.OnOpenRanked += OpenRankedFromMenu;
                 menu.OnOpenStore += OpenStore;
-                menu.OnOpenLevelPath += OpenLevelPath;
                 menu.OnOpenQuests += OpenQuests;
                 menu.OnAcceptInvite = AcceptInvite;
             }
 
             // Both are front-end viewers reached only from the main menu, so both go straight back to
             // it — there is no second door to retrace, unlike the league screen.
-            if (store != null) store.OnBack = OpenMenu;
-            if (levelPath != null) levelPath.OnBack = OpenMenu;
+            if (store != null)
+            {
+                store.OnBack = OpenMenu;
+                store.OnOpenCollection = OpenCollectionFromStore;
+            }
+            if (levelPath != null) levelPath.OnBack = ShowProfile;
 
             if (quests != null)
             {
@@ -195,6 +210,7 @@ namespace TableFootball.UI
                 // starts when the host says so, over the connection itself.
                 online.OnMatchReady = () => online.ShowConnecting();
                 online.OnOpenRanked = OpenRanked;
+                online.OnConnectTimeout = HandleConnectTimeout;
                 online.OnBack = OpenMenu;
             }
 
@@ -202,7 +218,12 @@ namespace TableFootball.UI
             {
                 // Retraces whichever door it was opened by — the main menu's trophy button, or the
                 // online menu's own Ranked button — set in OpenRankedFromMenu / OpenRanked below.
-                league.OnBack = () => { if (leagueFromMainMenu) OpenMenu(); else OpenOnline(); };
+                league.OnBack = () =>
+                {
+                    if (leagueFromProfile) ShowProfile();
+                    else if (leagueFromMainMenu) OpenMenu();
+                    else OpenOnline();
+                };
                 league.OnPlayRanked = PlayRanked;
             }
 
@@ -214,7 +235,6 @@ namespace TableFootball.UI
                 // so an invite and a Host Table tap end up in the same place, as they should.
                 friends.OnInviteSent = OpenOnlineWaiting;
                 friends.OnOpenFriendProfile = OpenFriendProfile;
-                friends.OnOpenProfile = OpenProfile;
                 friends.OnBack = OpenMenu;
             }
 
@@ -228,14 +248,31 @@ namespace TableFootball.UI
 
             if (profile != null)
             {
-                // Back returns wherever the player actually came from. The account screen has two
-                // doors now — the friends list and the main menu's avatar — and a fixed destination
-                // would drop half of its visitors somewhere they were never standing.
-                profile.OnBack = () =>
+                // The main menu's avatar is the profile's only door.
+                profile.OnBack = OpenMenu;
+
+                // The gear, the wardrobe, the level road and the league row all hang off the profile.
+                profile.OnOpenSettings = OpenSettings;
+                profile.OnOpenCollection = OpenCollectionFromProfile;
+                profile.OnOpenLevelPath = OpenLevelPathFromProfile;
+                profile.OnOpenRanked = OpenRankedFromProfile;
+            }
+
+            if (collection != null)
+            {
+                // Back retraces to whichever screen opened the wardrobe: the store or the profile.
+                collection.OnBack = () =>
                 {
-                    if (profileFromFriends) OpenFriends();
-                    else OpenMenu();
+                    if (collectionFromStore) OpenStore();
+                    else ShowProfile();
                 };
+            }
+
+            if (settings != null)
+            {
+                // Back retraces to the profile, the only place Settings is reached from.
+                settings.OnBack = ShowProfile;
+                settings.OnLoggedOut = HandleLoggedOut;
             }
 
             if (hud != null)
@@ -247,7 +284,6 @@ namespace TableFootball.UI
             if (pause != null)
             {
                 pause.OnLeaveMatch = ReturnToMenu;
-                pause.OnStandaloneClosed = () => { if (menu != null) menu.Open(); };
             }
 
             // The record is kept here rather than in MatchManager, which is deliberately ignorant of
@@ -298,12 +334,10 @@ namespace TableFootball.UI
             {
                 menu.OnStartLocal -= StartLocalMatch;
                 menu.OnOpenOnline -= OpenOnline;
-                menu.OnOpenSettings -= OpenSettings;
                 menu.OnOpenFriends -= OpenFriends;
                 menu.OnOpenProfile -= OpenProfileFromMenu;
                 menu.OnOpenRanked -= OpenRankedFromMenu;
                 menu.OnOpenStore -= OpenStore;
-                menu.OnOpenLevelPath -= OpenLevelPath;
                 menu.OnOpenQuests -= OpenQuests;
             }
 
@@ -342,6 +376,13 @@ namespace TableFootball.UI
         /// </summary>
         private void OnMatchWon(Team winner)
         {
+            // Before the localTeam check: a local PvP match is still a finished match for the ad count.
+            if (!adCounted)
+            {
+                adCounted = true;
+                AdService.RecordMatchFinished();
+            }
+
             if (localTeam == null)
             {
                 return;
@@ -558,13 +599,33 @@ namespace TableFootball.UI
         /// </summary>
         private async void AcceptInvite(string joinCode)
         {
+            if (!Connectivity.IsOnline && errors != null)
+            {
+                errors.Show(ErrorScreen.ErrorKind.Offline, null, () => AcceptInvite(joinCode), null);
+                return;
+            }
+
             OpenOnlineConnecting();
 
             if (!await OnlineSession.JoinAsync(joinCode) && online != null)
             {
                 // Most often their table filled between the invitation and the tap.
                 online.ShowJoinFailed(OnlineSession.LastError);
+                if (errors != null) errors.ShowToast(OnlineSession.LastError);
             }
+        }
+
+        /// <summary>
+        /// The two players joined the table but never reached each other. The error screen is UI
+        /// Toolkit and the online menu is uGUI, so the order they draw in cannot be relied on: go to
+        /// the main menu first, which closes the online menu, then raise the error over it.
+        /// </summary>
+        private void HandleConnectTimeout()
+        {
+            if (errors == null) return;
+
+            OpenMenu();
+            errors.Show(ErrorScreen.ErrorKind.Connection, "Couldn't reach your opponent.", OpenOnline, null);
         }
 
         // ---------- invitation refused ----------
@@ -635,6 +696,7 @@ namespace TableFootball.UI
             onlineMatch = true;
             resultCounted = false;
             progressCounted = false;
+            adCounted = false;
             IsPlaying = true;
 
             if (hud != null) hud.ResultsHidden = false;
@@ -683,6 +745,10 @@ namespace TableFootball.UI
             {
                 return;
             }
+
+            // The opponent can leave during the face-off; the result banner lives on the HUD, which
+            // is held down behind the versus screen until it lifts.
+            CloseVersus();
 
             // Before the award, not after: MatchManager raises MatchWon synchronously, and the HUD
             // is entitled to ask what state the flow is in while handling it.
@@ -773,6 +839,8 @@ namespace TableFootball.UI
             // loss — is news they should be handed a scoreboard about on their way to the menu.
             leavingDeliberately = true;
 
+            if (versus != null) versus.Close();
+
             // Bank the time spent in the match just left, before IsPlaying drops and the clock stops.
             FlushPlayTime();
 
@@ -856,7 +924,32 @@ namespace TableFootball.UI
             }
 
             Freeze();
-            loading.Show(transitionLoadSeconds, OpenMenu);
+
+            // Behind the loading curtain, so an interstitial lands between the match and the menu and
+            // never during play. The curtain is held for the ad (RunAdBreak) and does nothing at all
+            // until enough matches have finished.
+            loading.Show(transitionLoadSeconds, OpenMenu, RunAdBreak);
+        }
+
+        /// <summary>
+        /// The ad break on the way back to the menu. When an interstitial is actually about to play,
+        /// the curtain says "be right back" for a moment first so the ad never arrives out of nowhere;
+        /// otherwise it lets the curtain clear at once. <paramref name="next"/> is always called —
+        /// the ad closing, failing or never being there all end the same way.
+        /// </summary>
+        private void RunAdBreak(System.Action next)
+        {
+            if (!AdService.InterstitialWillPlay)
+            {
+                next();
+                return;
+            }
+
+            loading.BeRightBack(() => AdService.ShowInterstitialIfDue(() =>
+            {
+                loading.ClearBeRightBack();
+                next();
+            }));
         }
 
         /// <summary>
@@ -873,13 +966,31 @@ namespace TableFootball.UI
             if (skinner != null) skinner.SetLocalTeam(team);
         }
 
+        /// <summary>
+        /// Settings, from the gear on the profile. The profile is uGUI and Settings is UI Toolkit, so
+        /// the profile closes before Settings opens rather than trusting which of the two draws on top.
+        /// Unfrozen like the profile it comes from.
+        /// </summary>
         private void OpenSettings()
         {
-            // The menu steps aside while Settings is up and comes back when it closes (see
-            // GameMenu.OnStandaloneClosed): the menu is UI Toolkit, Settings is still uGUI, and the
-            // order the two draw in is not guaranteed.
+            if (profile != null) profile.Close();
             if (menu != null) menu.Close();
-            if (pause != null) pause.OpenSettingsStandalone();
+            if (hud != null) hud.SetVisible(false);
+
+            Unfreeze();
+
+            if (settings != null) settings.Open();
+        }
+
+        /// <summary>
+        /// The player logged out from Settings: they are a fresh guest now, so they are offered the
+        /// same front door a new player gets — sign in, create an account, or carry on as a guest.
+        /// </summary>
+        private void HandleLoggedOut()
+        {
+            if (settings != null) settings.Close();
+            if (onboarding != null) onboarding.Show(OpenMenu);
+            else OpenMenu();
         }
 
         /// <summary>
@@ -916,6 +1027,8 @@ namespace TableFootball.UI
             if (levelPath != null) levelPath.Close();
             if (friends != null) friends.Close();
             if (profile != null) profile.Close();
+            if (settings != null) settings.Close();
+            if (collection != null) collection.Close();
             if (friendProfile != null) friendProfile.Close();
             if (quests != null) quests.Close();
             if (menu != null) menu.Open();
@@ -944,6 +1057,7 @@ namespace TableFootball.UI
         {
             if (menu != null) menu.Close();
             if (levelPath != null) levelPath.Close();
+            if (collection != null) collection.Close();
             if (hud != null) hud.SetVisible(false);
 
             Freeze();
@@ -951,11 +1065,15 @@ namespace TableFootball.UI
             if (store != null) store.Open();
         }
 
-        /// <summary>The level path — frozen, for the same reason the store is.</summary>
-        private void OpenLevelPath()
+        /// <summary>
+        /// The Level Road, from the profile's button; Back returns there. Frozen, for the same reason the
+        /// store is.
+        /// </summary>
+        private void OpenLevelPathFromProfile()
         {
             if (menu != null) menu.Close();
             if (store != null) store.Close();
+            if (profile != null) profile.Close();
             if (hud != null) hud.SetVisible(false);
 
             Freeze();
@@ -1025,6 +1143,17 @@ namespace TableFootball.UI
         {
             if (friends != null) friends.Close();
             if (friendProfile != null) friendProfile.Close();
+
+            // The join can return AFTER the match has already started. The SDK's join call does more
+            // bookkeeping once the connection is up, and the host's kick-off is only one round trip
+            // behind the guest's ready report — so it regularly lands first. Opening the connecting
+            // screen then covered a running match, and its 25 s timeout walked the guest out of it:
+            // the host played on alone while the guest saw "couldn't reach your opponent".
+            if (IsPlaying)
+            {
+                return;
+            }
+
             if (menu != null) menu.Close();
             if (hud != null) hud.SetVisible(false);
 
@@ -1037,22 +1166,16 @@ namespace TableFootball.UI
             }
         }
 
-        /// <summary>Reached from the friends list's Account button, so Back goes back there.</summary>
-        private void OpenProfile()
-        {
-            profileFromFriends = true;
-            ShowProfile();
-        }
-
         /// <summary>Reached from the main menu's avatar, so Back goes back to the main menu.</summary>
         private void OpenProfileFromMenu()
         {
-            profileFromFriends = false;
             ShowProfile();
         }
 
         private void ShowProfile()
         {
+            if (settings != null) settings.Close();
+            if (collection != null) collection.Close();
             if (menu != null) menu.Close();
             if (friends != null) friends.Close();
             if (friendProfile != null) friendProfile.Close();
@@ -1088,7 +1211,39 @@ namespace TableFootball.UI
         private void OpenRanked()
         {
             leagueFromMainMenu = false;
+            leagueFromProfile = false;
             ShowLeague();
+        }
+
+        /// <summary>The league screen from the row on the profile; Back returns there.</summary>
+        private void OpenRankedFromProfile()
+        {
+            leagueFromMainMenu = false;
+            leagueFromProfile = true;
+            ShowLeague();
+        }
+
+        /// <summary>The wardrobe, from the store's COLLECTION button; Back returns to the store.</summary>
+        private void OpenCollectionFromStore()
+        {
+            collectionFromStore = true;
+            if (store != null) store.Close();
+
+            if (collection != null) collection.Open();
+        }
+
+        /// <summary>The wardrobe, from the profile's COLLECTION button or a worn item (which opens on
+        /// that item's tab). The profile closes first — it is UI Toolkit, and so is this, but the two
+        /// are separate screens and only one is ever up.</summary>
+        private void OpenCollectionFromProfile(CosmeticKind? tab)
+        {
+            collectionFromStore = false;
+            if (profile != null) profile.Close();
+            if (hud != null) hud.SetVisible(false);
+
+            Unfreeze();
+
+            if (collection != null) collection.Open(tab);
         }
 
         /// <summary>
@@ -1099,12 +1254,14 @@ namespace TableFootball.UI
         private void OpenRankedFromMenu()
         {
             leagueFromMainMenu = true;
+            leagueFromProfile = false;
             ShowLeague();
         }
 
         private void ShowLeague()
         {
             if (menu != null) menu.Close();
+            if (profile != null) profile.Close();
             if (online != null) online.Close();
             if (hud != null) hud.SetVisible(false);
 
@@ -1165,6 +1322,7 @@ namespace TableFootball.UI
             onlineMatch = false;
             resultCounted = false;
             progressCounted = false;
+            adCounted = false;
             waitingForRematch = false;
 
             IsPlaying = true;
@@ -1237,15 +1395,38 @@ namespace TableFootball.UI
 
             if (online != null) online.Close();
             if (menu != null) menu.Close();
+            // A join from the friends screens can still be awaiting its result when the kick-off
+            // arrives (see OpenOnlineConnecting), with that screen still up over the match.
+            if (friends != null) friends.Close();
+            if (friendProfile != null) friendProfile.Close();
             if (stage != null) stage.SetActive(false); // the top-down gameplay camera takes over now
             if (quests != null) quests.Close();
-            if (hud != null) hud.SetVisible(true);
-            if (pause != null) pause.SetPauseButtonVisible(true);
             GameSfx.StopMenuMusic();
+
+            // The face-off first. The HUD stays down behind it: the HUD is uGUI and the versus screen
+            // UI Toolkit, and which of the two draws on top is never relied on. OnlineMatchDirector
+            // holds the kick-off for the same VersusSeconds, so play starts as the screen lifts.
+            bool showVersus = versus != null;
+            if (showVersus)
+            {
+                if (hud != null) hud.SetVisible(false);
+                if (pause != null) pause.SetPauseButtonVisible(false);
+            }
 
             // Captured now, while the session is unambiguously alive. See AwardForfeit.
             onlineLocalTeam = OnlineMatchDirector.LocalTeam;
             leavingDeliberately = false;
+
+            // Two builds whose online messages differ connect fine and then misbehave in ways that
+            // look like lag. Said on screen, because a tester reading only one device's log missed it.
+            Team opponent = onlineLocalTeam == Team.Red ? Team.Blue : Team.Red;
+            int theirVersion = OnlineMatchDirector.CardFor(opponent).Protocol;
+            if (theirVersion != OnlineSession.NetcodeVersion)
+            {
+                Debug.LogError($"Online: the other player runs netcode version {theirVersion}, this device " +
+                               $"{OnlineSession.NetcodeVersion}. Install the same build on both before testing.");
+                if (errors != null) errors.ShowToast("The other player has a different version of the game");
+            }
 
             if (pause != null) pause.OnlineMatch = true;
             if (hud != null)
@@ -1267,6 +1448,7 @@ namespace TableFootball.UI
             rankedMatch = online != null && online.RankedSearch;
             resultCounted = false;
             progressCounted = false;
+            adCounted = false;
             waitingForRematch = false;
 
             Unfreeze();
@@ -1286,9 +1468,49 @@ namespace TableFootball.UI
                 });
             }
 
+            // Last, once the flow is marked playing: RaiseMatchHud checks that when the screen lifts.
+            if (showVersus)
+            {
+                versus.Show(OnlineMatchDirector.CardFor(Team.Red), OnlineMatchDirector.CardFor(Team.Blue),
+                            OnlineMatchDirector.VersusSeconds, RaiseMatchHud);
+            }
+            else
+            {
+                RaiseMatchHud();
+            }
+
             // The table itself is not started here. The director restarts both machines off the one
             // message that brought us here, so the kick-off cannot depend on this side working out
             // for itself whether it is the one that should call it.
+        }
+
+        /// <summary>
+        /// Puts the score and pause button up once the versus screen has lifted — unless the match
+        /// ended while it was up (an opponent who left at once), in which case that path has already
+        /// decided what is on screen.
+        /// </summary>
+        private void RaiseMatchHud()
+        {
+            if (!IsPlaying || !onlineMatch)
+            {
+                return;
+            }
+
+            if (hud != null) hud.SetVisible(true);
+            if (pause != null) pause.SetPauseButtonVisible(true);
+        }
+
+        /// <summary>Takes the versus screen down early and brings the HUD back, for a match that ends
+        /// before the face-off has finished.</summary>
+        private void CloseVersus()
+        {
+            if (versus == null || !versus.IsOpen)
+            {
+                return;
+            }
+
+            versus.Close();
+            if (hud != null) hud.SetVisible(true);
         }
 
         /// <summary>

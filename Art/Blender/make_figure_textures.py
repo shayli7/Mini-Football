@@ -177,6 +177,45 @@ def kit_stripes(h, ang, r, nz, team):
     return rgb * noise(rgb.shape[:2], 7)[..., None]
 
 
+def kit_blaugrana(h, ang, r, nz, team):
+    """Club kit: blue and garnet vertical stripes, blue shorts, garnet socks.
+
+    A club kit is the same on either side of the table — the club IS the identity, so `team` is
+    ignored. Safe for legibility because a skin only ever dresses its own wearer's side; the
+    opponent keeps the model's red or blue. No crest and no sponsor: those are trademarks.
+    """
+    blue = hexcol("#1A4E9C")
+    garnet = hexcol("#A3123F")
+    # Stripes only, no neckline trim. A HORIZONTAL band breaks into zigzag teeth on this mesh — its
+    # uv islands are scattered, so a height threshold lands on jagged triangle edges — and it also
+    # sat far lower than intended, swallowing the chest. Vertical patterns bake clean.
+    rgb = np.where(band(ang, 10, 0.5)[..., None], blue[None, None, :], garnet[None, None, :])
+    rgb = np.where((h < 0.42)[..., None], blue[None, None, :] * 0.92, rgb)      # shorts
+    rgb = np.where((h < 0.22)[..., None], garnet[None, None, :] * 0.9, rgb)     # socks
+    return rgb * noise(rgb.shape[:2], 11)[..., None]
+
+
+def kit_royal_whites(h, ang, r, nz, team):
+    """Club kit: white with thin gold pinstripes.
+
+    White alone reads as a flat blank at table scale, so the gold is what carries it. Club kit, so
+    `team` is ignored; no crest and no sponsor.
+    """
+    white = hexcol("#F4F3EE")
+    gold = hexcol("#C9A227")
+    rgb = np.broadcast_to(white[None, None, :], h.shape + (3,)).copy()
+    # Thin gold pinstripes all the way round — vertical only (see kit_blaugrana). Side-seam panels
+    # were tried first and failed twice over: from the camera's angle the sides are the figure's
+    # silhouette edge, so they barely showed, and at the neck every angle converges to one point, so
+    # they crossed into a stray gold "+". Pinstripes read from any side, and their convergence at
+    # the neck becomes a gold collar, which is the look being asked for.
+    pin = band(ang, 12, 0.15) & (h >= 0.42)
+    rgb = np.where(pin[..., None], gold[None, None, :], rgb)
+    rgb = np.where((h < 0.42)[..., None], white[None, None, :] * 0.95, rgb)     # shorts
+    rgb = np.where((h < 0.22)[..., None], white[None, None, :] * 0.92, rgb)     # socks
+    return rgb * noise(rgb.shape[:2], 13, 0.04)[..., None]
+
+
 def kit_gladiator(h, ang, r, nz, team):
     bronze = hexcol("#B08339")
     dark = hexcol("#4A3518")
@@ -303,6 +342,8 @@ SKINS = [
     ("Robots",       kit_robot,          body_robot,       head_robot),
     ("Trojan",       kit_trojan,         body_trojan,      head_helmet_gold),
     ("TrojanKeeper", kit_trojan_keeper,  body_trojan,      head_helmet_steel),
+    ("Blaugrana",    kit_blaugrana,      None,             None),
+    ("RoyalWhites",  kit_royal_whites,   None,             None),
 ]
 
 

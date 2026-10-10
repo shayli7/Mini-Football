@@ -47,7 +47,9 @@ namespace TableFootball.Net
             new CosmeticItem("ball.camo",         "Camouflage",         CosmeticKind.BallSkin,   Rarity.Rare,      750),
             new CosmeticItem("ball.disco",        "Disco Ball",         CosmeticKind.BallSkin,   Rarity.Epic,      1600),
             new CosmeticItem("ball.ice",          "Ice Cube",           CosmeticKind.BallSkin,   Rarity.Epic,      1600),
-            new CosmeticItem("ball.golden",       "Golden Trophy Ball", CosmeticKind.BallSkin,   Rarity.Legendary, 3200),
+            // Id kept from the Golden Trophy Ball this replaced, so anyone who owned that owns this —
+            // a new id would have orphaned it in every saved inventory and cloud document.
+            new CosmeticItem("ball.golden",       "Solar Crown",        CosmeticKind.BallSkin,   Rarity.Legendary, 3200),
 
             // -- Figure skins -------------------------------------------------------------------
             // Every one keeps the kit slot team-coloured, so red and blue are always tellable apart
@@ -59,6 +61,8 @@ namespace TableFootball.Net
             new CosmeticItem("figure.stripes",    "Stripes",         CosmeticKind.FigureSkin, Rarity.Rare,      750),
             new CosmeticItem("figure.gladiators", "Gladiators",      CosmeticKind.FigureSkin, Rarity.Rare,      750),
             new CosmeticItem("figure.robots",     "Robots",          CosmeticKind.FigureSkin, Rarity.Epic,     1600),
+            new CosmeticItem("figure.blaugrana",  "Blaugrana Stripes", CosmeticKind.FigureSkin, Rarity.Epic,   1600),
+            new CosmeticItem("figure.royal_whites", "Royal Whites",  CosmeticKind.FigureSkin, Rarity.Epic,     1600),
             new CosmeticItem("figure.trojan",     "Trojan Warriors", CosmeticKind.FigureSkin, Rarity.Legendary, 3200),
 
             // -- Backgrounds --------------------------------------------------------------------
@@ -70,14 +74,25 @@ namespace TableFootball.Net
             new CosmeticItem("background.dark_room",   "Dark Room",      CosmeticKind.Background, Rarity.Common,    300),
             new CosmeticItem("background.disco_room",  "Disco Room",     CosmeticKind.Background, Rarity.Rare,      750),
             new CosmeticItem("background.royal_palace","Royal Palace",   CosmeticKind.Background, Rarity.Epic,     1600),
+            new CosmeticItem("background.lava_mountain","Lava Mountain", CosmeticKind.Background, Rarity.Epic,     1600),
+            new CosmeticItem("background.snow_mountain","Snow Mountain", CosmeticKind.Background, Rarity.Epic,     1600),
 
             // -- League badges (earned, never sold) ----------------------------------------------
             // One per rung of the ladder. Priced 0 and of kind Badge, which keeps them out of the
             // store grid and out of every chest pool without a second rule anywhere. See LeagueBadges.
-            new CosmeticItem("badge.bronze",   "Bronze Badge",   CosmeticKind.Badge,      Rarity.Common,    0),
-            new CosmeticItem("badge.silver",   "Silver Badge",   CosmeticKind.Badge,      Rarity.Rare,      0),
-            new CosmeticItem("badge.gold",     "Gold Badge",     CosmeticKind.Badge,      Rarity.Epic,      0),
-            new CosmeticItem("badge.diamond",  "Diamond Badge",  CosmeticKind.Badge,      Rarity.Legendary, 0)
+            new CosmeticItem("badge.bronze",   "Academy Badge",   CosmeticKind.Badge,      Rarity.Common,    0),
+            new CosmeticItem("badge.silver",   "Challenger Badge",   CosmeticKind.Badge,      Rarity.Rare,      0),
+            new CosmeticItem("badge.gold",     "Premier Badge",     CosmeticKind.Badge,      Rarity.Epic,      0),
+            new CosmeticItem("badge.diamond",  "Legend Badge",  CosmeticKind.Badge,      Rarity.Legendary, 0),
+
+            // The level road's last prize: reaching level 60. See LevelPath.KingBadgeId.
+            new CosmeticItem("badge.king",     "King Badge",    CosmeticKind.Badge,      Rarity.Legendary, 0),
+
+            // -- Name styles (earned, never sold) -----------------------------------------------
+            // How your own name is drawn on your screens. Plain is the default; Shining Gold is the
+            // level road's prize for level 50. See LevelPath.GoldNameId and UiShineLabel.
+            new CosmeticItem("name.plain",     "Plain Name",    CosmeticKind.NameStyle,  Rarity.Common,    0, isDefault: true),
+            new CosmeticItem("name.gold",      "Shining Gold",  CosmeticKind.NameStyle,  Rarity.Legendary, 0)
         };
 
         private static Dictionary<string, CosmeticItem> byId;
@@ -140,7 +155,7 @@ namespace TableFootball.Net
         public static readonly CosmeticKind[] TabKinds =
         {
             CosmeticKind.FieldSkin, CosmeticKind.BallSkin, CosmeticKind.FigureSkin,
-            CosmeticKind.Background, CosmeticKind.Badge
+            CosmeticKind.Background, CosmeticKind.Badge, CosmeticKind.NameStyle
         };
 
         /// <summary>The tab label for a kind. Plural, because a tab holds several.</summary>
@@ -152,8 +167,9 @@ namespace TableFootball.Net
                 case CosmeticKind.BallSkin: return "Balls";
                 case CosmeticKind.FigureSkin: return "Players";
                 case CosmeticKind.TableSkin: return "Tables";
-                case CosmeticKind.Background: return "Rooms";
+                case CosmeticKind.Background: return "Stages";
                 case CosmeticKind.Badge: return "Badges";
+                case CosmeticKind.NameStyle: return "Names";
                 default: return "Items";
             }
         }
@@ -167,8 +183,9 @@ namespace TableFootball.Net
                 case CosmeticKind.BallSkin: return "Ball Skin";
                 case CosmeticKind.FigureSkin: return "Player Skin";
                 case CosmeticKind.TableSkin: return "Table Skin";
-                case CosmeticKind.Background: return "Background";
+                case CosmeticKind.Background: return "Stage";
                 case CosmeticKind.Badge: return "Badge";
+                case CosmeticKind.NameStyle: return "Name Style";
                 default: return "Item";
             }
         }

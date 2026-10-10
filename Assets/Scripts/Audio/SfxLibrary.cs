@@ -35,8 +35,45 @@ namespace TableFootball
         /// <summary>Two-note referee whistle for kick-off.</summary>
         public static AudioClip Whistle => Get("sfx_whistle", Whistle2);
 
-        /// <summary>Short blip for buttons.</summary>
-        public static AudioClip UiClick => Get("sfx_ui_click", () => Blip(0.045f, 1180f, 0.25f));
+        // ---- UI palette ----
+        // Every tap in the front end makes a faint sound, and what it sounds like says what the tap
+        // did: a short high tick for an ordinary button, a falling one for going back, two rising
+        // notes for a confirm, a sweep for a screen opening or closing. Kept quiet and short — they
+        // are heard hundreds of times a session. Each is a sine or triangle sweep under a fast decay.
+
+        /// <summary>Any button: a short high tick that falls a little.</summary>
+        public static AudioClip UiTap => Get("sfx_ui_tap", () => Voices(0.06f, new Tone(0f, 1900f, 1300f, 0.05f, false)));
+
+        /// <summary>Back and close: the same tick, falling further and a little longer.</summary>
+        public static AudioClip UiBack => Get("sfx_ui_back", () => Voices(0.08f, new Tone(0f, 1300f, 650f, 0.07f, false)));
+
+        /// <summary>Play, save, next: two rising notes.</summary>
+        public static AudioClip UiConfirm => Get("sfx_ui_confirm", () => Voices(0.22f,
+            new Tone(0f, 880f, 900f, 0.08f, true), new Tone(0.07f, 1320f, 1340f, 0.12f, true)));
+
+        /// <summary>A screen or sheet opening: a quick upward sweep.</summary>
+        public static AudioClip UiOpen => Get("sfx_ui_open", () => Voices(0.14f, new Tone(0f, 500f, 1400f, 0.12f, false)));
+
+        /// <summary>A screen or sheet closing: the opening sweep, reversed.</summary>
+        public static AudioClip UiClose => Get("sfx_ui_close", () => Voices(0.13f, new Tone(0f, 1400f, 500f, 0.11f, false)));
+
+        /// <summary>A switch flipping: a very short click.</summary>
+        public static AudioClip UiToggle => Get("sfx_ui_toggle", () => Voices(0.05f, new Tone(0f, 2600f, 2300f, 0.025f, true)));
+
+        /// <summary>One step of a slider, or one reward landing: a plain short tone. Pitch it up in play.</summary>
+        public static AudioClip UiStep => Get("sfx_ui_step", () => Voices(0.06f, new Tone(0f, 1000f, 1000f, 0.035f, false)));
+
+        /// <summary>Claim or collect: four rising notes. Brighter than <see cref="Reward"/>, which is the quest chime.</summary>
+        public static AudioClip UiReward => Get("sfx_ui_reward", () => Voices(0.46f,
+            new Tone(0f, 1047f, 1047f, 0.18f, true), new Tone(0.06f, 1319f, 1319f, 0.18f, true),
+            new Tone(0.12f, 1568f, 1568f, 0.18f, true), new Tone(0.18f, 2093f, 2093f, 0.18f, true)));
+
+        /// <summary>Opening something destructive: two low falling notes.</summary>
+        public static AudioClip UiWarn => Get("sfx_ui_warn", () => Voices(0.26f,
+            new Tone(0f, 330f, 300f, 0.08f, true), new Tone(0.09f, 260f, 240f, 0.12f, true)));
+
+        /// <summary>A disabled button pressed: one dull low note.</summary>
+        public static AudioClip UiDeny => Get("sfx_ui_deny", () => Voices(0.13f, new Tone(0f, 220f, 200f, 0.09f, true)));
 
         /// <summary>The "3 - 2 - 1" beep. A clean sustained tone, not the near-instant UI click.</summary>
         public static AudioClip CountdownTick => Get("sfx_countdown_tick", () => Beep(0.18f, 700f));
@@ -176,25 +213,56 @@ namespace TableFootball
             }
         }
 
-        /// <summary>A very short pitched tick for UI.</summary>
-        private static AudioClip Blip(float seconds, float frequency, float noiseAmount)
+        /// <summary>One note of a UI sound: starts <c>Start</c> seconds in, sweeps from <c>From</c> to
+        /// <c>To</c> Hz over <c>Length</c> seconds, at relative loudness <c>Gain</c>. Triangle is a
+        /// touch warmer than sine.</summary>
+        private readonly struct Tone
+        {
+            public readonly float Start, From, To, Length, Gain;
+            public readonly bool Triangle;
+
+            public Tone(float start, float from, float to, float length, bool triangle, float gain = 1f)
+            {
+                Start = start; From = from; To = to; Length = length; Triangle = triangle; Gain = gain;
+            }
+        }
+
+        /// <summary>
+        /// Mixes <paramref name="tones"/> into a clip <paramref name="seconds"/> long. Each note has a
+        /// 4 ms attack so it does not click on, and decays exponentially to near silence by its end
+        /// so it does not click off. The frequency sweep is exponential, which is how pitch is heard.
+        /// </summary>
+        private static AudioClip Voices(float seconds, params Tone[] tones)
         {
             int count = Mathf.CeilToInt(SampleRate * seconds);
             var samples = new float[count];
-            var random = new System.Random(7);
 
-            for (int i = 0; i < count; i++)
+            foreach (Tone tone in tones)
             {
-                float t = i / (float)SampleRate;
-                float envelope = Mathf.Exp(-55f * t);
-                float tone = Mathf.Sin(2f * Mathf.PI * frequency * t);
-                float noise = (float)(random.NextDouble() * 2.0 - 1.0);
+                int start = Mathf.RoundToInt(tone.Start * SampleRate);
+                int length = Mathf.RoundToInt(tone.Length * SampleRate);
+                double phase = 0.0;
 
-                samples[i] = envelope * ((1f - noiseAmount) * tone + noiseAmount * noise);
+                for (int i = 0; i < length && start + i < count; i++)
+                {
+                    float t = i / (float)SampleRate;
+                    float progress = i / (float)Mathf.Max(1, length - 1);
+
+                    float frequency = tone.From * Mathf.Pow(tone.To / tone.From, progress);
+                    phase += 2.0 * Mathf.PI * frequency / SampleRate;
+
+                    float wave = tone.Triangle
+                        ? (2f / Mathf.PI) * Mathf.Asin(Mathf.Sin((float)phase))
+                        : Mathf.Sin((float)phase);
+
+                    float attack = Mathf.Min(1f, t / 0.004f);
+                    float decay = Mathf.Pow(0.02f, progress);
+                    samples[start + i] += wave * attack * decay * tone.Gain;
+                }
             }
 
             Normalise(samples, 0.5f);
-            return FromSamples("blip", samples);
+            return FromSamples("ui", samples);
         }
 
         /// <summary>

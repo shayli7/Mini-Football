@@ -346,6 +346,142 @@ def golden():
     return np.clip(rgb, 0, 1), (metallic, smooth)
 
 
+def _truncated_icosahedron_centres():
+    """The 32 panel centres of a real football: a pentagon at each of the icosahedron's 12
+    vertices and a hexagon at each of its 20 face centres. Nearest-centre on the sphere then IS the
+    classic panel layout, with no seam to special-case."""
+    v, edges = icosahedron()
+    adj = {i: set() for i in range(len(v))}
+    for a, b in edges:
+        adj[a].add(b)
+        adj[b].add(a)
+    faces = set()
+    for a, b in edges:
+        for c in adj[a] & adj[b]:
+            faces.add(tuple(sorted((a, b, c))))
+    fc = np.array([v[list(f)].mean(axis=0) for f in faces])
+    fc /= np.linalg.norm(fc, axis=1)[:, None]
+    assert len(fc) == 20, f"expected 20 icosahedron faces, got {len(fc)}"
+    return np.vstack([v, fc]), len(v)
+
+
+def _tangent_basis(c):
+    """Two unit vectors spanning the plane tangent to the sphere at c, 'up' biased to world Y so
+    an emblem stands upright on panels round the equator."""
+    up = np.array([0.0, 1.0, 0.0]) if abs(c[1]) < 0.9 else np.array([1.0, 0.0, 0.0])
+    e1 = np.cross(up, c)
+    e1 /= np.linalg.norm(e1)
+    e2 = np.cross(c, e1)
+    return e1, e2
+
+
+def _crown_mask(x, y):
+    """A three-point crown in [-1,1]^2, y up: a band, three spikes, a ball on each tip."""
+    xs = np.array([-0.62, -0.31, 0.0, 0.31, 0.62])
+    ys = np.array([0.42, 0.02, 0.62, 0.02, 0.42])
+    top = np.interp(x, xs, ys)
+    body = (np.abs(x) <= 0.62) & (y >= -0.22) & (y <= top)
+    band = (np.abs(x) <= 0.66) & (y >= -0.52) & (y <= -0.30)
+    tips = np.zeros_like(body)
+    for tx, ty in ((-0.62, 0.42), (0.0, 0.62), (0.62, 0.42)):
+        tips |= (x - tx) ** 2 + (y - ty - 0.07) ** 2 <= 0.10 ** 2
+    return body | band | tips
+
+
+def solar_crown():
+    """Solar Crown (Legendary): dark metal football panels, glowing gold seams, molten gold
+    ribbons sweeping across the armour, hairline gold cracks, and crown emblems.
+
+    Returns an EMISSION map as well as albedo and metal/smooth: the gold is meant to read as light
+    pouring out of the cracks, not as paint, and the game scales that glow with the ball's speed
+    (see Gameplay/SolarCrownFx). Panels stay dark and unlit in the map, so the glow has edges.
+    """
+    centres, n_pent = _truncated_icosahedron_centres()
+    flat = D.reshape(-1, 3)
+    dots = flat @ centres.T
+    part = np.argpartition(-dots, 2, axis=1)[:, :2]
+    top = np.take_along_axis(dots, part, axis=1)
+    order = np.argsort(-top, axis=1)
+    f1 = np.take_along_axis(top, order[:, :1], axis=1)[:, 0].reshape(H, W)
+    f2 = np.take_along_axis(top, order[:, 1:2], axis=1)[:, 0].reshape(H, W)
+    cell = np.take_along_axis(part, order[:, :1], axis=1)[:, 0].reshape(H, W)
+    edge = f1 - f2                                   # 0 on a seam, larger inside a panel
+
+    gold = hexcol("#F2B231")
+    hot = hexcol("#FFE08A")
+    glow = hexcol("#FFB21E")
+
+    # ---- panels: dark gunmetal, pentagons a touch darker, with a fine crackle in the surface
+    grain = fbm(26.0, 3, 91)
+    is_pent = cell < n_pent
+    panel = np.where(is_pent[..., None], hexcol("#0F1013")[None, None, :], hexcol("#1B1C22")[None, None, :])
+    rgb = panel * (0.85 + 0.3 * grain[..., None])
+    emis = np.zeros((H, W))
+
+    # ---- seams: a gold line with a dark groove either side, so the panels read as armour plates
+    groove = edge < 0.026
+    seam = edge < 0.011
+    rgb = np.where(groove[..., None], hexcol("#07070A")[None, None, :], rgb)
+    rgb = np.where(seam[..., None], gold[None, None, :], rgb)
+    emis = np.where(seam, 0.85, emis)
+
+    # ---- molten ribbons: three warped small circles, wider than a seam, with a hotter core
+    rng = np.random.default_rng(17)
+    warp = fbm(3.0, 3, 93) - 0.5
+    for i in range(3):
+        n = rng.normal(size=3)
+        n /= np.linalg.norm(n)
+        f = (D @ n) - (0.25 + 0.15 * i) + warp * 0.12
+        width = 0.085
+        band = np.abs(f) < width
+        core = np.abs(f) < width * 0.35
+        rgb = np.where(band[..., None], gold[None, None, :] * (0.9 + 0.2 * grain[..., None]), rgb)
+        rgb = np.where(core[..., None], hot[None, None, :], rgb)
+        emis = np.where(band, np.maximum(emis, 0.75), emis)
+        emis = np.where(core, 1.0, emis)
+
+    # ---- hairline cracks inside the plates, dimmer than the seams so they read as depth
+    crack = (np.abs(fbm(4.0, 3, 95) - 0.5) < 0.0055) & ~groove
+    rgb = np.where(crack[..., None], gold[None, None, :] * 0.8, rgb)
+    emis = np.where(crack, np.maximum(emis, 0.45), emis)
+
+    # ---- emblems: crowns on six hexagons spread evenly over the ball, a ring on four pentagons.
+    # Spread by farthest-point picking, so whichever way the ball faces — a store thumbnail, or a
+    # ball mid-roll — a crown is in view. Three crowns round the equator were tried first and the
+    # thumbnail camera saw none of them.
+    def spread(ids, count):
+        chosen = [ids[0]]
+        while len(chosen) < count:
+            best = max((i for i in ids if i not in chosen),
+                       key=lambda i: min(-float(centres[i] @ centres[j]) for j in chosen))
+            chosen.append(best)
+        return chosen
+
+    crown_panels = spread(list(range(n_pent, len(centres))), 6)
+    pent_ids = spread(list(range(n_pent)), 4)
+
+    for pid in crown_panels + pent_ids:
+        c = centres[pid]
+        e1, e2 = _tangent_basis(c)
+        mine = cell == pid
+        scale = 0.21 if pid in crown_panels else 0.17
+        x = (D @ e1) / scale
+        y = (D @ e2) / scale
+        if pid in crown_panels:
+            mark = _crown_mask(x, y) & mine
+        else:
+            r = np.sqrt(x * x + y * y)
+            mark = mine & (((r > 0.42) & (r < 0.62)) | (r < 0.18))
+        rgb = np.where(mark[..., None], hot[None, None, :], rgb)
+        emis = np.where(mark, 1.0, emis)
+
+    gold_mask = emis > 0
+    metallic = np.where(gold_mask, 1.0, 0.85)
+    smooth = np.where(gold_mask, 0.86, 0.50 + 0.12 * grain)
+    emission = glow[None, None, :] * emis[..., None]
+    return np.clip(rgb, 0, 1), (metallic, np.clip(smooth, 0, 1)), np.clip(emission, 0, 1)
+
+
 SKINS = [
     ("RetroOrange", retro_orange),
     ("SolidRed", solid_red),
@@ -356,13 +492,18 @@ SKINS = [
     ("Disco", disco),
     ("Ice", ice),
     ("Golden", golden),
+    ("SolarCrown", solar_crown),
 ]
 
 
 def main():
     print(f"\n===== generating {len(SKINS)} ball skins at {W}x{H} =====")
     for name, fn in SKINS:
-        rgb, ms = fn()
+        out = fn()
+        rgb, ms = out[0], out[1]
+        # A third return is an emission map — only skins whose gold is meant to GLOW carry one.
+        if len(out) > 2 and out[2] is not None:
+            write(f"BallSkin_{name}_Emission", out[2], srgb=True)
         assert rgb.shape == (H, W, 3), f"{name}: bad shape {rgb.shape}"
         assert np.isfinite(rgb).all(), f"{name}: non-finite albedo"
         write(f"BallSkin_{name}_Albedo", rgb, srgb=True)

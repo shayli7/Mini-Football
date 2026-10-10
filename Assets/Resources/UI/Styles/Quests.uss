@@ -1,0 +1,185 @@
+/* Quests. See QuestsMenu.cs. Laid out against a 760-unit-high panel.
+   Every selector is under .quests so it outranks the shared frame defaults in Base.uss. */
+
+/* ---------- header ---------- */
+
+.quests .q__header {
+    position: absolute;
+    left: 40px;
+    right: 40px;
+    top: 24px;
+    height: 58px;
+    align-items: center;
+    justify-content: center;
+}
+
+.quests .q__back { position: absolute; left: 0; top: 0; }
+.quests .q__title-box { align-items: center; }
+.quests .q__title-row { flex-direction: row; align-items: center; }
+.quests .q__title-row .icon { width: 26px; height: 26px; }
+.quests .q__title { font-size: 32px; letter-spacing: 7px; margin-left: 12px; }
+.quests .q__bar { width: 44px; height: 3px; margin-top: 6px; background-color: var(--pulse); }
+
+.quests .q__reset {
+    position: absolute;
+    right: 0;
+    top: 6px;
+    flex-direction: row;
+    align-items: center;
+    height: 44px;
+    padding: 0 18px;
+    --frame-fill: #0A1322;
+    --frame-edge: #24456F;
+    --frame-edge-width: 1.5;
+    --frame-cut: 8;
+}
+
+.quests .q__reset .icon { width: 18px; height: 18px; }
+.quests .q__reset-label { font-size: 14px; letter-spacing: 3px; color: var(--muted); margin-left: 10px; }
+
+.quests .sq {
+    width: 55px;
+    height: 55px;
+    align-items: center;
+    justify-content: center;
+    --frame-fill: #0F1C31;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1.5;
+    --frame-cut: 10;
+    transition-property: scale;
+    transition-duration: 0.12s;
+}
+
+.quests .sq:hover { scale: 1.05 1.05; }
+.quests .sq:active { scale: 0.95 0.95; }
+.quests .sq .icon { width: 26px; height: 26px; }
+
+/* ---------- left: level and streak ---------- */
+
+.quests .q__level {
+    position: absolute;
+    left: 40px;
+    top: 108px;
+    bottom: 36px;
+    width: 320px;
+    padding: 30px 24px 24px 24px;
+    align-items: center;
+}
+
+.quests .q__ring { width: 190px; height: 190px; align-items: center; justify-content: center; }
+.quests .q__level-number { font-size: 68px; color: var(--pulse); -unity-text-align: middle-center; }
+.quests .q__level-word { font-size: 12px; letter-spacing: 5px; color: var(--muted); margin-top: -6px; }
+.quests .q__level-caption { font-size: 13px; letter-spacing: 3px; color: var(--muted); margin-top: 18px; -unity-text-align: middle-center; }
+
+.quests .q__rule { align-self: stretch; height: 1px; background-color: #24456F; margin: 26px 0 22px 0; }
+
+.quests .q__streak-head { flex-direction: row; align-items: center; }
+.quests .q__streak-head .icon { width: 24px; height: 24px; }
+.quests .q__streak-label { font-size: 16px; letter-spacing: 4px; margin-left: 10px; }
+
+.quests .q__pips { flex-direction: row; margin-top: 16px; }
+.quests .q__pip { width: 30px; height: 12px; margin: 0 3px; background-color: #16294A; }
+.quests .q__pip.is-lit { background-color: #FFC23D; }
+
+/* ---------- right: the quests ---------- */
+
+.quests .q__right {
+    position: absolute;
+    left: 384px;
+    right: 40px;
+    top: 108px;
+    bottom: 36px;
+}
+
+.quests .q__list { flex-grow: 1; }
+
+.quests .q__row {
+    flex-direction: row;
+    align-items: center;
+    height: 122px;
+    padding: 0 22px 0 20px;
+    margin-bottom: 12px;
+    --frame-fill: #0B1628;
+    --frame-edge: #24456F;
+    --frame-edge-width: 1.5;
+    --frame-cut: 14;
+}
+
+.quests .q__tile {
+    width: 80px;
+    height: 80px;
+    align-items: center;
+    justify-content: center;
+    margin-right: 20px;
+    --frame-fill: #0F1C31;
+    --frame-edge-width: 2;
+    --frame-cut: 12;
+}
+
+.quests .q__tile .icon { width: 40px; height: 40px; }
+
+.quests .q__words { flex-grow: 1; flex-shrink: 1; }
+.quests .q__title-line { flex-direction: row; align-items: center; }
+.quests .q__quest-title { font-size: 22px; letter-spacing: 3px; }
+.quests .q__diamonds { flex-direction: row; margin-left: 14px; }
+.quests .q__diamond { width: 9px; height: 9px; margin-right: 6px; rotate: 45deg; }
+.quests .q__desc { font-size: 15px; color: var(--muted); margin-top: 4px; white-space: normal; }
+
+.quests .q__segments { flex-direction: row; align-items: center; margin-top: 12px; }
+.quests .q__seg { width: 34px; height: 10px; margin-right: 4px; background-color: #16294A; }
+.quests .q__count { font-size: 14px; letter-spacing: 2px; color: var(--muted); margin-left: 10px; }
+
+/* The reward on the right: the XP it will pay while in progress, DONE once banked. */
+.quests .q__reward {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    min-width: 116px;
+    height: 46px;
+    padding: 0 16px;
+    margin-left: 16px;
+    --frame-fill: #0A1322;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1.5;
+    --frame-cut: 8;
+}
+
+.quests .q__reward-label { font-size: 17px; letter-spacing: 2px; color: var(--ink); }
+.quests .q__reward-label--done { color: var(--reward); margin-left: 8px; }
+.quests .q__reward .icon { width: 20px; height: 20px; }
+.quests .q__reward--done { --frame-fill: #1A1405; }
+
+/* ---------- clear all three ---------- */
+
+.quests .q__slam {
+    flex-direction: row;
+    align-items: center;
+    height: 84px;
+    padding: 0 22px 0 20px;
+    --frame-fill: #0B1628;
+    --frame-edge: #24456F;
+    --frame-edge-width: 1.5;
+    --frame-cut: 14;
+}
+
+.quests .q__slam-tile {
+    width: 52px;
+    height: 52px;
+    align-items: center;
+    justify-content: center;
+    margin-right: 18px;
+    --frame-fill: #1A1405;
+    --frame-edge: #FFC23D;
+    --frame-edge-width: 1.5;
+    --frame-cut: 10;
+}
+
+.quests .q__slam-tile .icon { width: 28px; height: 28px; }
+.quests .q__slam-words { flex-grow: 1; }
+.quests .q__slam-title { font-size: 19px; letter-spacing: 3px; }
+.quests .q__slam-note { font-size: 12px; letter-spacing: 3px; margin-top: 4px; }
+
+.quests .q__slam-pips { flex-direction: row; }
+.quests .q__slam-pip { width: 18px; height: 18px; margin-left: 8px; border-radius: 9px; background-color: #16294A; }
+.quests .q__slam-pip.is-lit { background-color: #FFC23D; }
+.quests .q__reward--slam { --frame-fill: #1A1405; --frame-edge: #FFC23D; }

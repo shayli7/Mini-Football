@@ -45,14 +45,36 @@ namespace TableFootball.Net
         /// fixed speed on purpose: a rod can be whipped at 2200°/s, and any constant follow rate low
         /// enough to look smooth on a slow drag would be left behind by a flick.
         /// </summary>
+        // Renamed from followSharpness (28, saved on all eight rods) so the saved value cannot shadow
+        // this. 28 is a 36 ms lag on the slide; the ball already arrives a trip late, so the opponent's
+        // foot arriving a further 36 ms behind it is the part of the delay that can be taken back.
         [Tooltip("Higher snaps the other player's rods to their true pose sooner, at the cost of " +
                  "showing more of the network's jitter. Lower is smoother but laggier.")]
-        [SerializeField] private float followSharpness = 28f;
+        [SerializeField] private float remoteFollowSharpness = 40f;
 
-        private struct Pose : INetworkSerializable, IEquatable<Pose>
+        /// <summary>
+        /// How often the reliable copy of the pose is refreshed while a rod keeps moving, in seconds. The
+        /// fast copy is unreliable, so a lost packet is simply skipped; this one is what guarantees the
+        /// other machine ends up where the rod really is, and what a late joiner is handed at spawn.
+        /// </summary>
+        private const float BackstopSeconds = 0.1f;
+
+        /// <summary>How long a rod must have stopped sending before the reliable copy is written, so
+        /// the pose the other machine settles on is the one the rod came to rest at.</summary>
+        private const float SettleSeconds = 0.05f;
+
+        public struct Pose : INetworkSerializable, IEquatable<Pose>
         {
             public float Slide01;
             public float SpinAngle;
+
+            /// <summary>
+            /// Which pose this is, counting up from the owner's last start. The pose travels two ways —
+            /// an unreliable RPC (fast) and a NetworkVariable (a reliable backstop) — and the slower
+            /// reliable one routinely arrives AFTER newer unreliable ones; without a sequence it would
+            /// drag the rod back to where it was. Compared as a signed difference so it can wrap.
+            /// </summary>
+            public uint Seq;
 
             /// <summary>
             /// How fast the owner measured this rod turning, in degrees/second.
@@ -69,20 +91,39 @@ namespace TableFootball.Net
                 serializer.SerializeValue(ref Slide01);
                 serializer.SerializeValue(ref SpinAngle);
                 serializer.SerializeValue(ref SpinSpeed);
+                serializer.SerializeValue(ref Seq);
             }
 
             public bool Equals(Pose other) =>
                 Slide01.Equals(other.Slide01)
                 && SpinAngle.Equals(other.SpinAngle)
-                && SpinSpeed.Equals(other.SpinSpeed);
+                && SpinSpeed.Equals(other.SpinSpeed)
+                && Seq == other.Seq;
         }
 
+        /// <summary>
+        /// The reliable copy: refreshed at <see cref="BackstopSeconds"/> while moving and once when the
+        /// rod settles, and the value a late joiner is handed at spawn. Everything else goes by
+        /// <see cref="PoseRpc"/>, because this pipe is in-order — one lost packet holds every rod pose
+        /// AND the hand over, goal and force messages behind it until it is resent.
+        /// </summary>
         private readonly NetworkVariable<Pose> pose = new(
             default,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Owner);
 
         private RodController rod;
+
+        // ── receiving ──
+        private Pose target;
+        private bool haveTarget;
+
+        // ── sending ──
+        private Pose lastSent;
+        private uint sendSeq;
+        private bool backstopPending;
+        private float nextBackstop;
+        private float lastSendTime;
 
         private void Awake()
         {
@@ -125,12 +166,61 @@ namespace TableFootball.Net
 
         public override void OnNetworkSpawn()
         {
+            pose.OnValueChanged += OnPoseVariableChanged;
+
             // Seed from where the rod actually is, so a rod that spawns mid-match does not lurch
             // from a default pose to its real one on the first update.
             if (IsOwner)
             {
-                pose.Value = new Pose { Slide01 = rod.CurrentSlide01, SpinAngle = rod.CurrentSpinAngle };
+                lastSent = new Pose { Slide01 = rod.CurrentSlide01, SpinAngle = rod.CurrentSpinAngle, Seq = ++sendSeq };
+                pose.Value = lastSent;
+                backstopPending = false;
             }
+
+            // What the other machine is handed at spawn is the starting target.
+            target = pose.Value;
+            haveTarget = true;
+        }
+
+        private void OnPoseVariableChanged(Pose previous, Pose current)
+        {
+            Accept(current);
+        }
+
+        /// <summary>
+        /// Takes a pose only if it is newer than the one held. The unreliable fast copy and the reliable
+        /// backstop both land here, in whatever order the network chose.
+        /// </summary>
+        private void Accept(in Pose incoming)
+        {
+            if (!haveTarget || (int)(incoming.Seq - target.Seq) > 0)
+            {
+                target = incoming;
+                haveTarget = true;
+            }
+        }
+
+        /// <summary>
+        /// Every machine hears about a change of owner. The new owner counts its poses from its own
+        /// last number, which can be far below the old owner's, so the held sequence is forgotten rather
+        /// than compared against — otherwise a rod could ignore its new owner for as long as it took the
+        /// count to catch up.
+        /// </summary>
+        protected override void OnOwnershipChanged(ulong previous, ulong current)
+        {
+            haveTarget = false;
+            base.OnOwnershipChanged(previous, current);
+        }
+
+        /// <summary>
+        /// The fast copy of the pose. Unreliable on purpose, and only the owner may send it. A lost one
+        /// costs one 10 ms step of a rod's motion on the other screen; the reliable one it replaces held
+        /// every message behind it for as long as a resend took.
+        /// </summary>
+        [Rpc(SendTo.NotOwner, Delivery = RpcDelivery.Unreliable, InvokePermission = RpcInvokePermission.Owner)]
+        private void PoseRpc(Pose incoming)
+        {
+            Accept(incoming);
         }
 
         /// <summary>
@@ -175,7 +265,7 @@ namespace TableFootball.Net
             float slide = rod.CurrentSlide01;
             float spin = rod.CurrentSpinAngle;
             float speed = rod.MeasuredSpinSpeed;
-            Pose last = pose.Value;
+            Pose last = lastSent;
 
             // A rod at rest is the common case — most rods, most of the time — and without this it
             // would still resend float noise on every tick of the match.
@@ -187,14 +277,31 @@ namespace TableFootball.Net
             // ended, and the other machine goes on believing the rod is still turning at full tilt.
             bool stopping = last.SpinSpeed != 0f && Mathf.Abs(speed) < 1f;
 
+            float now = Time.unscaledTime;
+
             if (moved || stopping)
             {
-                pose.Value = new Pose
+                lastSent = new Pose
                 {
                     Slide01 = slide,
                     SpinAngle = spin,
-                    SpinSpeed = Mathf.Abs(speed) < 1f ? 0f : speed
+                    SpinSpeed = Mathf.Abs(speed) < 1f ? 0f : speed,
+                    Seq = ++sendSeq
                 };
+
+                PoseRpc(lastSent);
+                backstopPending = true;
+                lastSendTime = now;
+            }
+
+            // The reliable copy: so a lost fast one cannot leave the rod somewhere it is not. Written at
+            // a low rate while the rod keeps moving, at once when the rod stops, and once it has been
+            // quiet for a moment — the settled pose is the one that must never be wrong.
+            if (backstopPending && (stopping || now >= nextBackstop || now - lastSendTime >= SettleSeconds))
+            {
+                pose.Value = lastSent;
+                backstopPending = false;
+                nextBackstop = now + BackstopSeconds;
             }
         }
 
@@ -205,8 +312,10 @@ namespace TableFootball.Net
                 return;
             }
 
-            Pose target = pose.Value;
-            float k = 1f - Mathf.Exp(-followSharpness * dt);
+            // The newest pose from either route, not pose.Value: that is only the reliable backstop and
+            // is routinely a few steps behind the fast copy.
+            Pose target = this.target;
+            float k = 1f - Mathf.Exp(-remoteFollowSharpness * dt);
 
             rod.SetSlide01Immediate(Mathf.Lerp(rod.CurrentSlide01, target.Slide01, k));
 
@@ -253,12 +362,15 @@ namespace TableFootball.Net
             // small enough for the measurement to be sound.
             rod.ClearMeasuredSpin();
 
-            pose.Value = new Pose
+            lastSent = new Pose
             {
                 Slide01 = rod.CurrentSlide01,
                 SpinAngle = rod.CurrentSpinAngle,
-                SpinSpeed = 0f
+                SpinSpeed = 0f,
+                Seq = ++sendSeq
             };
+            pose.Value = lastSent;
+            backstopPending = false;
         }
 
         public override void OnLostOwnership()
@@ -273,6 +385,10 @@ namespace TableFootball.Net
         /// </summary>
         public override void OnNetworkDespawn()
         {
+            pose.OnValueChanged -= OnPoseVariableChanged;
+            haveTarget = false;
+            backstopPending = false;
+
             rod.SetSpinVelocity(0f);
             rod.ClearMeasuredSpin();
         }

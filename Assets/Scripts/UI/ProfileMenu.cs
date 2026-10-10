@@ -1,570 +1,394 @@
 using System;
+using System.Collections.Generic;
 using TableFootball.Net;
-using TableFootball.Progression;
-using TMPro;
+using TableFootball.UI.Toolkit;
 using UnityEngine;
-using UnityEngine.UI;
+using UnityEngine.UIElements;
 
 namespace TableFootball.UI
 {
     /// <summary>
-    /// The player's name, and the optional account that makes it survive this device.
+    /// The profile: who you are (hex avatar, name, level and XP), the way into the Level Road and into
+    /// Ranked, your record, and what you are wearing. Built on UI Toolkit, styled by
+    /// <c>Resources/UI/Styles/Profile.uss</c>.
     ///
-    /// Three groups on one panel, in the manner of <see cref="MainMenu"/> and <see cref="GameMenu"/>:
-    /// the overview, the create-account form and the sign-in form. Going back between them costs a
-    /// SetActive rather than a rebuild.
+    /// The header carries the two ways out to the account's own screens: COLLECTION (the wardrobe) and
+    /// the gear (Settings, which is where the account itself — sign up, password, log out, delete — now
+    /// lives). Renaming is the only edit made here.
     ///
-    /// It reports through callbacks and owns no sequencing; <see cref="GameFlow"/> decides what comes
-    /// after. Everything it knows about identity it asks <see cref="PlayerAccount"/>.
+    /// It reports through callbacks and owns no sequencing; <see cref="GameFlow"/> decides where each
+    /// one goes. Everything it knows about identity it asks <see cref="PlayerAccount"/>, and it redraws
+    /// on the change events of the stores it reads.
     /// </summary>
     public class ProfileMenu : MonoBehaviour
     {
-        private enum Screen
+        private static readonly CosmeticKind[] WornKinds =
         {
-            Overview,
-            Create,
-            SignIn,
-            Delete
-        }
+            CosmeticKind.BallSkin, CosmeticKind.FigureSkin, CosmeticKind.FieldSkin, CosmeticKind.Background
+        };
 
-        private GameObject root;
-        private CanvasGroup group;
+        private const int XpSegments = 10;
 
-        private GameObject overviewGroup;
-        private GameObject createGroup;
-        private GameObject signInGroup;
-        private GameObject deleteGroup;
+        private VisualElement root;
 
-        private TextMeshProUGUI accountState;
-        private TextMeshProUGUI statusText;
-        private TextMeshProUGUI winsValue;
-        private TextMeshProUGUI lossesValue;
-        private TextMeshProUGUI rateValue;
-        private TextMeshProUGUI playedValue;
-        private TextMeshProUGUI goalsValue;
-        private TextMeshProUGUI timeValue;
-        private TextMeshProUGUI levelValue;
+        private UiHex hex;
+        private Label initial, levelPill, xpText;
+        private UiShineLabel nameLabel;
+        private VisualElement badgeSlot;
+        private readonly List<VisualElement> segments = new List<VisualElement>();
+        private VisualElement roadBadge;
+        private Label roadBadgeLabel;
+        private UiHex leagueHex;
+        private Label leagueName, leagueNote;
+        private Label playedValue, winsValue, rateValue, goalsValue;
+        private VisualElement wearing;
 
-        private TMP_InputField nameField;
-        private TMP_InputField createUser;
-        private TMP_InputField createPass;
-        private TMP_InputField signInUser;
-        private TMP_InputField signInPass;
-
-        private MenuButton createButton;
-        private GameObject accountNotice;
-        private MenuButton signInButton;
+        // Rename sheet
+        private VisualElement sheetLayer;
+        private TextField renameField;
+        private Label renameStatus;
+        private bool renaming;
 
         /// <summary>Raised when the player backs out.</summary>
         public Action OnBack;
 
-        public bool IsOpen => root != null && root.activeSelf;
+        /// <summary>Raised by the gear in the top right. Settings has no other door.</summary>
+        public Action OnOpenSettings;
 
+        /// <summary>Raised by COLLECTION, or by tapping something worn (with that kind's tab).</summary>
+        public Action<CosmeticKind?> OnOpenCollection;
+
+        /// <summary>Raised by the Level Road button.</summary>
+        public Action OnOpenLevelPath;
+
+        /// <summary>Raised by the league row.</summary>
+        public Action OnOpenRanked;
+
+        public bool IsOpen => root != null && root.style.display != DisplayStyle.None;
+
+        /// <summary><paramref name="canvasRoot"/> is the uGUI canvas the older screens hang off, unused
+        /// here and kept so the boot order in TableFootballUI does not change.</summary>
         public void Build(Transform canvasRoot)
         {
-            root = UIFactory.Child(canvasRoot, "ProfileMenu");
-            UIFactory.Stretch(UIFactory.Rt(root));
-            group = root.AddComponent<CanvasGroup>();
+            root = UiKit.El("screen profile", UiToolkitHost.Root, "Profile");
+            var sheet = Resources.Load<StyleSheet>("UI/Styles/Profile");
+            if (sheet != null) root.styleSheets.Add(sheet);
+            root.pickingMode = PickingMode.Position;
 
-            // The shared translucent dim, not an opaque backdrop: the account screen now wears the same
-            // background as the settings/pause overlay, so the two read as one design language over the
-            // same lit table rather than two different screens.
-            UIFactory.ScrimDim(root.transform);
+            UiBackdrop.AddTo(root);
 
-            UIFactory.ScreenHeader(root.transform, "Account", Back);
+            BuildHeader();
+            BuildIdentity();
+            BuildRight();
+            BuildRenameSheet();
 
-            var panel = UIFactory.Panel(root.transform, "ProfilePanel");
-            var prt = UIFactory.Rt(panel);
-            prt.anchorMin = prt.anchorMax = new Vector2(0.5f, 0.5f);
-            prt.pivot = new Vector2(0.5f, 0.5f);
-            // Wide and short, because that is the shape of the screen this runs on. A landscape phone
-            // at 20:9 gives the canvas roughly 805 reference units of height and 1790 of width, and
-            // the title and Back button take a fifth of the height between them — so a tall panel
-            // runs out of room while the sides sit empty. The overview answers that by using two
-            // columns; the other groups fit in one and simply leave the right side clear.
-            prt.sizeDelta = new Vector2(1180f, 540f);
-            prt.anchoredPosition = new Vector2(0f, -24f);
-
-            var fill = panel.transform.Find("Fill");
-            BuildOverview(fill);
-            BuildCreate(fill);
-            BuildSignIn(fill);
-            BuildDelete(fill);
-
-            BuildStatus(root.transform);
-
-            Show(Screen.Overview);
-            root.SetActive(false);
+            UiFonts.Apply(root);
+            UiKit.Show(root, false);
         }
 
-        private static GameObject Column(Transform parent, string name)
+        // ---------- build ----------
+
+        private void BuildHeader()
         {
-            var column = UIFactory.Child(parent, name);
-            // Tighter top and bottom than the sides: the overview is the tallest group in the game and
-            // the vertical padding is the only slack it has left.
-            UIFactory.Stretch(UIFactory.Rt(column), 30f, 20f, 30f, 20f);
+            var header = UiKit.El("prof__header", root);
 
-            var layout = column.AddComponent<VerticalLayoutGroup>();
-            layout.spacing = ArcadeTheme.Sm;
-            layout.childAlignment = TextAnchor.UpperCenter;
-            layout.childForceExpandWidth = true;
-            layout.childForceExpandHeight = false;
-            layout.childControlWidth = true;
-            layout.childControlHeight = true;
+            var back = UiKit.Frame("sq prof__back", header);
+            back.Add(new UiIcon(UiIcon.Glyph.ChevronLeft, ArcadeTheme.Ink, 2.5f));
+            UiKit.OnTap(back, () => OnBack?.Invoke(), UiSound.Back);
 
-            return column;
+            var box = UiKit.El("prof__title-box", header);
+            UiKit.Text("PROFILE", "prof__title f-display", box);
+            UiKit.El("prof__bar", box);
+
+            var collection = UiKit.Frame("prof__collection", header);
+            collection.Add(new UiIcon(UiIcon.Glyph.Chest, ArcadeTheme.Pulse, 2f));
+            UiKit.Text("COLLECTION", "prof__collection-label f-display", collection);
+            UiKit.OnTap(collection, () => OnOpenCollection?.Invoke(null));
+
+            var gear = UiKit.Frame("sq sq--lit prof__gear", header);
+            gear.Add(new UiIcon(UiIcon.Glyph.Gear, ArcadeTheme.Pulse, 2f));
+            UiKit.OnTap(gear, () => OnOpenSettings?.Invoke());
         }
 
-        /// <summary>
-        /// A group laid out as two columns rather than one. Used by the overview, which carries more
-        /// than a landscape phone has the height to stack.
-        /// </summary>
-        private static GameObject Row(Transform parent, string name)
+        private void BuildIdentity()
         {
-            var row = UIFactory.Child(parent, name);
-            UIFactory.Stretch(UIFactory.Rt(row), 30f, 20f, 30f, 20f);
+            var panel = UiKit.Frame("frame--panel prof__panel", root);
 
-            var layout = row.AddComponent<HorizontalLayoutGroup>();
-            layout.spacing = ArcadeTheme.Xl2;
-            layout.childAlignment = TextAnchor.UpperCenter;
-            layout.childForceExpandWidth = true;
-            layout.childForceExpandHeight = false;
-            layout.childControlWidth = true;
-            layout.childControlHeight = true;
+            hex = new UiHex();
+            hex.AddToClassList("prof__hex");
+            initial = UiKit.Text("?", "prof__initial f-display", hex);
+            panel.Add(hex);
 
-            return row;
+            var nameRow = UiKit.El("prof__name-row", panel);
+            // The badge worn beside the name, then the name itself (gold and shining, if that is worn).
+            badgeSlot = UiKit.El("prof__badge-slot", nameRow);
+            nameLabel = new UiShineLabel();
+            nameLabel.AddToClassList("prof__name");
+            nameLabel.AddToClassList("f-display");
+            nameRow.Add(nameLabel);
+            var rename = UiKit.Frame("sq sq--small", nameRow);
+            rename.Add(new UiIcon(UiIcon.Glyph.Pencil, ArcadeTheme.Pulse, 2f));
+            UiKit.OnTap(rename, OpenRenameSheet);
+
+            var level = UiKit.El("prof__level", panel);
+            var levelRow = UiKit.El("prof__level-row", level);
+            levelPill = UiKit.Text("LV 1", "prof__pill f-display", levelRow);
+            xpText = UiKit.Text(string.Empty, "prof__xp f-display-semi", levelRow);
+            var bar = UiKit.El("prof__segments", level);
+            for (int i = 0; i < XpSegments; i++) segments.Add(UiKit.El("prof__seg", bar));
+
+            // The way into the Level Road: gold-edged, because it is where rewards wait.
+            var road = UiKit.Frame("prof__road", panel);
+            road.Add(new UiIcon(UiIcon.Glyph.Levels, ArcadeTheme.Reward, 2f));
+            UiKit.Text("LEVEL ROAD", "prof__road-label f-display", road);
+            roadBadge = UiKit.El("prof__road-badge", road);
+            roadBadgeLabel = UiKit.Text("0", "prof__road-badge-label f-display", roadBadge);
+            var roadArrow = new UiIcon(UiIcon.Glyph.ChevronRight, ArcadeTheme.Reward, 2.4f);
+            roadArrow.AddToClassList("prof__arrow");
+            road.Add(roadArrow);
+            UiKit.OnTap(road, () => OnOpenLevelPath?.Invoke());
+
+            // Your league, and where you sit in it.
+            var league = UiKit.Frame("prof__league", panel);
+            leagueHex = new UiHex();
+            leagueHex.AddToClassList("prof__league-hex");
+            leagueHex.Add(new UiIcon(UiIcon.Glyph.Trophy, ArcadeTheme.Reward, 2f));
+            league.Add(leagueHex);
+            var words = UiKit.El("prof__league-words", league);
+            leagueName = UiKit.Text("RANKED", "prof__league-name f-display", words);
+            leagueNote = UiKit.Text(string.Empty, "prof__league-note f-body-semi", words);
+            var leagueArrow = new UiIcon(UiIcon.Glyph.ChevronRight, ArcadeTheme.InkMuted, 2.4f);
+            leagueArrow.AddToClassList("prof__arrow");
+            league.Add(leagueArrow);
+            UiKit.OnTap(league, () => OnOpenRanked?.Invoke());
         }
 
-        /// <summary>One column inside a <see cref="Row"/>. Shares the width evenly with its siblings.</summary>
-        private static Transform Col(Transform row)
+        private void BuildRight()
         {
-            var col = UIFactory.Child(row, "Col");
-            col.AddComponent<LayoutElement>().flexibleWidth = 1f;
+            var right = UiKit.El("prof__right", root);
 
-            var layout = col.AddComponent<VerticalLayoutGroup>();
-            layout.spacing = ArcadeTheme.Sm;
-            layout.childAlignment = TextAnchor.UpperCenter;
-            layout.childForceExpandWidth = true;
-            layout.childForceExpandHeight = false;
-            layout.childControlWidth = true;
-            layout.childControlHeight = true;
+            Heading(right, "RECORD");
+            var tiles = UiKit.El("prof__tiles", right);
+            playedValue = Tile(tiles, UiIcon.Glyph.Table, "MATCHES", false);
+            winsValue = Tile(tiles, UiIcon.Glyph.Trophy, "WINS", true);
+            rateValue = Tile(tiles, UiIcon.Glyph.Bolt, "WIN RATE", false);
+            goalsValue = Tile(tiles, UiIcon.Glyph.Play, "GOALS", false);
 
-            return col.transform;
+            Heading(right, "WEARING");
+            wearing = UiKit.El("prof__wearing", right);
         }
 
-        private static void Caption(Transform parent, string text)
+        private static void Heading(VisualElement parent, string text)
         {
-            var t = UIFactory.Text(parent, text, ArcadeTheme.FsCaption, ArcadeTheme.InkMuted,
-                                   display: false, bold: true, upper: true, tracking: 8f);
-            t.gameObject.AddComponent<LayoutElement>().preferredHeight = 18f;
+            var head = UiKit.El("prof__heading", parent);
+            UiKit.Text(text, "prof__heading-label f-display", head);
+            UiKit.El("prof__heading-rule", head);
         }
 
-        /// <summary>
-        /// Two columns: who you are on the left, what you can change on the right.
-        ///
-        /// The split is by kind rather than by length — the left side is the read-only identity a
-        /// player shows to others, the right side is every control that alters it. Balancing them by
-        /// height alone would have put the delete button next to the win rate.
-        /// </summary>
-        private void BuildOverview(Transform parent)
+        private static Label Tile(VisualElement parent, UiIcon.Glyph glyph, string caption, bool highlight)
         {
-            overviewGroup = Row(parent, "OverviewGroup");
-
-            var left = Col(overviewGroup.transform);
-            var right = Col(overviewGroup.transform);
-
-            // The identity header: avatar, name, level and XP — the same chip the main menu leads
-            // with, so "you" looks the same everywhere. The name it shows is this screen's friend
-            // code; the level and XP are visual placeholders (PlayerProgress).
-            var chipHolder = UIFactory.Child(left, "ChipHolder");
-            chipHolder.AddComponent<LayoutElement>().preferredHeight = 66f;
-            var chipGo = UIFactory.Child(chipHolder.transform, "Chip");
-            chipGo.AddComponent<ProfileChip>().Build(chipHolder.transform);
-
-            var codeHint = UIFactory.Text(left, "this name is your friend code — share it to be added",
-                                          ArcadeTheme.FsCaption * 0.86f, ArcadeTheme.InkMuted,
-                                          display: false, bold: true, upper: true, tracking: 3f);
-            codeHint.gameObject.AddComponent<LayoutElement>().preferredHeight = 18f;
-
-            UIFactory.SectionRule(left, "record");
-            BuildRecord(left);
-            BuildRecord2(left);
-
-            // The device-only warning sits over the button that fixes it, as a notice rather than a
-            // line of gold capitals under the stats — it is advice about Create Account, so it belongs
-            // beside Create Account.
-            accountNotice = UIFactory.Child(right, "AccountNotice");
-            accountNotice.AddComponent<LayoutElement>().preferredHeight = 78f;
-            UIFactory.RoundedImage(accountNotice, ArcadeTheme.RadMd, ArcadeTheme.Gold.WithAlpha(0.10f), false);
-            accountState = UIFactory.Text(accountNotice.transform, string.Empty, ArcadeTheme.FsCaption,
-                                          ArcadeTheme.Ink, display: false, bold: true,
-                                          align: TextAlignmentOptions.Left);
-            UIFactory.Stretch(UIFactory.Rt(accountState.gameObject), ArcadeTheme.Lg, ArcadeTheme.Sm,
-                              ArcadeTheme.Lg, ArcadeTheme.Sm);
-            accountState.textWrappingMode = TextWrappingModes.Normal;
-
-            createButton = UIFactory.Button(right, "Create Account",
-                                            MenuButton.Variant.Primary, () => Show(Screen.Create), 50f);
-            signInButton = UIFactory.Button(right, "Sign In",
-                                            MenuButton.Variant.Blue, () => Show(Screen.SignIn), 50f);
-
-            UIFactory.Spacer(right, ArcadeTheme.Md);
-            UIFactory.SectionRule(right, "change your name");
-            // Unfiltered on purpose. The rule about what a name may contain lives in
-            // PlayerAccount.ValidateName, which is where it can actually be relied on — a keystroke
-            // filter guards this one field and nothing else. Filtering here as well would only mean
-            // silently swallowing characters the player typed instead of saying what is wrong with
-            // them, and would refuse the . - _ that the rule allows.
-            nameField = UIFactory.TextInput(right, "new name", 20,
-                                            TMP_InputField.CharacterValidation.None,
-                                            height: 50f);
-            UIFactory.Button(right, "Rename", MenuButton.Variant.Blue, Rename, 50f);
-
-            // Set apart at the foot of the column, away from the everyday controls.
-            UIFactory.Spacer(right, ArcadeTheme.Lg);
-
-            // Offered to anonymous players too, not only to those with a username: the player and
-            // their friends list exist either way, and erasing them is the player's call either way.
-            UIFactory.Button(right, "Delete Player", MenuButton.Variant.Danger,
-                             () => Show(Screen.Delete), 50f);
+            var tile = UiKit.Frame("prof__tile", parent);
+            tile.Add(new UiIcon(glyph, highlight ? ArcadeTheme.Pulse : ArcadeTheme.InkMuted, 2f));
+            var value = UiKit.Text("0", "prof__tile-value f-display" + (highlight ? " prof__tile-value--lit" : string.Empty), tile);
+            UiKit.Text(caption, "prof__tile-caption f-display-semi", tile);
+            return value;
         }
 
-        /// <summary>
-        /// This device's online record. Read from <see cref="MatchStats"/> rather than a server: it is
-        /// the player's own screen, and their own device is where the count is both authoritative and
-        /// instant — a friend's record is the one that has to come from somewhere else.
-        ///
-        /// The level sits in the same row rather than getting a block of its own. The overview is
-        /// already the tallest group in the game — the comment on <see cref="Column"/> says as much —
-        /// and a fourth number costs no height at all, where a ring would have cost 140. The big ring
-        /// lives on the quests screen, which has room for it.
-        /// </summary>
-        private void BuildRecord(Transform parent)
+        // ---------- rename ----------
+
+        private void BuildRenameSheet()
         {
-            var row = UIFactory.Child(parent, "RecordRow");
-            row.AddComponent<LayoutElement>().preferredHeight = ArcadeTheme.StatTileHeight;
+            sheetLayer = UiKit.El("bleed prof__sheet-layer", root);
+            sheetLayer.pickingMode = PickingMode.Position;
 
-            var h = row.AddComponent<HorizontalLayoutGroup>();
-            h.childAlignment = TextAnchor.MiddleCenter;
-            h.spacing = ArcadeTheme.Sm;
-            h.childForceExpandWidth = true;
-            h.childForceExpandHeight = false;
-            h.childControlWidth = true;
-            h.childControlHeight = true;
+            var sheet = UiKit.Frame("prof__sheet", sheetLayer);
+            UiKit.Text("YOUR NAME", "prof__sheet-title f-display", sheet);
 
-            // One colour for the record, with gold kept for the win rate — the figure the rest add
-            // up to. Seven stats in five colours read as a chart legend rather than a record.
-            winsValue = UIFactory.StatTile(row.transform, "won", ArcadeTheme.Ink);
-            lossesValue = UIFactory.StatTile(row.transform, "lost", ArcadeTheme.Ink);
-            rateValue = UIFactory.StatTile(row.transform, "win rate", ArcadeTheme.Gold);
-            levelValue = UIFactory.StatTile(row.transform, "level", ArcadeTheme.Ink);
+            var field = UiKit.Frame("prof__field", sheet);
+            field.Add(new UiIcon(UiIcon.Glyph.Person, ArcadeTheme.Pulse, 2f));
+            renameField = new TextField { maxLength = 20, autoCorrection = false };
+            renameField.AddToClassList("prof__field-input");
+            renameField.AddToClassList("f-body-semi");
+            renameField.RegisterCallback<FocusInEvent>(_ => field.AddToClassList("is-focus"));
+            renameField.RegisterCallback<FocusOutEvent>(_ => field.RemoveFromClassList("is-focus"));
+            field.Add(renameField);
+
+            var buttons = UiKit.El("prof__sheet-buttons", sheet);
+            UiKit.Button("CANCEL", "ghost", () => CloseRenameSheet(), buttons);
+            UiKit.Button("SAVE", "pulse", SaveName, buttons);
+
+            renameStatus = UiKit.Text(string.Empty, "prof__sheet-status f-body-semi", sheet);
+            UiKit.Show(sheetLayer, false);
         }
 
-        /// <summary>
-        /// A second stat row, all real now: matches played, goals scored and total time played — the
-        /// numbers a returning player checks to feel their history adding up. Goals and time are
-        /// credited by <see cref="TableFootball.UI.GameFlow"/> off the match loop; played is wins plus
-        /// losses.
-        /// </summary>
-        private void BuildRecord2(Transform parent)
+        private void OpenRenameSheet()
         {
-            var row = UIFactory.Child(parent, "RecordRow2");
-            row.AddComponent<LayoutElement>().preferredHeight = ArcadeTheme.StatTileHeight;
-
-            var h = row.AddComponent<HorizontalLayoutGroup>();
-            h.childAlignment = TextAnchor.MiddleCenter;
-            h.spacing = ArcadeTheme.Sm;
-            h.childForceExpandWidth = true;
-            h.childForceExpandHeight = false;
-            h.childControlWidth = true;
-            h.childControlHeight = true;
-
-            playedValue = UIFactory.StatTile(row.transform, "played", ArcadeTheme.Ink);
-            goalsValue = UIFactory.StatTile(row.transform, "goals", ArcadeTheme.Ink);
-            timeValue = UIFactory.StatTile(row.transform, "time played", ArcadeTheme.Ink);
+            renameField.value = PlayerAccount.ShortName;
+            renameStatus.text = string.Empty;
+            renaming = false;
+            UiFonts.Apply(sheetLayer);
+            UiKit.Show(sheetLayer, true);
+            sheetLayer.style.opacity = 0f;
+            UiKit.Fade(sheetLayer, 1f, ArcadeTheme.TFast);
+            GameSfx.PlayUi(UiSound.Open);
         }
 
-        private void BuildDelete(Transform parent)
+        private void CloseRenameSheet()
         {
-            deleteGroup = Column(parent, "DeleteGroup");
-
-            var title = UIFactory.Text(deleteGroup.transform, "DELETE PLAYER?", ArcadeTheme.FsTitle * 0.6f,
-                                       ArcadeTheme.Red, display: true, bold: true, upper: true,
-                                       tracking: 4f);
-            title.gameObject.AddComponent<LayoutElement>().preferredHeight = 44f;
-
-            // Names what actually goes, rather than asking "are you sure?" about an unstated thing.
-            // The friends line matters most: it is the part players do not expect to lose.
-            var warn = UIFactory.Text(deleteGroup.transform,
-                                      "your name, your account and your friends are erased forever. " +
-                                      "friends who added you will lose you from their lists. " +
-                                      "this cannot be undone.",
-                                      ArcadeTheme.FsCaption, ArcadeTheme.Ink,
-                                      display: false, bold: true, upper: true, tracking: 2f);
-            warn.gameObject.AddComponent<LayoutElement>().preferredHeight = 96f;
-            warn.textWrappingMode = TextWrappingModes.Normal;
-
-            UIFactory.Spacer(deleteGroup.transform, 8f);
-
-            // Keep first and primary, matching the pause menu's leave confirmation: the safe answer
-            // sits under the thumb and looks like the default.
-            UIFactory.Button(deleteGroup.transform, "Keep My Player", MenuButton.Variant.Primary,
-                             () => Show(Screen.Overview), 54f);
-            UIFactory.Button(deleteGroup.transform, "Delete Forever", MenuButton.Variant.Danger,
-                             Delete, 54f);
+            UiKit.Show(sheetLayer, false);
         }
 
-        private void BuildCreate(Transform parent)
+        private async void SaveName()
         {
-            createGroup = Column(parent, "CreateGroup");
+            if (renaming) return;
+            renaming = true;
+            renameStatus.text = "SAVING…";
 
-            Caption(createGroup.transform, "choose a username");
-            // Dice fills a valid random username for a player who does not want to invent one.
-            createUser = UIFactory.UsernameField(createGroup.transform, "username", 20, 54f);
+            bool ok = await PlayerAccount.SetNameAsync(renameField.value);
+            renaming = false;
 
-            Caption(createGroup.transform, "and a password");
-            // 29, not 30: a symbol-free password has one appended before it is sent, and the service
-            // caps the result at 30. Eye toggles it between masked and plain.
-            createPass = UIFactory.PasswordField(createGroup.transform, "password", 29, 54f);
-
-            var rules = UIFactory.Text(createGroup.transform,
-                                       "at least 8 characters, with a capital and a number",
-                                       ArcadeTheme.FsCaption, ArcadeTheme.InkMuted,
-                                       display: false, bold: true, upper: true, tracking: 2f);
-            rules.gameObject.AddComponent<LayoutElement>().preferredHeight = 32f;
-            rules.textWrappingMode = TextWrappingModes.Normal;
-
-            UIFactory.Button(createGroup.transform, "Create", MenuButton.Variant.Primary, Create, 54f);
-            UIFactory.Button(createGroup.transform, "Cancel", MenuButton.Variant.Ghost,
-                             () => Show(Screen.Overview), 54f);
-        }
-
-        private void BuildSignIn(Transform parent)
-        {
-            signInGroup = Column(parent, "SignInGroup");
-
-            Caption(signInGroup.transform, "sign in to your account");
-            // No randomiser: the sign-in username is one you already have and must type exactly. The
-            // eye still helps here — a mistyped password is the usual reason a sign-in fails.
-            signInUser = UIFactory.TextInput(signInGroup.transform, "username", 20,
-                                             TMP_InputField.CharacterValidation.None, height: 54f);
-            signInPass = UIFactory.PasswordField(signInGroup.transform, "password", 30, 54f);
-
-            var warn = UIFactory.Text(signInGroup.transform,
-                                      "this replaces the player on this device",
-                                      ArcadeTheme.FsCaption, ArcadeTheme.Gold,
-                                      display: false, bold: true, upper: true, tracking: 2f);
-            warn.gameObject.AddComponent<LayoutElement>().preferredHeight = 32f;
-            warn.textWrappingMode = TextWrappingModes.Normal;
-
-            UIFactory.Button(signInGroup.transform, "Sign In", MenuButton.Variant.Primary, SignIn, 54f);
-            // A way straight to the create form for a player who came here to sign in and realised they
-            // have no account yet — otherwise they would have to back out to the overview to find it.
-            UIFactory.Button(signInGroup.transform, "Sign Up", MenuButton.Variant.Ghost,
-                             () => Show(Screen.Create), 54f);
-            UIFactory.Button(signInGroup.transform, "Cancel", MenuButton.Variant.Ghost,
-                             () => Show(Screen.Overview), 54f);
-        }
-
-        private void BuildStatus(Transform parent)
-        {
-            statusText = UIFactory.Text(parent, string.Empty, ArcadeTheme.FsBody, ArcadeTheme.Red,
-                                        display: false, bold: true, upper: true, tracking: 3f);
-            var rt = UIFactory.Rt(statusText.gameObject);
-            rt.anchorMin = rt.anchorMax = new Vector2(0.5f, 0f);
-            rt.pivot = new Vector2(0.5f, 0f);
-            rt.sizeDelta = new Vector2(900f, 36f);
-            rt.anchoredPosition = new Vector2(0f, 56f);
+            if (ok)
+            {
+                CloseRenameSheet();
+                Redraw();
+            }
+            else
+            {
+                renameStatus.text = PlayerAccount.LastError;
+                GameSfx.PlayUi(UiSound.Deny);
+            }
         }
 
         // ---------- state ----------
 
         public async void Open()
         {
-            if (root == null)
-            {
-                return;
-            }
+            if (root == null) return;
 
-            SetStatus(string.Empty);
-            Show(Screen.Overview);
+            CloseRenameSheet();
 
-            root.SetActive(true);
-            root.transform.SetAsLastSibling();
-            group.blocksRaycasts = true;
+            // Removed first, so reopening cannot stack a second handler onto a static event that
+            // outlives this screen.
+            Unsubscribe();
+            PlayerAccount.OnChanged += Redraw;
+            PlayerProgress.OnChanged += Redraw;
+            Inventory.OnChanged += Redraw;
+            LevelPath.OnChanged += Redraw;
+            Ladder.OnChanged += Redraw;
 
-            // A quick fade in, so arriving here reads as a transition rather than a hard cut.
-            group.alpha = 0f;
-            StartCoroutine(UITween.Fade(group, 0f, 1f, ArcadeTheme.TFast, ArcadeTheme.EaseOut));
+            Redraw();
+
+            UiKit.Show(root, true);
+            root.BringToFront();
+            root.style.opacity = 0f;
+            UiKit.Fade(root, 1f, ArcadeTheme.TFast);
+            GameSfx.PlayUi(UiSound.Open);
 
             // The name may not exist yet for a brand new player — the service mints one on the first
-            // request — so the panel opens showing a placeholder and fills itself in.
+            // request — so the screen opens with what it has and fills itself in.
             await PlayerAccount.RefreshAsync();
-            Redraw();
+            if (IsOpen) Redraw();
         }
 
         public void Close()
         {
-            if (root != null)
-            {
-                group.blocksRaycasts = false;
-                root.SetActive(false);
-            }
+            Unsubscribe();
+            if (root != null) UiKit.Show(root, false);
         }
 
-        private void Show(Screen next)
-        {
-            if (overviewGroup != null) overviewGroup.SetActive(next == Screen.Overview);
-            if (createGroup != null) createGroup.SetActive(next == Screen.Create);
-            if (signInGroup != null) signInGroup.SetActive(next == Screen.SignIn);
-            if (deleteGroup != null) deleteGroup.SetActive(next == Screen.Delete);
+        private void OnDestroy() => Unsubscribe();
 
-            SetStatus(string.Empty);
+        private void Unsubscribe()
+        {
+            PlayerAccount.OnChanged -= Redraw;
+            PlayerProgress.OnChanged -= Redraw;
+            Inventory.OnChanged -= Redraw;
+            LevelPath.OnChanged -= Redraw;
+            Ladder.OnChanged -= Redraw;
         }
 
         private void Redraw()
         {
-            if (accountState == null)
-            {
-                return;
-            }
+            if (root == null) return;
 
-            // The name is drawn by the ProfileChip header, which follows PlayerAccount on its own —
-            // nothing to set here.
+            string name = PlayerAccount.ShortName;
+            bool hasName = !string.IsNullOrWhiteSpace(name);
+            nameLabel.Set(hasName ? name : "—");
+            badgeSlot.Clear();
+            VisualElement worn = UiArt.WornBadge(34f);
+            if (worn != null) badgeSlot.Add(worn);
+            UiKit.Show(badgeSlot, worn != null);
+            initial.text = hasName ? name.Substring(0, 1).ToUpperInvariant() : "?";
+
+            levelPill.text = "LV " + PlayerProgress.Level;
+            xpText.text = PlayerProgress.XpLabel;
+            int lit = PlayerProgress.AtMaxLevel
+                ? XpSegments
+                : Mathf.Clamp(Mathf.RoundToInt(PlayerProgress.XpFraction * XpSegments), 0, XpSegments);
+            for (int i = 0; i < segments.Count; i++) segments[i].EnableInClassList("is-lit", i < lit);
+
+            int waiting = LevelPath.UnclaimedCount;
+            UiKit.Show(roadBadge, waiting > 0);
+            roadBadgeLabel.text = waiting > 9 ? "9+" : waiting.ToString();
+
+            LadderStanding standing = Ladder.Standing;
+            if (standing.Valid)
+            {
+                Color metal = UIFactory.LeagueColor(standing.League);
+                leagueHex.Edge = metal;
+                leagueHex.Q<UiIcon>().Color = metal;
+                leagueName.text = Leagues.Name(standing.League).ToUpperInvariant();
+                leagueName.style.color = metal;
+                leagueNote.text = "#" + standing.RankInPod + " this week";
+            }
+            else
+            {
+                leagueHex.Edge = ArcadeTheme.BlueLine;
+                leagueHex.Q<UiIcon>().Color = ArcadeTheme.InkMuted;
+                leagueName.text = "RANKED";
+                leagueName.style.color = ArcadeTheme.Ink;
+                leagueNote.text = "Play online to get a rank";
+            }
 
             // The overall progression record (vs-AI and online alike) — the same store the XP bar and
-            // level read from, so the profile is internally consistent. MatchStats stays the separate
-            // online-only feed for the leaderboard.
+            // level read from, so the profile is internally consistent.
+            playedValue.text = PlayerProgress.Played.ToString();
             winsValue.text = PlayerProgress.Wins.ToString();
-            lossesValue.text = PlayerProgress.Losses.ToString();
             // A dash rather than 0% before the first match: nobody has a nought-percent win rate until
             // they have actually lost one.
-            // Reads PlayerProgress like winsValue/lossesValue just above, not MatchStats — the
-            // percentage has to be computed from the same pair of numbers the player sees it beside,
-            // or a rate and a scoreline that came from two different counters would visibly disagree.
-            rateValue.text = PlayerProgress.WinPercent >= 0 ? $"{PlayerProgress.WinPercent}%" : "–";
-            levelValue.text = PlayerXp.Level.ToString();
-
-            // All real now: played is wins + losses, goals and time are credited from the match loop.
-            playedValue.text = PlayerProgress.Played.ToString();
+            rateValue.text = PlayerProgress.WinPercent >= 0 ? PlayerProgress.WinPercent + "%" : "–";
             goalsValue.text = PlayerProgress.Goals.ToString();
-            timeValue.text = FormatPlayTime(PlayerProgress.PlayTimeSeconds);
 
-            // Only the warning earns a line. "Your account is secured" restated something the player
-            // had just done and could do nothing about — the anonymous case is the one with a
-            // consequence worth stating before they spend an evening adding friends.
-            if (PlayerAccount.HasAccount)
-            {
-                if (accountNotice != null) accountNotice.SetActive(false);
-            }
-            else
-            {
-                if (accountNotice != null) accountNotice.SetActive(true);
-                accountState.text = "This player lives on this device only. Create an account so your " +
-                                    "friends and progress survive a reinstall.";
-            }
-
-            // Both are meaningless once an account exists: there is nothing left to create, and
-            // signing in as somebody else from your own profile is not a thing anyone means to do.
-            if (createButton != null) createButton.gameObject.SetActive(!PlayerAccount.HasAccount);
-            if (signInButton != null) signInButton.gameObject.SetActive(!PlayerAccount.HasAccount);
+            RedrawWearing();
         }
 
-        private void SetStatus(string message)
+        private void RedrawWearing()
         {
-            if (statusText != null)
+            wearing.Clear();
+            foreach (CosmeticKind kind in WornKinds)
             {
-                statusText.text = message ?? string.Empty;
+                CosmeticItem item = Inventory.Equipped(kind);
+                if (!item.Valid) continue;
+
+                Color rarity = UIFactory.RarityColor(item.Rarity);
+                var card = UiKit.Frame("prof__worn", wearing);
+                card.OverrideEdge(rarity);
+
+                var art = UiArt.Cosmetic(item);
+                art.AddToClassList("prof__worn-art");
+                card.Add(art);
+
+                UiKit.Text(item.Name, "prof__worn-name f-display-semi", card);
+                var line = UiKit.Text(CosmeticCatalog.KindLabel(kind).ToUpperInvariant() + " · " +
+                                      CosmeticCatalog.RarityName(item.Rarity).ToUpperInvariant(),
+                                      "prof__worn-line f-display", card);
+                line.style.color = rarity;
+
+                CosmeticKind tapped = kind;
+                UiKit.OnTap(card, () => OnOpenCollection?.Invoke(tapped));
             }
-        }
 
-        /// <summary>
-        /// Seconds as a compact "2h 14m" / "14m" / "0m", for the stat block. Hours and minutes only —
-        /// a lifetime total measured to the second would be noise on a card whose job is to feel like a
-        /// growing number.
-        /// </summary>
-        private static string FormatPlayTime(int seconds)
-        {
-            int minutes = seconds / 60;
-            int hours = minutes / 60;
-            minutes %= 60;
-            return hours > 0 ? $"{hours}h {minutes}m" : $"{minutes}m";
-        }
-
-        // ---------- actions ----------
-
-        private async void Rename()
-        {
-            SetStatus("SAVING…");
-
-            if (await PlayerAccount.SetNameAsync(nameField.text))
-            {
-                nameField.text = string.Empty;
-                SetStatus(string.Empty);
-                Redraw();
-            }
-            else
-            {
-                SetStatus(PlayerAccount.LastError);
-            }
-        }
-
-        private async void Create()
-        {
-            SetStatus("CREATING…");
-
-            if (await PlayerAccount.CreateAccountAsync(createUser.text, createPass.text))
-            {
-                createUser.text = string.Empty;
-                createPass.text = string.Empty;
-                Show(Screen.Overview);
-                Redraw();
-            }
-            else
-            {
-                SetStatus(PlayerAccount.LastError);
-            }
-        }
-
-        private async void SignIn()
-        {
-            SetStatus("SIGNING IN…");
-
-            if (await PlayerAccount.SignInAsync(signInUser.text, signInPass.text))
-            {
-                signInUser.text = string.Empty;
-                signInPass.text = string.Empty;
-                Show(Screen.Overview);
-                Redraw();
-            }
-            else
-            {
-                SetStatus(PlayerAccount.LastError);
-            }
-        }
-
-        private async void Delete()
-        {
-            SetStatus("DELETING…");
-
-            if (await PlayerAccount.DeleteAccountAsync())
-            {
-                // Straight back to the overview, which now shows a brand new anonymous player with a
-                // new code and no friends. Saying so beats leaving them to notice.
-                Show(Screen.Overview);
-                Redraw();
-                SetStatus("PLAYER DELETED — YOU ARE SOMEONE NEW");
-            }
-            else
-            {
-                SetStatus(PlayerAccount.LastError);
-            }
-        }
-
-        private void Back()
-        {
-            Close();
-            OnBack?.Invoke();
+            UiFonts.Apply(wearing);
         }
     }
 }

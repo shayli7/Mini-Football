@@ -3,8 +3,9 @@ using UnityEngine;
 namespace TableFootball
 {
     /// <summary>
-    /// The effects the top-tier ball skins carry: Ice Cube's frost trail, the Golden Trophy Ball's
-    /// gold dust, and the Disco Ball's sparkle.
+    /// The effects the top-tier ball skins carry: Ice Cube's frost trail, the Solar Crown's gold
+    /// energy trail, and the Disco Ball's sparkle. The Solar Crown's other effects (speed glow,
+    /// impacts, aura, idle pulse, goal crown) live in <see cref="SolarCrownFx"/>, switched from here.
     ///
     /// Built in code like the rest of this project's presentation — no prefabs, no particle assets to
     /// keep in step with the catalogue. It follows <see cref="BallSkinner.OnSkinChanged"/> rather
@@ -60,8 +61,9 @@ namespace TableFootball
                     effect = new Effect(Hex("#BBE6FF"), 0.34f, 90f, 0f, 0.0055f);
                     return true;
                 case "ball.golden":
-                    // Dust falls off the ball, so it is metered by distance and lingers briefly.
-                    effect = new Effect(Hex("#FFD24A"), 0.26f, 70f, 0f, 0.0045f);
+                    // Solar Crown: a flowing gold energy ribbon shedding sparks as it travels. The
+                    // ribbon's length and width are then driven by speed in SolarCrownFx.
+                    effect = new Effect(Hex("#FFC233"), 0.30f, 90f, 0f, 0.0035f);
                     return true;
                 case "ball.disco":
                     // No ribbon: a mirror ball glitters where it is, moving or not.
@@ -119,6 +121,26 @@ namespace TableFootball
         {
             if (skinner != null) skinner.OnSkinChanged -= Configure;
             Show(false);
+            SetCrownFx(false);
+        }
+
+        /// <summary>
+        /// Switches the Solar Crown's own effects (speed glow, impacts, aura, idle pulse, goal crown)
+        /// on or off. Added on first use rather than placed in the scene, like every other effect
+        /// here; while off, it hides everything and restores the seams to their resting glow.
+        /// </summary>
+        private void SetCrownFx(bool on)
+        {
+            var fx = GetComponent<SolarCrownFx>();
+            if (fx == null)
+            {
+                if (!on) return;
+                fx = gameObject.AddComponent<SolarCrownFx>();
+            }
+
+            // Handed over before enabling, so the first frame already stretches the right ribbon.
+            fx.UseTrail(trail);
+            fx.enabled = on;
         }
 
         private void LateUpdate()
@@ -153,6 +175,14 @@ namespace TableFootball
         /// choice arriving in an online match.
         /// </summary>
         private void Configure(string id)
+        {
+            ConfigureTrail(id);
+            // After the trail is built, not before: the Solar Crown stretches that ribbon, and on the
+            // first configure it does not exist until ConfigureTrail has made it.
+            SetCrownFx(id == "ball.golden");
+        }
+
+        private void ConfigureTrail(string id)
         {
             if (!EffectFor(id, out Effect effect))
             {

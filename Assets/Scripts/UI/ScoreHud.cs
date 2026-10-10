@@ -42,6 +42,20 @@ namespace TableFootball.UI
         private int lastTick = -1;
         private UIBurst burst;
 
+        // The stall warning: a pill under the strip, the same family as the sudden-death one, that
+        // counts down a team holding the ball in its own zone and then announces the free shot.
+        private BallController stallBall;
+        private GameObject stallRoot;
+        private CanvasGroup stallCg;
+        private Image stallBorder;
+        private TextMeshProUGUI stallLabel, stallDigit;
+        private GameObject stallBarRoot;
+        private UIFillBar stallBar;
+        private Image stallBarFill;
+        private Team? stallShownTeam;
+        private int stallMaxSeconds;
+        private Coroutine stallRoutine;
+
         // The post-match progression block on the banner (XP earned, level pill, XP bar). Populated by
         // GameFlow via ShowMatchProgress; left hidden for local PvP, where there is no single player.
         private GameObject progressBlock;
@@ -126,6 +140,7 @@ namespace TableFootball.UI
             {
                 if (banner != null) banner.SetActive(false);
                 HideGoalPopup();
+                HideStallWarning(animate: false);
                 SetOpponentPaused(false);
             }
         }
@@ -196,7 +211,11 @@ namespace TableFootball.UI
             BuildOpponentPaused(canvasRoot);
             BuildHud(canvasRoot);
             BuildSuddenDeath(canvasRoot);
+            BuildStallWarning(canvasRoot);
             BuildBanner(canvasRoot);
+
+            stallBall = FindAnyObjectByType<BallController>();
+            if (stallBall != null) stallBall.StallChanged += OnStallChanged;
 
             if (match != null)
             {
@@ -218,6 +237,8 @@ namespace TableFootball.UI
 
         private void OnDestroy()
         {
+            if (stallBall != null) stallBall.StallChanged -= OnStallChanged;
+
             if (match == null) return;
             match.ScoreChanged -= OnScoreChanged;
             match.GoalScored -= OnGoalScored;
@@ -399,6 +420,194 @@ namespace TableFootball.UI
             UIFactory.Stretch(UIFactory.Rt(t.gameObject), 0);
 
             panel.SetActive(false);
+        }
+
+        // The pills under the strip — sudden death and the stall warning — share one size, so they
+        // read as the same kind of notice and stack cleanly when both are up.
+        private const float NoticeWidth = 320f;
+        private const float NoticeHeight = 54f;
+        private const float StallDigitWidth = 56f;
+        private const float StallBarHeight = 6f;
+
+        /// <summary>
+        /// The stall warning: "STALLING 3" in a pill under the strip, bordered in the offending team's
+        /// colour, with a thin bar along its foot draining toward the free shot.
+        ///
+        /// Built as the sudden-death notice's twin rather than as a pop-up over the table: the eye is
+        /// already at the strip, the shape is one the HUD already uses, and the team colour answers
+        /// "whose clock is this?" at a glance for both players. It never takes the pointer — it sits
+        /// over the pitch, and RodTouchInput treats anything that raycasts as UI in the way of a rod.
+        /// </summary>
+        private void BuildStallWarning(Transform root)
+        {
+            var panel = UIFactory.Panel(root, "StallWarning");
+            stallRoot = panel;
+
+            var rt = UIFactory.Rt(panel);
+            rt.anchorMin = new Vector2(0.5f, 1f);
+            rt.anchorMax = new Vector2(0.5f, 1f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.sizeDelta = new Vector2(NoticeWidth, NoticeHeight);
+
+            stallCg = panel.AddComponent<CanvasGroup>();
+            stallCg.blocksRaycasts = false;
+            stallCg.interactable = false;
+
+            var border = panel.transform.Find("Border");
+            if (border != null) stallBorder = border.GetComponent<Image>();
+
+            var fill = panel.transform.Find("Fill");
+
+            stallLabel = UIFactory.Text(fill, "STALLING", ArcadeTheme.FsButton, ArcadeTheme.Ink,
+                                        display: true, bold: true, upper: true, tracking: 8f);
+            UIFactory.Stretch(UIFactory.Rt(stallLabel.gameObject),
+                              ArcadeTheme.Lg, ArcadeTheme.Sm, ArcadeTheme.Lg + StallDigitWidth, 0f);
+
+            stallDigit = UIFactory.Text(fill, "", ArcadeTheme.FsButton, ArcadeTheme.Ink,
+                                        display: true, bold: true);
+            var digitRt = UIFactory.Rt(stallDigit.gameObject);
+            digitRt.anchorMin = new Vector2(1f, 0f);
+            digitRt.anchorMax = new Vector2(1f, 1f);
+            digitRt.pivot = new Vector2(1f, 0.5f);
+            digitRt.sizeDelta = new Vector2(StallDigitWidth, -ArcadeTheme.Sm);
+            digitRt.anchoredPosition = new Vector2(-ArcadeTheme.Md, ArcadeTheme.Sm * 0.5f);
+
+            stallBarRoot = UIFactory.XpBar(fill, 1f, null, StallBarHeight);
+            var barRt = UIFactory.Rt(stallBarRoot);
+            barRt.anchorMin = new Vector2(0f, 0f);
+            barRt.anchorMax = new Vector2(1f, 0f);
+            barRt.pivot = new Vector2(0.5f, 0f);
+            barRt.sizeDelta = new Vector2(-2f * ArcadeTheme.Lg, StallBarHeight);
+            barRt.anchoredPosition = new Vector2(0f, ArcadeTheme.Sm);
+            stallBar = stallBarRoot.GetComponentInChildren<UIFillBar>(true);
+            if (stallBar != null) stallBarFill = stallBar.GetComponent<Image>();
+
+            panel.SetActive(false);
+        }
+
+        /// <summary>Just under the strip — or under the sudden-death notice, when that is up.</summary>
+        private void PlaceStallWarning()
+        {
+            float y = -(ArcadeTheme.Sm + StripHeight + ArcadeTheme.Sm);
+            if (suddenDeathRoot != null && suddenDeathRoot.activeSelf)
+            {
+                y -= NoticeHeight + ArcadeTheme.Sm;
+            }
+            UIFactory.Rt(stallRoot).anchoredPosition = new Vector2(0f, y);
+        }
+
+        /// <summary>
+        /// Driven by <see cref="BallController.StallChanged"/>: a team and seconds is the countdown, a
+        /// team and 0 is the penalty, no team withdraws the warning.
+        /// </summary>
+        private void OnStallChanged(Team? team, int secondsLeft)
+        {
+            if (stallRoot == null) return;
+
+            if (team == null)
+            {
+                HideStallWarning(animate: true);
+            }
+            else if (secondsLeft > 0)
+            {
+                ShowStallCountdown(team.Value, secondsLeft);
+            }
+            else
+            {
+                ShowFreeShot(team.Value);
+            }
+        }
+
+        private void ShowStallCountdown(Team team, int secondsLeft)
+        {
+            bool fresh = !stallRoot.activeSelf || stallShownTeam != team || stallDigit.text.Length == 0;
+            stallShownTeam = team;
+
+            Color teamColor = team == Team.Red ? ArcadeTheme.Red : ArcadeTheme.Blue;
+            if (stallBorder != null) stallBorder.color = teamColor;
+            stallLabel.text = "STALLING";
+            stallLabel.color = ArcadeTheme.Ink;
+            stallDigit.text = secondsLeft.ToString();
+            stallDigit.color = teamColor;
+            if (stallBarFill != null) stallBarFill.color = teamColor;
+            stallBarRoot.SetActive(true);
+
+            if (fresh)
+            {
+                stallMaxSeconds = Mathf.Max(1, secondsLeft);
+                PlaceStallWarning();
+                stallCg.alpha = 1f;
+                stallRoot.SetActive(true);
+                stallRoutine = Restart(stallRoutine, UITween.PopIn(stallRoot.transform, ArcadeTheme.TNormal));
+            }
+            else
+            {
+                // One beat per second, on the second, as the match clock does in its last ten.
+                stallRoutine = Restart(stallRoutine, UITween.Pop(stallRoot.transform, 1.08f, ArcadeTheme.TNormal));
+            }
+
+            // Drains across the coming second, so the bar reaches empty as the free shot is given.
+            if (stallBar != null)
+            {
+                stallBar.SetFraction((secondsLeft - 1f) / stallMaxSeconds, (float)secondsLeft / stallMaxSeconds);
+            }
+        }
+
+        private void ShowFreeShot(Team offender)
+        {
+            Color toColor = offender == Team.Red ? ArcadeTheme.Blue : ArcadeTheme.Red;
+            if (stallBorder != null) stallBorder.color = toColor;
+            stallLabel.text = "FREE SHOT";
+            stallLabel.color = toColor;
+            stallDigit.text = "";
+            stallBarRoot.SetActive(false);
+            stallShownTeam = null;
+
+            bool fresh = !stallRoot.activeSelf;
+            if (fresh)
+            {
+                PlaceStallWarning();
+                stallCg.alpha = 1f;
+                stallRoot.SetActive(true);
+            }
+            stallRoutine = Restart(stallRoutine, FreeShotRoutine(fresh));
+        }
+
+        private IEnumerator FreeShotRoutine(bool fresh)
+        {
+            if (fresh) yield return UITween.PopIn(stallRoot.transform, ArcadeTheme.TNormal);
+            else yield return UITween.Pop(stallRoot.transform, 1.12f, ArcadeTheme.TNormal);
+
+            // Held while the ball is carried to the spot, then away.
+            yield return new WaitForSecondsRealtime(ArcadeTheme.TFlash);
+            yield return FadeOutStall();
+        }
+
+        private void HideStallWarning(bool animate)
+        {
+            stallShownTeam = null;
+            if (stallRoot == null || !stallRoot.activeSelf) return;
+
+            if (animate && isActiveAndEnabled)
+            {
+                stallRoutine = Restart(stallRoutine, FadeOutStall());
+                return;
+            }
+
+            if (stallRoutine != null) StopCoroutine(stallRoutine);
+            stallRoutine = null;
+            stallRoot.SetActive(false);
+            stallRoot.transform.localScale = Vector3.one;
+            stallCg.alpha = 1f;
+        }
+
+        private IEnumerator FadeOutStall()
+        {
+            yield return UITween.Fade(stallCg, stallCg.alpha, 0f, ArcadeTheme.TSlow, ArcadeTheme.EaseIn);
+            stallRoot.SetActive(false);
+            stallRoot.transform.localScale = Vector3.one;
+            stallCg.alpha = 1f;
+            stallRoutine = null;
         }
 
         private void BuildFlash(Transform root)
@@ -655,6 +864,8 @@ namespace TableFootball.UI
 
         private void OnGoalScored(Team scorer)
         {
+            HideStallWarning(animate: false);
+
             if (flashImg != null)
             {
                 flashImg.color = (scorer == Team.Red ? ArcadeTheme.Red : ArcadeTheme.Blue).WithAlpha(1f);
@@ -912,6 +1123,8 @@ namespace TableFootball.UI
 
         private void OnMatchWon(Team winner)
         {
+            HideStallWarning(animate: false);
+
             if (banner == null || ResultsHidden) return;
 
             // Every banner starts without the progression or ranked blocks and at the base height.
@@ -1056,12 +1269,14 @@ namespace TableFootball.UI
         {
             if (clockRoot != null) clockRoot.SetActive(false);
             if (suddenDeathRoot != null) suddenDeathRoot.SetActive(true);
+            if (stallRoot != null && stallRoot.activeSelf) PlaceStallWarning(); // step down under it
         }
 
         private void OnMatchRestarted()
         {
             if (banner != null) banner.SetActive(false);
             HideGoalPopup();
+            HideStallWarning(animate: false);
 
             // The next result draws its own ledger. Putting this one away now, while the banner is
             // hidden, is what stops a rematch opening on the last match's rewards.

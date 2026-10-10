@@ -4,6 +4,24 @@ using UnityEngine;
 namespace TableFootball
 {
     /// <summary>
+    /// The sounds the interface makes. Every tap makes one; which one says what the tap did. Play
+    /// with <see cref="GameSfx.PlayUi"/> — the UI kits do it for you, so call sites never need to.
+    /// </summary>
+    public enum UiSound
+    {
+        Tap,      // any button
+        Back,     // back, close
+        Confirm,  // play, save, next
+        Open,     // a screen or sheet opening
+        Close,    // a screen or sheet closing
+        Toggle,   // a switch
+        Step,     // a slider cell, a reward landing
+        Reward,   // claim, collect
+        Warn,     // opening something destructive
+        Deny      // a disabled button
+    }
+
+    /// <summary>
     /// Plays the game's sound effects. Sounds come from <see cref="SfxLibrary"/> by default, so
     /// audio works with no files in the project; assigning a clip in the inspector overrides the
     /// synthesised one, which is how real recordings get added later without a code change.
@@ -244,10 +262,36 @@ namespace TableFootball
                           Mathf.Pow(1.122462f, Mathf.Clamp(step, 0, 3)));
         }
 
-        public static void PlayUiClick()
+        /// <summary>The plain button tap. Kept for the callers that predate <see cref="PlayUi"/>.</summary>
+        public static void PlayUiClick() => PlayUi(UiSound.Tap);
+
+        /// <summary>
+        /// One of the interface sounds. <paramref name="pitch"/> lets a caller climb a scale with the
+        /// same sound — each coin landing a note higher, each slider step a little brighter.
+        /// Like the rest, a recording in Resources/Audio (<c>UiTap</c>, <c>UiBack</c>…) replaces the
+        /// synthesised sound of the same name.
+        /// </summary>
+        public static void PlayUi(UiSound sound, float pitch = 1f)
         {
             if (instance == null) return;
-            instance.Play(instance.uiClickClip ?? SfxLibrary.UiClick, instance.uiVolume, 1f);
+
+            AudioClip clip;
+            float volume = instance.uiVolume;
+            switch (sound)
+            {
+                case UiSound.Back: clip = Resolve(null, "UiBack", SfxLibrary.UiBack); break;
+                case UiSound.Confirm: clip = Resolve(null, "UiConfirm", SfxLibrary.UiConfirm); break;
+                case UiSound.Open: clip = Resolve(null, "UiOpen", SfxLibrary.UiOpen); volume *= 0.7f; break;
+                case UiSound.Close: clip = Resolve(null, "UiClose", SfxLibrary.UiClose); volume *= 0.7f; break;
+                case UiSound.Toggle: clip = Resolve(null, "UiToggle", SfxLibrary.UiToggle); break;
+                case UiSound.Step: clip = Resolve(null, "UiStep", SfxLibrary.UiStep); break;
+                case UiSound.Reward: clip = Resolve(null, "UiReward", SfxLibrary.UiReward); break;
+                case UiSound.Warn: clip = Resolve(null, "UiWarn", SfxLibrary.UiWarn); break;
+                case UiSound.Deny: clip = Resolve(null, "UiDeny", SfxLibrary.UiDeny); break;
+                default: clip = Resolve(instance.uiClickClip, "UiTap", SfxLibrary.UiTap); break;
+            }
+
+            instance.Play(clip, volume, pitch);
         }
 
         /// <summary>One "3", "2" or "1" of the pre-match countdown.</summary>

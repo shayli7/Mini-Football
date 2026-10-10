@@ -72,6 +72,9 @@ async function loadStored(ctx, playerId) {
 async function saveStored(ctx, playerId, doc) {
   await ctx.cloudSave.setCustomItem(`progress:${playerId}`, doc);
 }
+async function deleteStored(ctx, playerId) {
+  await ctx.cloudSave.deleteCustomItem(`progress:${playerId}`);
+}
 
 // ---- merge, mirroring CloudSync.Merge in CloudSync.cs -------------------------------------------
 
@@ -210,6 +213,16 @@ async function save(ctx, playerId, docJson, logger) {
   return { doc: JSON.stringify(merged) };
 }
 
+// Erases this player's stored document. Called by the client just before it deletes the account
+// (PlayerAccount.DeleteAccountAsync), while the identity can still reach Cloud Code — afterwards
+// context.playerId no longer names anyone. Only ever touches the CALLER's own key, so one player
+// cannot erase another's. Idempotent: deleting a document that is already gone is not an error.
+async function remove(ctx, playerId, logger) {
+  await deleteStored(ctx, playerId);
+  if (logger) logger.info(`progress: ${playerId} document deleted at the player's request`);
+  return { deleted: true };
+}
+
 // ---- dispatch ---------------------------------------------------------------------------------
 
 module.exports = async ({ params, context, logger }) => {
@@ -219,6 +232,7 @@ module.exports = async ({ params, context, logger }) => {
   switch (action) {
     case "load": return load(context, playerId);
     case "save": return save(context, playerId, params && params.docJson, logger);
+    case "delete": return remove(context, playerId, logger);
     default:
       logger.error(`progress: unknown action ${action}`);
       throw new Error("unknown action");

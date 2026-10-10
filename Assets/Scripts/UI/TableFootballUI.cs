@@ -40,7 +40,8 @@ namespace TableFootball.UI
         [SerializeField] private TMP_FontAsset uiFont;
 
         [Header("Accessibility")]
-        [Tooltip("Force reduced motion: every tween snaps to its end state.")]
+        [Tooltip("Force reduced motion on: every tween snaps to its end state. Players turn it on or off " +
+                 "themselves in Settings; leaving this off never overrides their choice.")]
         [SerializeField] private bool reducedMotion = false;
 
         [Header("Online")]
@@ -49,6 +50,9 @@ namespace TableFootball.UI
 
         private void Start()
         {
+            // Before anything is laid out, so the first frame already knows the true screen and notch.
+            AndroidCutout.Extend();
+
             if (match == null) match = FindAnyObjectByType<MatchManager>();
 
             // Started before the UI and never awaited: the title screen sits there until the player
@@ -77,7 +81,9 @@ namespace TableFootball.UI
 
             if (displayFont != null) ArcadeTheme.DisplayFont = displayFont;
             if (uiFont != null) ArcadeTheme.UiFont = uiFont;
-            ArcadeTheme.ReducedMotion = reducedMotion;
+            // The saved setting wins. This flag can only force reduced motion ON: writing it back
+            // unconditionally would wipe the player's own choice from Settings on every launch.
+            if (reducedMotion) ArcadeTheme.ReducedMotion = true;
 
             EnsureEventSystem();
             EnsureAudio();
@@ -93,6 +99,8 @@ namespace TableFootball.UI
             var levelPathMenu = gameObject.AddComponent<LevelPathMenu>();
             var friendsMenu = gameObject.AddComponent<FriendsMenu>();
             var profileMenu = gameObject.AddComponent<ProfileMenu>();
+            var settingsScreen = gameObject.AddComponent<SettingsScreen>();
+            var collectionScreen = gameObject.AddComponent<CollectionScreen>();
             var friendProfileMenu = gameObject.AddComponent<FriendProfileMenu>();
             var questsMenu = gameObject.AddComponent<QuestsMenu>();
             var countdown = gameObject.AddComponent<CountdownScreen>();
@@ -126,6 +134,8 @@ namespace TableFootball.UI
             levelPathMenu.Build(canvasRoot);
             friendsMenu.Build(canvasRoot);
             profileMenu.Build(canvasRoot);
+            settingsScreen.Build();
+            collectionScreen.Build();
             friendProfileMenu.Build(canvasRoot);
             questsMenu.Build(canvasRoot);
             countdown.Build(canvasRoot);
@@ -139,6 +149,14 @@ namespace TableFootball.UI
             // them at boot without having to fight for the front.
             start.Build(canvasRoot);
 
+            // The online face-off. Before the error screen, so an error can still come up over it.
+            var versusScreen = gameObject.AddComponent<VersusScreen>();
+            versusScreen.Build();
+
+            // After the title screen, so an error can come up over anything, including it.
+            var errorScreen = gameObject.AddComponent<ErrorScreen>();
+            errorScreen.Build();
+
             // Push saved volume + difficulty into the live scene before anything can play.
             GameAudio.ApplyAll();
 
@@ -146,8 +164,8 @@ namespace TableFootball.UI
             // exist first.
             flow.Build(start, onboarding, loading, mainMenu, onlineMenu, leagueMenu,
                        storeMenu, levelPathMenu, friendsMenu,
-                       profileMenu, friendProfileMenu, questsMenu, pause, hud, countdown, match,
-                       questTracker, bootLoadSeconds, transitionLoadSeconds);
+                       profileMenu, settingsScreen, collectionScreen, friendProfileMenu, questsMenu, pause, hud, countdown, match,
+                       questTracker, errorScreen, versusScreen, bootLoadSeconds, transitionLoadSeconds);
         }
 
         private Transform BuildCanvas()

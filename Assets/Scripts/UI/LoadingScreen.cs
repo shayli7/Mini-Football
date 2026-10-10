@@ -32,7 +32,9 @@ namespace TableFootball.UI
         private CanvasGroup group;
         private Image fill;
         private TextMeshProUGUI caption;
+        private TextMeshProUGUI breakCard;
         private Coroutine running;
+        private Coroutine breakRoutine;
 
         private float progress;
 
@@ -67,9 +69,25 @@ namespace TableFootball.UI
 
             BuildTitle();
             BuildBar();
+            BuildBreakCard();
 
             Progress = 0f;
             root.SetActive(false);
+        }
+
+        /// <summary>The "be right back" card, under the title: hidden except for the moment before an ad.</summary>
+        private void BuildBreakCard()
+        {
+            breakCard = UIFactory.Text(root.transform, "BE RIGHT BACK\n<size=60%>A SHORT AD BREAK</size>",
+                                       ArcadeTheme.FsButton, ArcadeTheme.Gold, display: true, bold: true,
+                                       upper: true, tracking: 6f);
+            var rt = UIFactory.Rt(breakCard.gameObject);
+            rt.anchorMin = new Vector2(0.5f, 0.5f);
+            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.sizeDelta = new Vector2(900f, 120f);
+            rt.anchoredPosition = new Vector2(0f, -70f);
+            breakCard.gameObject.SetActive(false);
         }
 
         private void BuildTitle()
@@ -130,14 +148,55 @@ namespace TableFootball.UI
         /// calls <paramref name="onComplete"/>. The callback fires as the curtain clears, so the
         /// caller can swap screens underneath while it is still opaque.
         /// </summary>
-        public void Show(float seconds, Action onComplete = null)
+        public void Show(float seconds, Action onComplete = null, Action<Action> beforeClear = null)
         {
             if (running != null)
             {
                 StopCoroutine(running);
             }
 
-            running = StartCoroutine(Run(Mathf.Max(seconds, 0.01f), onComplete));
+            running = StartCoroutine(Run(Mathf.Max(seconds, 0.01f), onComplete, beforeClear));
+        }
+
+        /// <summary>
+        /// Puts the "be right back" card up for <see cref="ArcadeTheme.TBeRightBack"/> seconds and then
+        /// calls <paramref name="then"/>. The card stays up afterwards — it is the thing the player
+        /// comes back to when the ad closes — until <see cref="ClearBeRightBack"/>.
+        /// </summary>
+        public void BeRightBack(Action then)
+        {
+            if (breakCard != null)
+            {
+                breakCard.gameObject.SetActive(true);
+            }
+
+            if (breakRoutine != null)
+            {
+                StopCoroutine(breakRoutine);
+            }
+
+            breakRoutine = StartCoroutine(HoldThen(then));
+        }
+
+        public void ClearBeRightBack()
+        {
+            if (breakRoutine != null)
+            {
+                StopCoroutine(breakRoutine);
+                breakRoutine = null;
+            }
+
+            if (breakCard != null)
+            {
+                breakCard.gameObject.SetActive(false);
+            }
+        }
+
+        private IEnumerator HoldThen(Action then)
+        {
+            yield return new WaitForSecondsRealtime(ArcadeTheme.TBeRightBack);
+            breakRoutine = null;
+            then?.Invoke();
         }
 
         public void Hide()
@@ -148,13 +207,15 @@ namespace TableFootball.UI
                 running = null;
             }
 
+            ClearBeRightBack();
+
             if (root != null)
             {
                 root.SetActive(false);
             }
         }
 
-        private IEnumerator Run(float seconds, Action onComplete)
+        private IEnumerator Run(float seconds, Action onComplete, Action<Action> beforeClear)
         {
             root.SetActive(true);
             root.transform.SetAsLastSibling(); // above the menu and HUD
@@ -179,6 +240,19 @@ namespace TableFootball.UI
 
             // A beat on a full bar, so it does not vanish the instant it completes.
             yield return new WaitForSecondsRealtime(0.15f);
+
+            // The caller may need the curtain held — for an ad break — and says when it is done by
+            // calling the continuation it is handed. It is always called, so this cannot hang on a
+            // caller that has nothing to do: that one calls it straight away.
+            if (beforeClear != null)
+            {
+                bool released = false;
+                beforeClear(() => released = true);
+                while (!released)
+                {
+                    yield return null;
+                }
+            }
 
             // Hand control back while still opaque: whatever comes next can build itself unseen.
             onComplete?.Invoke();

@@ -95,6 +95,22 @@ namespace TableFootball
             Refresh();
         }
 
+        /// <summary>
+        /// Wipes the local ranked state for a player change or account deletion. Only the offline mock
+        /// keeps anything on the device — the real backend's standing lives on the server under the
+        /// player id — so this clears the mock's save and the cached snapshot, and does not refresh:
+        /// at these moments the outgoing player may already be gone, and the next screen to need a
+        /// standing asks for it.
+        /// </summary>
+        public static void ResetLocal()
+        {
+            MockLadderService.ClearSaved();
+            (service as MockLadderService)?.DropCache();
+            Standing = default;
+            Pod = new List<LadderEntry>();
+            OnChanged?.Invoke();
+        }
+
         /// <summary>Testing only: advance the ladder week (mock backend) to see the rollover now.</summary>
         public static void AdvanceWeekForTesting()
         {

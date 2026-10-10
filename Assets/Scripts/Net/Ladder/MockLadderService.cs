@@ -87,6 +87,22 @@ namespace TableFootball
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Forgets the saved ladder, for a player change or account deletion: the next player is seeded
+        /// a fresh pod rather than inheriting the previous one's league and points. Static because the
+        /// save must be cleared even if no service object has been created yet this session.
+        /// </summary>
+        public static void ClearSaved()
+        {
+            PlayerPrefs.DeleteKey(Key);
+        }
+
+        /// <summary>Drops the in-memory copy of the state, so it is re-read from (now empty) PlayerPrefs.</summary>
+        public void DropCache()
+        {
+            state = null;
+        }
+
         /// <summary>Testing only: jump to the next ladder week so the rollover can be seen at once.</summary>
         public void AdvanceWeekForTesting()
         {

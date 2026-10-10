@@ -1,131 +1,180 @@
-/* Main menu. See MainMenu.cs. Laid out against a 760-unit-high panel. */
+/* Main menu. See MainMenu.cs. Laid out against a 760-unit-high panel.
+   Every selector is under .menu so it outranks the shared frame defaults in Base.uss, and the frame
+   colours are literal hex on purpose (see UiFrame): they mirror ArcadeTheme. */
 
-.menu__scrim {
-    /* Dark, not opaque: the live table and the player's room background still show faintly. */
-    background-color: rgba(7, 9, 14, 0.86);
-}
-
-.menu__glow {
-    -unity-background-scale-mode: stretch-to-fill;
-}
+/* The floor is the Arena (UiBackdrop). */
 
 /* ---------- header ---------- */
 
-.menu__header {
+.menu .menu__header {
     position: absolute;
     left: 36px;
     right: 36px;
     top: 22px;
-    height: 68px;
+    height: 72px;
     flex-direction: row;
     align-items: center;
 }
 
-.menu__profile {
+.menu .menu__profile {
     flex-direction: row;
     align-items: center;
-    height: 68px;
-    padding: 8px 20px 8px 8px;
-    background-color: var(--panel);
-    border-width: 1px;
-    border-color: var(--line);
-    border-radius: 18px;
+    height: 70px;
+    padding: 0 22px 0 10px;
+    --frame-fill: #0A1322;
+    --frame-edge: #24456F;
+    --frame-edge-width: 1;
+    --frame-cut: 12;
     transition-property: scale;
     transition-duration: 0.12s;
 }
 
-.menu__profile:hover { scale: 1.02 1.02; }
-.menu__profile:active { scale: 0.98 0.98; }
+.menu .menu__profile:hover { scale: 1.02 1.02; }
+.menu .menu__profile:active { scale: 0.98 0.98; }
 
-.avatar {
-    width: 50px;
-    height: 50px;
-    border-radius: 25px;
-    background-color: var(--raised);
-    border-width: 2px;
-    border-color: var(--gold);
+.menu .menu__hex {
+    width: 54px;
+    height: 54px;
     align-items: center;
     justify-content: center;
 }
 
-.avatar__initial {
+.menu .avatar__initial {
     font-size: 22px;
-    color: var(--gold);
+    color: var(--pulse);
     -unity-text-align: middle-center;
 }
 
-.menu__profile-info {
-    margin-left: 14px;
-}
+.menu .menu__profile-info { margin-left: 14px; }
 
-.menu__name {
-    font-size: 17px;
+.menu .menu__name-badge { margin-right: 8px; }
+
+.menu .menu__name {
+    font-size: 18px;
+    letter-spacing: 2px;
     max-width: 300px;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
 }
 
-.level-pill {
+.menu .level-pill {
     font-size: 12px;
     letter-spacing: 1px;
-    color: var(--gold);
-    background-color: var(--gold-soft);
-    border-radius: 6px;
+    color: var(--pulse);
+    background-color: rgba(61, 227, 255, 0.14);
     padding: 3px 8px;
     margin-left: 10px;
 }
 
-.menu__xp-row { margin-top: 7px; }
-
-.menu__xp-bar {
-    width: 150px;
-    height: 6px;
+/* Rewards waiting on the level path: a small gold chest and a count. */
+.menu .menu__badge {
+    flex-direction: row;
+    align-items: center;
+    height: 22px;
+    padding: 0 7px;
+    margin-left: 8px;
+    background-color: var(--reward);
 }
 
-.menu__xp-label {
+.menu .menu__badge .icon { width: 12px; height: 12px; margin-right: 4px; }
+
+.menu .menu__badge-label {
+    font-size: 12px;
+    color: var(--on-reward);
+}
+
+.menu .menu__xp-row { margin-top: 7px; }
+
+.menu .menu__xp-bar {
+    width: 170px;
+    height: 6px;
+    border-radius: 0;
+}
+
+.menu .menu__xp-bar .bar__fill { border-radius: 0; }
+
+.menu .menu__xp-label {
     font-size: 12px;
     color: var(--muted);
     margin-left: 10px;
 }
 
-.menu__header .chip { margin-left: 12px; }
-.menu__header .chip .icon { width: 24px; height: 24px; }
-
-.chip--tap {
+.menu .menu__chip {
+    flex-direction: row;
+    align-items: center;
+    height: 52px;
+    margin-left: 12px;
+    padding: 0 18px 0 14px;
+    --frame-fill: #0A1322;
+    --frame-edge: #24456F;
+    --frame-edge-width: 1;
+    --frame-cut: 8;
     transition-property: scale;
     transition-duration: 0.12s;
 }
 
-.chip--tap:hover { scale: 1.04 1.04; }
-.chip--tap:active { scale: 0.96 0.96; }
+.menu .menu__chip:hover { scale: 1.03 1.03; }
+.menu .menu__chip:active { scale: 0.97 0.97; }
+
+.menu .menu__chip .icon { width: 24px; height: 24px; }
+
+.menu .menu__chip-value {
+    font-size: 20px;
+    margin-left: 10px;
+}
+
+/* The connection chip: red, and only there when there is no connection. */
+.menu .menu__chip--offline {
+    --frame-fill: #1A0B11;
+    --frame-edge: #FF5C72;
+    --frame-edge-width: 1.5;
+}
+
+.menu .menu__chip-value--offline {
+    font-size: 15px;
+    letter-spacing: 3px;
+    color: var(--danger);
+}
 
 /* ---------- wordmark ---------- */
 
-.menu__logo {
+.menu .menu__logo {
     position: absolute;
-    top: 100px;
+    top: 104px;
     left: 0;
     right: 0;
     align-items: center;
 }
 
-.menu__mini {
-    font-size: 16px;
-    letter-spacing: 10px;
-    padding-left: 10px;
+.menu .menu__mini {
+    font-size: 15px;
+    letter-spacing: 14px;
+    padding-left: 14px;
+    color: var(--muted);
     -unity-text-align: middle-center;
 }
 
-.menu__football {
-    font-size: 42px;
-    letter-spacing: 6px;
-    padding-left: 6px;
-    color: var(--gold);
+.menu .menu__wordmark {
+    flex-direction: row;
+    align-items: center;
+}
+
+.menu .menu__football {
+    font-size: 46px;
+    letter-spacing: 8px;
+    margin: 0 18px;
+    text-shadow: 0 0 24px rgba(61, 227, 255, 0.35);
     -unity-text-align: middle-center;
 }
 
-.menu__caption {
+.menu .menu__rule {
+    width: 60px;
+    height: 2px;
+    background-color: var(--pulse);
+}
+
+.menu .menu__caption {
     position: absolute;
     top: 176px;
     left: 0;
@@ -138,7 +187,7 @@
 
 /* ---------- cards ---------- */
 
-.menu__cards {
+.menu .menu__cards {
     position: absolute;
     top: 206px;
     left: 0;
@@ -147,141 +196,180 @@
     justify-content: center;
 }
 
-.card {
-    width: 320px;
-    height: 392px;
-    margin: 0 12px;
-    padding: 14px;
-    background-color: var(--panel);
-    border-width: 2px;
-    border-color: var(--line);
-    border-radius: 22px;
+.menu .card {
+    width: 372px;
+    height: 410px;
+    margin: 0 13px;
+    padding: 10px;
+    --frame-fill: #0A1322;
+    --frame-edge: #2C5A8E;
+    --frame-edge-width: 1.5;
+    --frame-cut: 18;
+    --frame-tab: #3DE3FF;
 }
 
-.card.enter {
-    transition-property: opacity, translate, scale, border-color, background-color;
-    transition-duration: 0.42s, 0.42s, 0.12s, 0.2s, 0.2s;
+.menu .card.enter {
+    transition-property: opacity, translate, scale;
+    transition-duration: 0.42s, 0.42s, 0.12s;
     transition-timing-function: ease-out-cubic;
 }
 
-.card:hover { scale: 1.02 1.02; }
-.card:active { scale: 0.97 0.97; }
+.menu .card:hover { scale: 1.02 1.02; }
+.menu .card:active { scale: 0.97 0.97; }
 
-.card.is-selected {
-    background-color: var(--panel-2);
-    translate: 0 -10px;
-}
-
-/* After is-selected, so a selected card still rises in on entrance. */
-.card.enter-from {
+.menu .card.enter-from {
     opacity: 0;
     translate: 0 26px;
 }
 
-.card__picture {
-    height: 180px;
-    border-radius: 12px;
+/* Inset from the card's edge so the picture's corners stay inside the cut ones. */
+.menu .card__picture {
+    height: 320px;
     overflow: hidden;
-    background-color: #0B1626;
+    background-color: #07101E;
     -unity-background-scale-mode: scale-and-crop;
 }
 
-.card__shade {
+/* A dark ramp up from the foot, so the title reads over any picture. */
+.menu .card__shade {
     position: absolute;
     left: 0;
     right: 0;
     bottom: 0;
-    height: 40%;
-    background-color: rgba(7, 9, 14, 0.35);
+    height: 60%;
+    -unity-background-scale-mode: stretch-to-fill;
 }
 
-.card__title-row {
-    margin-top: 16px;
-    padding: 0 6px;
+.menu .card__bracket {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 22px;
+    height: 22px;
+    border-top-width: 2px;
+    border-right-width: 2px;
+    border-color: var(--pulse);
 }
 
-.card__icon-tile {
-    width: 42px;
-    height: 42px;
-    border-radius: 12px;
-    background-color: var(--raised);
+.menu .card__badge {
+    position: absolute;
+    top: 14px;
+    left: 22px;
+    width: 46px;
+    height: 46px;
     align-items: center;
     justify-content: center;
+    --frame-fill: rgba(4, 7, 13, 0.78);
+    --frame-edge: #3DE3FF;
+    --frame-edge-width: 1.5;
+    --frame-cut: 8;
 }
 
-.card__words { margin-left: 12px; flex-shrink: 1; }
+.menu .card__badge .icon { width: 24px; height: 24px; }
 
-.card__title {
-    font-size: 19px;
-    letter-spacing: 1px;
+.menu .card__foot {
+    position: absolute;
+    left: 18px;
+    right: 18px;
+    bottom: 14px;
 }
 
-.card__subtitle {
-    font-size: 14px;
+.menu .card__title-row {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+}
+
+.menu .card__title {
+    font-size: 28px;
+    letter-spacing: 3px;
+    text-shadow: 0 2px 12px rgba(4, 7, 13, 0.9);
+}
+
+.menu .card__line {
+    font-size: 15px;
     color: var(--muted);
     margin-top: 2px;
 }
 
-.card__name {
-    font-size: 26px;
-    letter-spacing: 3px;
+.menu .card__play {
+    height: 56px;
+    margin-top: 10px;
+    padding: 0;
 }
 
-.card__line {
-    font-size: 15px;
-    color: var(--muted);
-    margin: 10px 6px 0 6px;
-    white-space: normal;
+.menu .card__play .icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 10px;
 }
 
-.card__play {
-    flex-direction: row;
+/* The Online card, offline: the edge and tab go quiet, the picture dims, the strip is a locked grey. */
+.menu .card.is-locked {
+    --frame-edge: #1D3557;
+    --frame-tab: rgba(0, 0, 0, 0);
+}
+
+.menu .card.is-locked .card__picture { opacity: 0.45; }
+.menu .card.is-locked .card__title { color: var(--muted); }
+.menu .card.is-locked .card__badge { --frame-edge: #56698A; }
+
+.menu .card__offline {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 40px;
     align-items: center;
     justify-content: center;
-    height: 50px;
-    margin-top: auto;
-    border-radius: 14px;
-    background-color: var(--blue-fill);
-    transition-property: background-color;
-    transition-duration: 0.2s;
 }
 
-.card__play-label {
-    font-size: 16px;
-    letter-spacing: 3px;
+.menu .card__offline .icon { width: 84px; height: 84px; }
+
+.menu .card__live {
+    position: absolute;
+    top: 24px;
+    right: 46px;
+    flex-direction: row;
+    align-items: center;
+    height: 26px;
+    padding: 0 10px;
+    background-color: rgba(4, 7, 13, 0.78);
 }
 
-.card__play .icon {
-    width: 14px;
-    height: 14px;
-    margin-left: 8px;
+.menu .card__live-dot {
+    width: 7px;
+    height: 7px;
+    margin-right: 6px;
+    border-radius: 4px;
+    background-color: #4CE0A0;
 }
 
-.card.is-selected .card__play { background-color: var(--gold); }
-.card.is-selected .card__play-label { color: var(--on-gold); }
-
-.card__play .shine { left: -100px; }
+.menu .card__live-label {
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: #4CE0A0;
+}
 
 /* Strength meter on the difficulty cards. */
-.meter {
+.menu .meter {
     flex-direction: row;
     align-items: flex-end;
     height: 24px;
 }
 
-.meter__bar {
+.menu .meter__bar {
     width: 8px;
     margin-left: 4px;
-    border-radius: 2px;
-    background-color: var(--line-2);
+    background-color: var(--raised);
 }
 
-.meter__bar--1 { height: 10px; }
-.meter__bar--2 { height: 17px; }
-.meter__bar--3 { height: 24px; }
-.meter__bar.is-lit { background-color: var(--gold); }
+.menu .meter__bar--1 { height: 10px; }
+.menu .meter__bar--2 { height: 17px; }
+.menu .meter__bar--3 { height: 24px; }
+.menu .meter__bar.is-lit { background-color: var(--pulse); }
 
-.menu__back {
+.menu .menu__back {
     position: absolute;
     left: 36px;
     bottom: 30px;
@@ -290,7 +378,7 @@
     padding: 0;
 }
 
-.menu__back .icon {
+.menu .menu__back .icon {
     width: 18px;
     height: 18px;
     margin-right: 6px;
@@ -298,7 +386,7 @@
 
 /* ---------- bottom bar ---------- */
 
-.nav-wrap {
+.menu .nav-wrap {
     position: absolute;
     left: 0;
     right: 0;
@@ -306,58 +394,56 @@
     align-items: center;
 }
 
-.nav {
+.menu .nav {
     flex-direction: row;
-    padding: 8px;
-    background-color: var(--panel);
-    border-width: 1px;
-    border-color: var(--line);
-    border-radius: 24px;
+    padding: 6px;
+    --frame-fill: #0A1322;
+    --frame-edge: #24456F;
+    --frame-edge-width: 1;
+    --frame-cut: 14;
 }
 
-.nav__item {
-    width: 108px;
-    height: 64px;
-    border-radius: 16px;
+.menu .nav__item {
+    width: 140px;
+    height: 72px;
     align-items: center;
     justify-content: center;
     transition-property: background-color, scale;
     transition-duration: 0.12s, 0.12s;
 }
 
-.nav__item:hover { background-color: var(--raised); }
-.nav__item:active { scale: 0.95 0.95; }
+.menu .nav__item:hover { background-color: var(--plate); }
+.menu .nav__item:active { scale: 0.95 0.95; }
 
-.nav__item .icon {
-    width: 24px;
-    height: 24px;
+.menu .nav__item .icon {
+    width: 28px;
+    height: 28px;
 }
 
-.nav__label {
-    font-size: 11px;
-    letter-spacing: 1.5px;
-    color: var(--muted);
-    margin-top: 5px;
+.menu .nav__label {
+    font-size: 12px;
+    letter-spacing: 2px;
+    color: var(--ink);
+    margin-top: 6px;
     -unity-text-align: middle-center;
 }
 
-.nav__pip {
+.menu .nav__pip {
     position: absolute;
     top: 6px;
-    right: 28px;
+    right: 34px;
     min-width: 18px;
     height: 18px;
     padding: 0 4px;
-    border-radius: 9px;
-    background-color: var(--gold);
-    color: var(--on-gold);
+    background-color: var(--reward);
+    color: var(--on-reward);
     font-size: 11px;
     -unity-text-align: middle-center;
 }
 
 /* ---------- invitation ---------- */
 
-.invite {
+.menu .invite {
     position: absolute;
     top: 104px;
     right: 36px;
@@ -366,21 +452,21 @@
     flex-direction: row;
     align-items: center;
     padding: 0 14px 0 18px;
-    background-color: var(--panel-2);
-    border-width: 2px;
-    border-color: var(--gold);
-    border-radius: 18px;
+    --frame-fill: #0F1C31;
+    --frame-edge: #3DE3FF;
+    --frame-edge-width: 1.5;
+    --frame-cut: 14;
 }
 
-.invite__text {
+.menu .invite__text {
     font-size: 15px;
-    color: var(--gold);
+    color: var(--pulse);
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
 }
 
-.invite__btn {
+.menu .invite__btn {
     height: 46px;
     padding: 0 18px;
     margin-left: 8px;

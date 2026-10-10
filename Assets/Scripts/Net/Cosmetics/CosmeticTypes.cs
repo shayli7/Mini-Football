@@ -19,7 +19,10 @@ namespace TableFootball.Net
 
         /// <summary>The room the table stands in — a skybox, since the scene has no environment
         /// geometry of its own. See <c>Gameplay/BackgroundSkins</c>.</summary>
-        Background = 5
+        Background = 5,
+
+        /// <summary>How the player's own name is drawn. The default is plain text; the others are earned.</summary>
+        NameStyle = 6
     }
 
     /// <summary>
@@ -63,10 +66,14 @@ namespace TableFootball.Net
         public readonly bool IsDefault;
 
         /// <summary>False for items a chest must never roll — the defaults, and the earned badges.</summary>
-        public bool CanDropFromChest => !IsDefault && Kind != CosmeticKind.Badge;
+        public bool CanDropFromChest => !IsDefault && !IsEarnedOnly;
+
+        /// <summary>Badges and name styles are won — from the ladder or the level road — never sold or
+        /// rolled, which keeps them out of every chest and the store with one rule.</summary>
+        public bool IsEarnedOnly => Kind == CosmeticKind.Badge || Kind == CosmeticKind.NameStyle;
 
         /// <summary>True when this item belongs in the store's grid.</summary>
-        public bool IsForSale => Price > 0 && Kind != CosmeticKind.Badge;
+        public bool IsForSale => Price > 0 && !IsEarnedOnly;
 
         /// <summary>An unset item, returned by lookups that miss. <c>Id == null</c> is the test.</summary>
         public bool Valid => !string.IsNullOrEmpty(Id);

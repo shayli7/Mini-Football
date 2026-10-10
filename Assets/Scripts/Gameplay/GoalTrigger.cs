@@ -68,6 +68,15 @@ namespace TableFootball
                 return;
             }
 
+            // A ball not simulated on this machine cannot score on it. Online, the machine drawing the
+            // other player's simulation moves its copy kinematically — and still fires triggers — but
+            // that copy is a picture projected ahead of the real ball, and could cross the line before
+            // the real save arrives. The host judges such goals from the real path (GoalJudge).
+            if (!ball.enabled)
+            {
+                return;
+            }
+
             match.ScoreGoal(scoringTeam);
         }
     }

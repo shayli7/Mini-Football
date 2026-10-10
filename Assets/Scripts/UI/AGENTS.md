@@ -23,8 +23,11 @@ screen, control, or visual.
 ## Two UI systems, mid-migration
 
 The front end is moving from uGUI (the `Canvas` built by `TableFootballUI`) to **UI Toolkit**, one
-screen at a time, so it can match the design canvas closely. Moved so far: **`StartScreen`** and
-**`MainMenu`**. Everything else is still uGUI and follows the rest of this guide.
+screen at a time, so it can match the design canvas closely. Moved so far: **`StartScreen`**, **`MainMenu`**,
+**`SettingsScreen`**, **`ProfileMenu`**, **`CollectionScreen`**, **`LevelPathMenu`** (the Level Road),
+**`LeagueMenu`** (Ranked), **`StoreMenu`**, **`FriendsMenu`**, **`QuestsMenu`** and **`ChestOpening`**.
+What is still uGUI — the online lobby, the friend's profile, the HUD and result banner, onboarding,
+loading, the countdown — follows the rest of this guide and only takes the token recolours.
 
 A migrated screen keeps its class name and its whole public surface (`Build`, `Open`/`Close`/`Show`,
 the `On…` callbacks), so `GameFlow` and `TableFootballUI` do not change when one moves. Inside it:
@@ -40,6 +43,13 @@ the `On…` callbacks), so `GameFlow` and `TableFootballUI` do not change when o
   Set from code by class through `Toolkit/UiFonts` (`f-display`, `f-display-semi`, `f-body-medium`,
   `f-body-semi`); call `UiFonts.Apply(root)` once a screen is built. One file per weight — UI
   Toolkit's synthesised bold does not look like the real one.
+- **Shape** — `Toolkit/UiFrame`, a box with its top-left and bottom-right corners cut, drawn with the
+  vector API (USS can round a corner but not cut one). Panels and buttons are frames: give the element
+  a class that sets `--frame-fill`, `--frame-edge`, `--frame-edge-width`, `--frame-cut` and optionally
+  `--frame-tab`; `.frame--panel` and the `.btn--*` variants in `Base.uss` are the examples. The uGUI
+  counterpart is `ArcadeTheme.Chamfer(cut)` and `UIFactory.ChamferImage`, which `Panel` and `Button` use.
+- **Backdrop** — `Toolkit/UiBackdrop.AddTo(screenRoot)` puts the Arena behind a screen. It reaches the
+  true screen edge using `UiToolkitHost.SafeInsets`.
 - **Icons** — `Toolkit/UiIcon`, line glyphs drawn with the vector API on a 24-unit grid. Add a glyph
   there rather than importing an image.
 - **Building** — `Toolkit/UiKit`: `El`, `Text`, `Button`, `OnTap` (plays the UI click), `Show`,
@@ -53,26 +63,62 @@ Two rules that fail silently:
   `PickingMode.Ignore`; a screen blocks touches only while `display` is not `none`. A picking element
   left visible over the table makes every rod dead, with no error.
 - **Never rely on which system draws on top.** A uGUI panel opened over a UI Toolkit screen may draw
-  underneath it. The one case today — Settings opened from the main menu — closes the menu first and
-  reopens it from `GameMenu.OnStandaloneClosed`. Do the same for any new overlap until both sides
-  have moved.
+  underneath it. The one case today — Settings opened from the profile's gear — closes the profile
+  first, and Back reopens it (`GameFlow.OpenSettings` / `ShowProfile`). Do the same for any new
+  overlap until both sides have moved.
+- **Settings** — `SettingsScreen` (UI Toolkit): Account, Game Settings and About in one vertical
+  list with a rail that jumps between them. Anything that can lose the player something (change
+  password, log out, delete) is a sheet over the list; delete is hold-to-confirm. The energy cells
+  (`UiCells`), switch (`UiSwitch`) and hex avatar (`UiHex`) live in `Toolkit/UiWidgets`. Reduced
+  motion is `ArcadeTheme.ReducedMotion` (saved); `TableFootballUI.reducedMotion` can only force it on.
+- **Chest opening** — `ChestOpening.Play(tier, item, coins, onClosed)` is the one place a chest is
+  opened on screen, for any caller (the level road, bought store chests and the daily deal): drop,
+  wait for a tap, charge, burst, prize. The roll has already been granted by `ChestLoot.Open` before
+  it plays; it is presentation only. Its animation is deliberately unchanged from the old design.
+- **Reward fly-in** — `Toolkit/RewardFly.Play(kind, fromElement, counter, amount, onDone)`: a burst of
+  coins (or trophies) flies from where a reward came from to a counter chip while the number runs up,
+  pulses and ticks a rising note per hit. The counter is an `IRewardCounter` — `UiCoinChip` (the
+  balance) or `UiPointsChip` (this week's ranked points), both built on `UiCounterChip`. **Call it after
+  the reward is credited**: the count ends at the counter's real `Target` and starts `amount` below
+  it, and the counter is frozen for the flight and snapped to the truth at the end. When a reward
+  arrives behind another animation (a chest), `Freeze(true)` + `SetNow(Target - amount)` first to hold
+  the old number, then fly on close. Under reduced motion nothing flies; the chip just counts up.
+  Wired to: level road claims and CLAIM ALL, chest coins, the store's coin ad, the weekly ranked payout
+  (COLLECT) and ranked points gained since the player last looked (`LeagueMenu.CheckPointsGain`).
+  **Not wired**: the match result banner (uGUI — a fly-in from it would rely on which system draws on
+  top) and quests (they bank themselves, there is no claim).
+- **Shelves and sections** — the store is a horizontal `ScrollView` in four sections with a bottom bar
+  that jumps between them and follows the scroll; the level road is the same shape. Buy buttons go grey
+  (`is-poor`) rather than disabled when a price cannot be met, so tapping still explains why.
 
-## The look — black, blue and gold
+## The look — Holo Arena
 
-Roughly **60% black, 30% blue, 10% gold**. Black is the floor every screen stands on; blue is the
-panels and the ordinary buttons; gold is kept for the one thing on a screen the player should press
-next. None of the three at full brightness. Soft rounded panels lift off the backdrop on a wide faint
-shadow; motion is sprung but quiet. It's landscape, mobile-first, and safe-area aware.
+Dark navy glass on a lit stadium floor. **One light per meaning**: cyan (`Pulse`) is go / confirm /
+focus / progress, gold (`Reward`) is "you get something" and nothing else, red (`Danger`) is "you lose
+something". Panels and buttons have their **top-left and bottom-right corners cut** on the diagonal
+(never rounded), a 1px edge, and — on panels — a short cyan tab on the top edge. Labels are one to
+three words in caps, icon first. Motion is sprung but quiet. It's landscape, mobile-first, and
+safe-area aware. The design is on the Holo Arena canvas; `docs/ui-handoff.md` lists every value.
 
 ## Palette (`ArcadeTheme`)
 
-Black floor, blue surfaces: `BgDeep #07090E` (black), `BgPanel #0F2036` (panel blue), `BgRaised
-#16304F` (rows, inputs, quiet buttons), hairlines `Line #1E3A5E`. The main blue button is `BlueFill
-#1C4675` with `BlueLine #2A5A8F`; `BlueSoft #7FA6D1` is for icons and small accents on blue. Text:
-`Ink #E9EEF5`, muted `InkMuted #93A1B5`. Highlight: `Gold #D6A73A` with `OnGold #1A1304` ink on it.
-Team colours are muted to sit inside the palette: `Red #C24A5A`, `Blue #3E78B8` — use them for team
-identity, not for UI chrome. `Danger #D98A93` marks destructive actions. The title screen's sky runs
-`SplashTop #02060F` → `SplashBottom #28609A`, dark at the top and lightening towards the bottom.
+Surfaces: `BgDeep #04070D` (floor), `BgPanel #0A1322` (panels), `Row #0B1628` (list rows), `Plate
+#0F1C31` (tiles, quiet buttons), `BgRaised #16294A` (icon tiles, unlit cells, disabled fill). Edges:
+`Line #1D3557` (quiet), `LineLit #24456F` (panels over the Arena), `BlueLine #2C5A8E` (button edges).
+Text: `Ink #EAF4FF`, `InkMuted #8EA4C2`, `Dim #56698A` (disabled only). Meaning: `Pulse #3DE3FF` with
+`OnPulse #03161C` ink; `Reward #FFC23D` with `OnReward #1E1400` ink; `Danger #FF5C72` (outlined over
+`DangerFill #1A0B11`, never filled solid). `Gold`/`OnGold` are the old names and now alias
+`Reward`/`OnReward`; `BlueSoft` is the icon/accent colour on a panel and is cyan. Team colours `Red
+#FF4F6D`, `Blue #3D8BFF` are for team identity, not UI chrome. The title screen's sky runs `SplashTop
+#02060F` → `SplashBottom #28609A`.
+
+**Background: the Arena** (`ArcadeTheme.ArenaBase`/`ArenaCone`): a dark sky, a glowing horizon, a
+grid floor, two drifting light cones (cyan left, violet right) and a cool-white rim light
+(`EdgeLight`, 12%) at the true screen edge. uGUI screens get it from `UIFactory.Backdrop`, UI Toolkit
+screens from `UiBackdrop.AddTo(screenRoot)`. Both size themselves to the whole screen, not the safe
+area — a fixed bleed past the safe area would push the rim light off screen. It is opaque, so the live
+table does not show behind a front-end screen. `ScrimDim` remains for the pause overlay (over a frozen
+match) and small confirmation panels.
 
 Two greens, kept strictly apart — don't mix them:
 - **`Go #4CC38A`** — online-status **only**: a live-presence dot. A "light that turns on."
@@ -127,10 +173,14 @@ deliberately mild because it runs on every button).
 All controls are `MenuButton : Selectable` (keyboard/gamepad nav for free; own visuals via
 `DoStateTransition`). Build with `UIFactory.Button(parent, label, variant, onClick)`.
 
-- Variants: `Primary` (gold fill, dark label — the one action to take next), `Blue` (the main blue
-  button for every other action — Host, Join, Rename, Sign In), `Ghost` (raised panel blue — Back,
-  Cancel, Later), `Neutral` (raised surface — cards, tiles, icon buttons), `Danger` (outlined in the
-  pale red — destructive, e.g. Delete Player), `IconGold`.
+- Variants say what the button does, by colour: `Primary` (**cyan fill** — go, confirm: Play, Save,
+  Next), `Reward` (**gold fill** — take a reward: Claim, Collect, a free chest), `Blue` (**cyan
+  outline** — open a screen, or an ordinary action: Host, Join, Rename), `Ghost` (dark plate, dim
+  edge — Back, Cancel, Later), `Neutral` (raised surface — cards, tiles), `Danger` (**red outline**,
+  never filled — you lose something), `IconGold`. Do not use `Primary` for a reward; it is cyan now.
+- UI Toolkit buttons are `UiKit.Button(label, variant, onClick)` with the same names in lower case —
+  `pulse`, `reward` (`gold` is the old name), `blue`, `ghost`, `danger`. They are `UiFrame`s: the look
+  is `--frame-*` custom properties on the variant class in `Base.uss`, written as literal colours.
 - **Disabled** greys to the panel blue with a muted label, whatever the variant, so a disabled gold
   button no longer reads as the thing to press.
 - **Shine**: the screen's one gold "start here" control may carry `UIShine.AddTo(button)` — a soft
@@ -144,7 +194,13 @@ All controls are `MenuButton : Selectable` (keyboard/gamepad nav for free; own v
   ("start here"). More than one and the accent stops meaning anything.
 - Selected state intentionally does **not** light up (a touchscreen never sends pointer-exit, so a
   selection glow would strand on the last-tapped button). Only genuine hover/press light.
-- Clicks self-wire `GameSfx.PlayUiClick()` — don't add click SFX at call sites.
+- Every tap makes a sound, and the sound is picked for you: `MenuButton` and `UiKit.OnTap`/`Button`
+  call `GameSfx.PlayUi(UiSound)` by variant (Primary → Confirm, Reward → Reward, Ghost → Back, Danger →
+  Warn, the rest → Tap; a tap on a disabled `MenuButton` plays Deny). Don't add click SFX at call
+  sites; pass a `UiSound` to `UiKit.OnTap` only when the default is wrong (a back button that is not
+  a `Ghost` button, say). The sounds are synthesised in `SfxLibrary` and overridden by a recording
+  named `UiTap`, `UiBack`, `UiConfirm`, `UiOpen`, `UiClose`, `UiToggle`, `UiStep`, `UiReward`,
+  `UiWarn` or `UiDeny` in `Resources/Audio`.
 - Full-width list rows call `SetNoScale()` so hovering one doesn't shove its neighbours.
 
 ## Component library (`UIFactory`) — reuse these first
@@ -174,10 +230,10 @@ exactly one of each: `LeagueMenu`'s own `LeagueColor` delegates to `UIFactory`'s
 the switch. **`CosmeticSwatch` is the placeholder art for every skin.** When real art lands it is the
 one function that changes, and every card, reward chip and reveal picks it up.
 
-Progression widgets specifically: `XpBar` (track + `UIFillBar` fill + label), the level-pill pattern in
-`ProfileChip`, and `CoinPill` (a self-refreshing balance in a bordered slab — drop one in and it keeps
-itself current off `Wallet.OnChanged`; put the component on a CHILD of the cell, not the cell, because
-`Build` reparents its own GameObject). A level, an XP bar or a balance should look the same everywhere
+Progression widgets specifically: `XpBar` (track + `UIFillBar` fill + label) and `CoinPill` (a
+self-refreshing balance in a bordered slab — drop one in and it keeps itself current off
+`Wallet.OnChanged`; put the component on a CHILD of the cell, not the cell, because `Build` reparents
+its own GameObject). On UI Toolkit screens the balance is `UiCoinChip`. A level, an XP bar or a balance should look the same everywhere
 — reuse them, and read data from `Net/` (`PlayerProgress`, `Wallet`, `LevelPath`, `Inventory`); never
 compute progression or economy in the UI.
 

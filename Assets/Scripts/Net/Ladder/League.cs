@@ -31,17 +31,24 @@ namespace TableFootball
         /// <summary>Bottom N of a pod relegate at the weekly rollover.</summary>
         public const int RelegateCount = 2;
 
+        /// <summary>
+        /// What a player sees. The enum keeps its old names (Bronze…Diamond) because they are saved and
+        /// sent to the service; only this table says Academy, Challenger, Premier and Legend League.
+        /// </summary>
         public static string Name(League league)
         {
             switch (league)
             {
-                case League.Bronze: return "Bronze";
-                case League.Silver: return "Silver";
-                case League.Gold: return "Gold";
-                case League.Diamond: return "Diamond";
-                default: return "Bronze";
+                case League.Bronze: return "Academy League";
+                case League.Silver: return "Challenger League";
+                case League.Gold: return "Premier League";
+                case League.Diamond: return "Legend League";
+                default: return "Academy League";
             }
         }
+
+        /// <summary>The name without the word League — for a chip with no room for it.</summary>
+        public static string ShortName(League league) => Name(league).Replace(" League", string.Empty);
 
         public static bool CanPromote(League league) => (int)league < Count - 1;
         public static bool CanRelegate(League league) => (int)league > 0;

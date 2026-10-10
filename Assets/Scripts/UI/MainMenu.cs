@@ -17,14 +17,11 @@ namespace TableFootball.UI
     /// <see cref="GameFlow"/> owns the sequence. Choosing "Player vs AI" steps into the difficulty
     /// cards in place; everything else leaves the screen.
     ///
-    /// The gold card is the mode the player last started, so the one highlighted thing on the screen
-    /// is "play again" — it defaults to Player vs AI for a new player. Every card still starts its
-    /// mode on the first tap: the highlight is a suggestion, not a selection step.
+    /// Every card starts its mode on the first tap. Offline, the Online card is locked (see
+    /// <see cref="ApplyConnectivity"/>) and the header says so; everything else works without a signal.
     /// </summary>
     public class MainMenu : MonoBehaviour
     {
-        private const string LastModeKey = "tf_lastmode";
-
         private enum Mode { PlayerVsPlayer = 0, PlayerVsAi = 1, Online = 2 }
 
         private VisualElement root;
@@ -37,15 +34,28 @@ namespace TableFootball.UI
         private VisualElement inviteBanner;
         private Label inviteText;
 
-        private Label nameLabel;
+        private UiShineLabel nameLabel;
+        private VisualElement nameBadgeSlot;
         private Label levelLabel;
         private Label xpLabel;
         private VisualElement xpFill;
         private Label avatarInitial;
         private Label coinLabel;
         private Label rankedLabel;
-        private Label pathPip;
         private Label questPip;
+        private VisualElement chipBadge;
+        private Label chipBadgeLabel;
+
+        // The parts of the Online card that change with the connection.
+        private VisualElement offlineChip;
+        private VisualElement onlineCard;
+        private VisualElement onlineLive;
+        private VisualElement onlineOfflineGlyph;
+        private VisualElement onlinePlay;
+        private Label onlineLine;
+        private Label onlinePlayLabel;
+        private UiIcon onlinePlayIcon;
+        private UiIcon onlineLockIcon;
 
         private readonly List<VisualElement> modeCards = new List<VisualElement>();
         private readonly List<VisualElement> difficultyCards = new List<VisualElement>();
@@ -60,9 +70,6 @@ namespace TableFootball.UI
         /// <summary>Raised when Online is chosen. The online screen is its own screen.</summary>
         public Action OnOpenOnline;
 
-        /// <summary>Raised by the settings button. GameFlow hands this to the settings panel.</summary>
-        public Action OnOpenSettings;
-
         /// <summary>Raised by the friends button.</summary>
         public Action OnOpenFriends;
 
@@ -74,9 +81,6 @@ namespace TableFootball.UI
 
         /// <summary>Raised by the store button in the bottom bar.</summary>
         public Action OnOpenStore;
-
-        /// <summary>Raised by the levels button in the bottom bar. Opens the level path.</summary>
-        public Action OnOpenLevelPath;
 
         /// <summary>Opens the daily quests screen.</summary>
         public Action OnOpenQuests;
@@ -100,39 +104,44 @@ namespace TableFootball.UI
             // The floor of the menu: nothing behind it may be touched while it is up.
             root.pickingMode = PickingMode.Position;
 
-            var scrim = UiKit.El("bleed menu__scrim", root);
-            scrim.pickingMode = PickingMode.Ignore;
-            var glow = UiKit.El("bleed menu__glow", root);
-            glow.pickingMode = PickingMode.Ignore;
-            glow.style.backgroundImage = new StyleBackground(TopGlow());
+            // The Arena, behind everything. Opaque: the live table no longer shows through the menu.
+            UiBackdrop.AddTo(root);
 
             BuildHeader();
 
             logo = UiKit.El("menu__logo", root);
             UiKit.Text(ArcadeTheme.GameNameA, "menu__mini f-display-semi", logo);
-            UiKit.Text(ArcadeTheme.GameNameB, "menu__football f-display", logo);
+            var wordmark = UiKit.El("menu__wordmark", logo);
+            UiKit.El("menu__rule", wordmark);
+            UiKit.Text(ArcadeTheme.GameNameB, "menu__football f-display", wordmark);
+            UiKit.El("menu__rule", wordmark);
 
-            caption = UiKit.Text("CHOOSE A DIFFICULTY", "menu__caption f-body-semi", root);
+            caption = UiKit.Text("CHOOSE A LEVEL", "menu__caption f-body-semi", root);
 
             modeRow = UiKit.El("menu__cards", root);
-            modeCards.Add(ModeCard("PLAYER VS PLAYER", "Play a friend beside you", UiIcon.Glyph.TwoPlayers,
-                                   playerVsPlayerArt, () => ChooseMode(Mode.PlayerVsPlayer)));
-            modeCards.Add(ModeCard("PLAYER VS AI", "Challenge the computer", UiIcon.Glyph.Robot,
-                                   aiVsPlayerArt, () => ChooseMode(Mode.PlayerVsAi)));
-            modeCards.Add(ModeCard("ONLINE", "Play over the internet", UiIcon.Glyph.Globe,
-                                   onlineArt, () => ChooseMode(Mode.Online)));
+            modeCards.Add(Card(modeRow, "VS FRIEND", "2 players · 1 phone", UiIcon.Glyph.TwoPlayers,
+                               playerVsPlayerArt, () => ChooseMode(Mode.PlayerVsPlayer)));
+            modeCards.Add(Card(modeRow, "VS AI", "Pick a level next", UiIcon.Glyph.Robot,
+                               aiVsPlayerArt, () => ChooseMode(Mode.PlayerVsAi)));
+            onlineCard = Card(modeRow, "ONLINE", "Ranked · with friends", UiIcon.Glyph.Globe,
+                              onlineArt, () => ChooseMode(Mode.Online));
+            modeCards.Add(onlineCard);
+            ExposeOnlineParts(onlineCard);
 
             difficultyRow = UiKit.El("menu__cards", root);
-            difficultyCards.Add(DifficultyCard("EASY", "Learn the table.", 1, aiVsPlayerArt, AiLevel.Easy));
-            difficultyCards.Add(DifficultyCard("NORMAL", "A fair match for most players.", 2, aiVsPlayerArt, AiLevel.Normal));
-            difficultyCards.Add(DifficultyCard("HARD", "Fast and sharp.", 3, aiVsPlayerArt, AiLevel.Hard));
+            difficultyCards.Add(Card(difficultyRow, "EASY", "Learn the table", UiIcon.Glyph.Robot,
+                                     aiVsPlayerArt, () => StartAi(AiLevel.Easy), 1));
+            difficultyCards.Add(Card(difficultyRow, "NORMAL", "A fair match", UiIcon.Glyph.Robot,
+                                     aiVsPlayerArt, () => StartAi(AiLevel.Normal), 2));
+            difficultyCards.Add(Card(difficultyRow, "HARD", "Fast and sharp", UiIcon.Glyph.Robot,
+                                     aiVsPlayerArt, () => StartAi(AiLevel.Hard), 3));
 
             BuildBottomBar();
 
-            backButton = UiKit.El("btn btn--ghost menu__back", root);
+            backButton = UiKit.Frame("btn btn--ghost menu__back", root);
             backButton.Add(new UiIcon(UiIcon.Glyph.ChevronLeft, ArcadeTheme.Ink, 2.5f) { name = "BackIcon" });
             UiKit.Text("BACK", "btn__label f-display", backButton);
-            UiKit.OnTap(backButton, ShowModes);
+            UiKit.OnTap(backButton, ShowModes, UiSound.Back);
 
             BuildInviteBanner();
 
@@ -147,95 +156,126 @@ namespace TableFootball.UI
         {
             var header = UiKit.El("menu__header", root);
 
-            // The identity chip: avatar, name, level and XP. The whole chip opens the account screen.
-            var chip = UiKit.El("menu__profile", header);
+            // The identity chip: hex avatar, name, level, waiting rewards and XP. The whole chip opens
+            // the account screen.
+            var chip = UiKit.Frame("menu__profile", header);
             UiKit.OnTap(chip, () => OnOpenProfile?.Invoke());
-            var avatar = UiKit.El("avatar", chip);
-            avatarInitial = UiKit.Text("?", "avatar__initial f-display", avatar);
+            var hex = new UiHex();
+            hex.AddToClassList("menu__hex");
+            chip.Add(hex);
+            avatarInitial = UiKit.Text("?", "avatar__initial f-display", hex);
 
             var info = UiKit.El("menu__profile-info", chip);
             var nameRow = UiKit.El("row", info);
-            nameLabel = UiKit.Text("—", "menu__name f-display-semi", nameRow);
+            nameBadgeSlot = UiKit.El("menu__name-badge", nameRow);
+            nameLabel = new UiShineLabel();
+            nameLabel.AddToClassList("menu__name");
+            nameLabel.AddToClassList("f-display-semi");
+            nameRow.Add(nameLabel);
             levelLabel = UiKit.Text("LV 1", "level-pill f-display", nameRow);
+
+            // Rewards waiting on the level path: the small gold chest and a count.
+            chipBadge = UiKit.El("menu__badge", nameRow);
+            chipBadge.Add(new UiIcon(UiIcon.Glyph.Chest, ArcadeTheme.OnReward, 3f));
+            chipBadgeLabel = UiKit.Text("0", "menu__badge-label f-display", chipBadge);
+            UiKit.Show(chipBadge, false);
+
             var xpRow = UiKit.El("row menu__xp-row", info);
             var bar = UiKit.El("bar menu__xp-bar", xpRow);
             xpFill = UiKit.El("bar__fill", bar);
             xpLabel = UiKit.Text(string.Empty, "menu__xp-label", xpRow);
 
-            var coins = UiKit.El("chip", header);
-            coins.Add(new UiIcon(UiIcon.Glyph.Coin, ArcadeTheme.Gold, 2f));
-            coinLabel = UiKit.Text("0", "chip__value f-display", coins);
+            var coins = UiKit.Frame("menu__chip", header);
+            coins.Add(new UiIcon(UiIcon.Glyph.Coin, ArcadeTheme.Coin, 2f));
+            coinLabel = UiKit.Text("0", "menu__chip-value f-display", coins);
 
             UiKit.El("grow", header);
 
-            var ranked = UiKit.El("chip chip--tap", header);
-            ranked.Add(new UiIcon(UiIcon.Glyph.Trophy, ArcadeTheme.Gold, 2f));
-            rankedLabel = UiKit.Text("—", "chip__value f-display", ranked);
+            // Shown only when the phone has no connection.
+            offlineChip = UiKit.Frame("menu__chip menu__chip--offline", header);
+            offlineChip.Add(new UiIcon(UiIcon.Glyph.WifiOff, ArcadeTheme.Danger, 2f));
+            UiKit.Text("OFFLINE", "menu__chip-value menu__chip-value--offline f-display", offlineChip);
+            UiKit.Show(offlineChip, false);
+
+            var ranked = UiKit.Frame("menu__chip", header);
+            ranked.Add(new UiIcon(UiIcon.Glyph.Trophy, ArcadeTheme.Reward, 2f));
+            rankedLabel = UiKit.Text("—", "menu__chip-value f-display", ranked);
             UiKit.OnTap(ranked, () => OnOpenRanked?.Invoke());
         }
 
         // ---------- build: cards ----------
 
-        private VisualElement ModeCard(string title, string subtitle, UiIcon.Glyph glyph, Sprite art, Action onTap)
+        /// <summary>
+        /// A mode or difficulty card: the picture with its title on it, and a cyan PLAY strip below.
+        /// <paramref name="strength"/> above zero adds the three-bar meter beside the title (difficulty
+        /// cards). The whole card is the tap target; the strip is only a picture of a button.
+        /// </summary>
+        private static VisualElement Card(VisualElement row, string title, string line, UiIcon.Glyph glyph,
+                                          Sprite art, Action onTap, int strength = 0)
         {
-            var card = UiKit.El("card", modeRow);
+            var card = UiKit.Frame("card", row);
             UiKit.OnTap(card, onTap);
 
-            var picture = UiKit.El("card__picture", card);
+            var picture = UiKit.El("card__picture", card, "Picture");
+            picture.pickingMode = PickingMode.Ignore;
             if (art != null) picture.style.backgroundImage = new StyleBackground(art);
-            UiKit.El("card__shade", picture);
 
-            var titleRow = UiKit.El("row card__title-row", card);
-            var tile = UiKit.El("card__icon-tile", titleRow);
-            tile.Add(new UiIcon(glyph, ArcadeTheme.BlueSoft, 2f));
-            var words = UiKit.El("col card__words", titleRow);
-            UiKit.Text(title, "card__title f-display", words);
-            UiKit.Text(subtitle, "card__subtitle", words);
+            var shade = UiKit.El("card__shade", picture);
+            shade.pickingMode = PickingMode.Ignore;
+            shade.style.backgroundImage = new StyleBackground(ArcadeTheme.Scrim().texture);
+            UiKit.El("card__bracket", picture).pickingMode = PickingMode.Ignore;
 
-            PlayBar(card);
+            var badge = UiKit.Frame("card__badge", picture);
+            badge.pickingMode = PickingMode.Ignore;
+            badge.Add(new UiIcon(glyph, ArcadeTheme.Pulse, 2f));
+
+            var foot = UiKit.El("card__foot", picture);
+            foot.pickingMode = PickingMode.Ignore;
+            var titleRow = UiKit.El("card__title-row", foot);
+            titleRow.pickingMode = PickingMode.Ignore;
+            UiKit.Text(title, "card__title f-display", titleRow);
+            if (strength > 0)
+            {
+                var meter = UiKit.El("meter", titleRow);
+                meter.pickingMode = PickingMode.Ignore;
+                for (int i = 0; i < 3; i++)
+                {
+                    var b = UiKit.El("meter__bar meter__bar--" + (i + 1), meter);
+                    if (i < strength) b.AddToClassList("is-lit");
+                }
+            }
+            UiKit.Text(line, "card__line f-body-semi", foot).name = "Line";
+
+            var play = UiKit.Frame("btn btn--pulse card__play", card, "Play");
+            play.pickingMode = PickingMode.Ignore;
+            play.Add(new UiIcon(UiIcon.Glyph.Play, ArcadeTheme.OnPulse, 2f) { name = "PlayIcon" });
+            UiKit.Text("PLAY", "btn__label f-display", play).name = "PlayLabel";
             return card;
         }
 
-        private VisualElement DifficultyCard(string title, string line, int strength, Sprite art, AiLevel level)
+        /// <summary>Finds the Online card's parts once, and adds the two that only it has.</summary>
+        private void ExposeOnlineParts(VisualElement card)
         {
-            var card = UiKit.El("card card--tall", difficultyRow);
-            UiKit.OnTap(card, () => StartAi(level));
+            var picture = card.Q("Picture");
+            onlineLine = card.Q<Label>("Line");
+            onlinePlay = card.Q("Play");
+            onlinePlayLabel = card.Q<Label>("PlayLabel");
+            onlinePlayIcon = card.Q<UiIcon>("PlayIcon");
 
-            var picture = UiKit.El("card__picture", card);
-            if (art != null) picture.style.backgroundImage = new StyleBackground(art);
-            UiKit.El("card__shade", picture);
+            // "Live", while there is a connection.
+            onlineLive = UiKit.El("card__live", picture);
+            onlineLive.pickingMode = PickingMode.Ignore;
+            UiKit.El("card__live-dot", onlineLive).pickingMode = PickingMode.Ignore;
+            UiKit.Text("LIVE", "card__live-label f-display", onlineLive);
 
-            var nameRow = UiKit.El("row card__title-row", card);
-            UiKit.Text(title, "card__name f-display grow", nameRow);
-            var meter = UiKit.El("meter", nameRow);
-            for (int i = 0; i < 3; i++)
-            {
-                var b = UiKit.El("meter__bar meter__bar--" + (i + 1), meter);
-                if (i < strength) b.AddToClassList("is-lit");
-            }
+            // A big struck-through signal over the picture, while there is not.
+            onlineOfflineGlyph = UiKit.El("card__offline", picture);
+            onlineOfflineGlyph.pickingMode = PickingMode.Ignore;
+            onlineOfflineGlyph.Add(new UiIcon(UiIcon.Glyph.WifiOff, ArcadeTheme.Danger, 1.6f));
 
-            UiKit.Text(line, "card__line", card);
-            PlayBar(card);
-            return card;
-        }
-
-        /// <summary>The PLAY strip along a card's foot, with the shine that runs on the gold one.</summary>
-        private static void PlayBar(VisualElement card)
-        {
-            var play = UiKit.El("card__play clip", card);
-            UiKit.Text("PLAY", "card__play-label f-display", play);
-            play.Add(new UiIcon(UiIcon.Glyph.Play, ArcadeTheme.Ink, 2f) { name = "PlayIcon" });
-            UiKit.El("shine", play).name = "Shine";
-        }
-
-        /// <summary>Makes <paramref name="index"/> the gold card of <paramref name="cards"/>.</summary>
-        private static void Highlight(List<VisualElement> cards, int index)
-        {
-            for (int i = 0; i < cards.Count; i++)
-            {
-                // No card is picked out any more: all PLAY strips look alike, same size, no gold.
-                cards[i].EnableInClassList("is-selected", false);
-            }
+            // The lock that replaces the play arrow in the strip.
+            onlineLockIcon = new UiIcon(UiIcon.Glyph.Lock, ArcadeTheme.InkMuted, 2.2f);
+            onlinePlay.Insert(0, onlineLockIcon);
         }
 
         // ---------- build: bottom bar ----------
@@ -246,11 +286,9 @@ namespace TableFootball.UI
             // (which uses translate) can run on the bar itself.
             var wrap = UiKit.El("nav-wrap", root);
             wrap.pickingMode = PickingMode.Ignore;
-            nav = UiKit.El("nav", wrap);
+            nav = UiKit.Frame("nav", wrap);
             NavItem(UiIcon.Glyph.Person, "FRIENDS", () => OnOpenFriends?.Invoke());
-            NavItem(UiIcon.Glyph.Sliders, "SETTINGS", () => OnOpenSettings?.Invoke());
             NavItem(UiIcon.Glyph.Store, "STORE", () => OnOpenStore?.Invoke());
-            pathPip = NavItem(UiIcon.Glyph.Levels, "LEVELS", () => OnOpenLevelPath?.Invoke(), withPip: true);
             questPip = NavItem(UiIcon.Glyph.Quests, "QUESTS", () => OnOpenQuests?.Invoke(), withPip: true);
         }
 
@@ -258,8 +296,8 @@ namespace TableFootball.UI
         {
             var item = UiKit.El("nav__item", nav);
             UiKit.OnTap(item, onTap);
-            item.Add(new UiIcon(glyph, ArcadeTheme.InkMuted, 2f));
-            UiKit.Text(label, "nav__label f-display-semi", item);
+            item.Add(new UiIcon(glyph, ArcadeTheme.Ink, 2f));
+            UiKit.Text(label, "nav__label f-display", item);
             if (!withPip) return null;
 
             // "Something is waiting behind this icon" — rewards on the path, cleared quests unseen.
@@ -277,9 +315,9 @@ namespace TableFootball.UI
         /// </summary>
         private void BuildInviteBanner()
         {
-            inviteBanner = UiKit.El("invite", root);
+            inviteBanner = UiKit.Frame("invite", root);
             inviteText = UiKit.Text(string.Empty, "invite__text f-body-semi grow", inviteBanner);
-            UiKit.Button("PLAY", "gold", AcceptInvite, inviteBanner, "invite__btn");
+            UiKit.Button("PLAY", "pulse", AcceptInvite, inviteBanner, "invite__btn");
             UiKit.Button("LATER", "ghost", DeclineInvite, inviteBanner, "invite__btn");
             UiKit.Show(inviteBanner, false);
         }
@@ -288,9 +326,6 @@ namespace TableFootball.UI
 
         private void ChooseMode(Mode mode)
         {
-            PlayerPrefs.SetInt(LastModeKey, (int)mode);
-            Highlight(modeCards, (int)mode);
-
             switch (mode)
             {
                 case Mode.PlayerVsPlayer: OnStartLocal?.Invoke(false); break;
@@ -315,7 +350,6 @@ namespace TableFootball.UI
             UiKit.Show(difficultyRow, false);
             UiKit.Show(backButton, false);
             UiKit.Show(caption, false);
-            Highlight(modeCards, Mathf.Clamp(PlayerPrefs.GetInt(LastModeKey, (int)Mode.PlayerVsAi), 0, 2));
             if (IsOpen) EnterCards(modeCards);
         }
 
@@ -325,8 +359,6 @@ namespace TableFootball.UI
             UiKit.Show(difficultyRow, true);
             UiKit.Show(backButton, true);
             UiKit.Show(caption, true);
-            // Gold on the level the player last chose — the one they are most likely to want again.
-            Highlight(difficultyCards, (int)GameAudio.Difficulty);
             EnterCards(difficultyCards);
             UiKit.Enter(backButton, 0.1f);
         }
@@ -341,7 +373,11 @@ namespace TableFootball.UI
         private void RefreshProfile()
         {
             string name = PlayerAccount.DisplayName;
-            nameLabel.text = string.IsNullOrWhiteSpace(name) ? "—" : name;
+            nameLabel.Set(string.IsNullOrWhiteSpace(name) ? "—" : name);
+            nameBadgeSlot.Clear();
+            VisualElement worn = UiArt.WornBadge(26f);
+            if (worn != null) nameBadgeSlot.Add(worn);
+            UiKit.Show(nameBadgeSlot, worn != null);
             avatarInitial.text = string.IsNullOrWhiteSpace(name) ? "?" : name.Substring(0, 1).ToUpperInvariant();
             levelLabel.text = $"LV {PlayerProgress.Level}";
             xpLabel.text = PlayerProgress.XpLabel;
@@ -353,11 +389,41 @@ namespace TableFootball.UI
         private void RefreshRanked()
         {
             LadderStanding s = Ladder.Standing;
-            rankedLabel.text = s.Valid ? s.WeeklyPoints.ToString() : "—";
+            rankedLabel.text = s.Valid ? $"{Leagues.ShortName(s.League).ToUpperInvariant()} #{s.RankInPod}" : "—";
         }
 
-        private void RefreshPathPip() => SetPip(pathPip, LevelPath.UnclaimedCount);
+        private void RefreshPathBadge()
+        {
+            // Rewards waiting on the Level Road ride on the profile chip, the way in to it.
+            int waiting = LevelPath.UnclaimedCount;
+            UiKit.Show(chipBadge, waiting > 0);
+            chipBadgeLabel.text = waiting > 9 ? "9+" : waiting.ToString();
+        }
+
         private void RefreshQuestPip() => SetPip(questPip, DailyQuests.UnseenCount);
+
+        /// <summary>
+        /// Puts the menu in step with the connection. Offline, the header says so and the Online card
+        /// is locked: dimmed, its play arrow a padlock, and a tap on it is answered with the dull "no"
+        /// note rather than opening a screen that could only fail. (A card with the
+        /// <c>is-disabled</c> class is refused by <see cref="UiKit.OnTap"/>.)
+        /// </summary>
+        private void ApplyConnectivity()
+        {
+            bool online = Connectivity.IsOnline;
+
+            UiKit.Show(offlineChip, !online);
+            UiKit.Show(onlineLive, online);
+            UiKit.Show(onlineOfflineGlyph, !online);
+            onlineCard.EnableInClassList("is-locked", !online);
+            onlineCard.EnableInClassList("is-disabled", !online);
+            onlinePlay.EnableInClassList("is-disabled", !online);
+
+            onlineLine.text = online ? "Ranked · with friends" : "Connect to play online";
+            onlinePlayLabel.text = online ? "PLAY" : "NO CONNECTION";
+            UiKit.Show(onlinePlayIcon, online);
+            UiKit.Show(onlineLockIcon, !online);
+        }
 
         private static void SetPip(Label pip, int count)
         {
@@ -371,7 +437,7 @@ namespace TableFootball.UI
             RefreshProfile();
             RefreshCoins();
             RefreshRanked();
-            RefreshPathPip();
+            RefreshPathBadge();
             RefreshQuestPip();
             RefreshInvite();
         }
@@ -386,6 +452,9 @@ namespace TableFootball.UI
         /// </summary>
         private void Update()
         {
+            // The connection is read here, once a second, only while the menu is up.
+            if (IsOpen) Connectivity.Poll();
+
             if (inviteDirty && IsOpen)
             {
                 inviteDirty = false;
@@ -436,6 +505,8 @@ namespace TableFootball.UI
             // that outlives this screen.
             PlayerAccount.OnChanged -= RefreshProfile;
             PlayerAccount.OnChanged += RefreshProfile;
+            Inventory.OnChanged -= RefreshProfile;
+            Inventory.OnChanged += RefreshProfile;
             PlayerProgress.OnChanged -= OnProgressChanged;
             PlayerProgress.OnChanged += OnProgressChanged;
             Wallet.OnChanged -= RefreshCoins;
@@ -444,11 +515,14 @@ namespace TableFootball.UI
             FriendsHub.OnChanged += MarkInviteDirty;
             Ladder.OnChanged -= RefreshRanked;
             Ladder.OnChanged += RefreshRanked;
-            LevelPath.OnChanged -= RefreshPathPip;
-            LevelPath.OnChanged += RefreshPathPip;
+            LevelPath.OnChanged -= RefreshPathBadge;
+            LevelPath.OnChanged += RefreshPathBadge;
             DailyQuests.EnsureToday();
             DailyQuests.OnChanged -= RefreshQuestPip;
             DailyQuests.OnChanged += RefreshQuestPip;
+            Connectivity.OnChanged -= ApplyConnectivity;
+            Connectivity.OnChanged += ApplyConnectivity;
+            ApplyConnectivity();
 
             // Asked for here rather than only by the league screen, so the trophy chip already has a
             // real number the first time this menu is seen.
@@ -472,12 +546,14 @@ namespace TableFootball.UI
         public void Close()
         {
             PlayerAccount.OnChanged -= RefreshProfile;
+            Inventory.OnChanged -= RefreshProfile;
             PlayerProgress.OnChanged -= OnProgressChanged;
             Wallet.OnChanged -= RefreshCoins;
             FriendsHub.OnChanged -= MarkInviteDirty;
             Ladder.OnChanged -= RefreshRanked;
-            LevelPath.OnChanged -= RefreshPathPip;
+            LevelPath.OnChanged -= RefreshPathBadge;
             DailyQuests.OnChanged -= RefreshQuestPip;
+            Connectivity.OnChanged -= ApplyConnectivity;
 
             StopLoops();
             if (root != null) UiKit.Show(root, false);
@@ -490,95 +566,33 @@ namespace TableFootball.UI
         private void OnProgressChanged()
         {
             RefreshProfile();
-            RefreshPathPip();
+            RefreshPathBadge();
         }
 
         // ---------- ambient motion ----------
 
         /// <summary>
-        /// The two things that move while the menu sits still: the shine sweeping the gold card's PLAY
-        /// strip every few seconds, and the waiting pips breathing. Paused while the menu is closed,
-        /// and off under reduced motion.
+        /// The one thing that moves while the menu sits still: the waiting-reward pips breathing (the
+        /// nav's and the profile chip's). Paused while the menu is closed, and off under reduced motion.
         /// </summary>
         private void StartLoops()
         {
             StopLoops();
             if (ArcadeTheme.ReducedMotion) return;
 
-            float cycle = ArcadeTheme.TShine + ArcadeTheme.ShineRest;
             loops.Add(UiKit.Loop(root, now =>
             {
-                float t = Mathf.Repeat(now, cycle);
-                float p = t < ArcadeTheme.TShine ? t / ArcadeTheme.TShine : 1f;
-                float k = p * p * (3f - 2f * p);
-                SweepShine(modeCards, k);
-                SweepShine(difficultyCards, k);
-
                 float breath = 1f + 0.12f * (0.5f + 0.5f * Mathf.Sin(now * Mathf.PI * 2f / 1.4f));
-                if (pathPip != null) pathPip.style.scale = new Scale(new Vector3(breath, breath, 1f));
-                if (questPip != null) questPip.style.scale = new Scale(new Vector3(breath, breath, 1f));
+                var scale = new Scale(new Vector3(breath, breath, 1f));
+                if (questPip != null) questPip.style.scale = scale;
+                if (chipBadge != null) chipBadge.style.scale = scale;
             }));
-        }
-
-        private static void SweepShine(List<VisualElement> cards, float k)
-        {
-            foreach (var card in cards)
-            {
-                var shine = card.Q("Shine");
-                if (shine == null) continue;
-                bool on = card.ClassListContains("is-selected");
-                shine.style.display = on ? DisplayStyle.Flex : DisplayStyle.None;
-                if (!on) continue;
-                float width = card.Q(className: "card__play")?.resolvedStyle.width ?? 300f;
-                shine.style.left = Mathf.Lerp(-100f, width + 60f, k);
-            }
         }
 
         private void StopLoops()
         {
             foreach (var l in loops) l.Pause();
             loops.Clear();
-        }
-
-        // ---------- textures ----------
-
-        private static Texture2D topGlow;
-
-        /// <summary>
-        /// A soft blue light falling from the top centre of the screen — the one gradient the design
-        /// has, which USS cannot draw. Baked once, small, and stretched to fill.
-        /// </summary>
-        private static Texture2D TopGlow()
-        {
-            if (topGlow != null) return topGlow;
-
-            const int w = 64, h = 64;
-            topGlow = new Texture2D(w, h, TextureFormat.RGBA32, false)
-            {
-                wrapMode = TextureWrapMode.Clamp,
-                filterMode = FilterMode.Bilinear,
-                name = "MenuTopGlow"
-            };
-
-            Color c = ArcadeTheme.BlueFill;
-            var px = new Color32[w * h];
-            for (int y = 0; y < h; y++)
-            {
-                for (int x = 0; x < w; x++)
-                {
-                    // Texture rows run bottom-up; the light sits at the top edge.
-                    float dx = (x + 0.5f) / w - 0.5f;
-                    float dy = 1f - (y + 0.5f) / h;
-                    float d = Mathf.Sqrt(dx * dx * 1.4f + dy * dy * 2.2f);
-                    float a = Mathf.Clamp01(1f - d / 0.75f);
-                    a = a * a * 0.55f;
-                    px[y * w + x] = new Color(c.r, c.g, c.b, a);
-                }
-            }
-
-            topGlow.SetPixels32(px);
-            topGlow.Apply(false, false);
-            return topGlow;
         }
     }
 }

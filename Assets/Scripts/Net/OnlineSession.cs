@@ -27,6 +27,15 @@ namespace TableFootball.Net
         /// <summary>Two players to a foosball table.</summary>
         private const int MaxPlayers = 2;
 
+        /// <summary>
+        /// Bump this whenever the two machines' online messages change — a new RPC, a changed sample, a
+        /// new rule for who simulates the ball. Each player's card carries it, and a match between two
+        /// builds that differ says so on screen: a phone left on an older build (an install that MIUI
+        /// quietly cancelled) connects fine and then ignores the newer side's messages, which reads as
+        /// lag and cost days of chasing the wrong cause.
+        /// </summary>
+        public const int NetcodeVersion = 8;
+
         public static ISession Current { get; private set; }
 
         public static string LastError { get; private set; } = string.Empty;
@@ -284,13 +293,63 @@ namespace TableFootball.Net
                 return Fail("Already in a match", null);
             }
 
-            if (await GameServices.EnsureSignedInAsync())
+            if (!await GameServices.EnsureSignedInAsync())
             {
-                ConfigureNetcode();
+                return Fail("Could not reach the server", null);
+            }
+
+            if (!await EnsureNetworkStoppedAsync())
+            {
+                return Fail("Could not reset the connection", null);
+            }
+
+            ConfigureNetcode();
+            return true;
+        }
+
+        /// <summary>How long a leftover connection gets to finish shutting down before giving up.</summary>
+        private const float ShutdownTimeoutSeconds = 3f;
+
+        /// <summary>
+        /// Makes sure the last match's connection is gone before a new session starts one.
+        ///
+        /// The Sessions SDK only stops a NetworkManager it believes it started, and after a failed or
+        /// abandoned match it can decide it did not ("was started outside of the session. Ensure
+        /// NetworkManager.Shutdown is called manually") and leave it running. The next session's start
+        /// then sees a NetworkManager already listening, skips starting one of its own, and the lobby
+        /// fills while no connection is ever made — the handshake times out, and so does every attempt
+        /// after it until the app restarts.
+        /// </summary>
+        private static async Task<bool> EnsureNetworkStoppedAsync()
+        {
+            NetworkManager manager = NetworkManager.Singleton;
+            if (manager == null || (!manager.IsListening && !manager.ShutdownInProgress))
+            {
                 return true;
             }
 
-            return Fail("Could not reach the server", null);
+            Debug.LogWarning("Online: the last match's connection was still running — shutting it down " +
+                             "before starting a new one.");
+            ShutdownNetwork();
+
+            // Unscaled: the front end sits at timeScale 0. Shutdown completes over the next frames.
+            float deadline = Time.realtimeSinceStartup + ShutdownTimeoutSeconds;
+            while ((manager.IsListening || manager.ShutdownInProgress) && Time.realtimeSinceStartup < deadline)
+            {
+                await Task.Yield();
+            }
+
+            return !manager.IsListening && !manager.ShutdownInProgress;
+        }
+
+        /// <summary>Shuts the NetworkManager down if it is still running and nothing else is already doing so.</summary>
+        private static void ShutdownNetwork()
+        {
+            NetworkManager manager = NetworkManager.Singleton;
+            if (manager != null && manager.IsListening && !manager.ShutdownInProgress)
+            {
+                manager.Shutdown();
+            }
         }
 
         /// <summary>Network ticks per second — matched to the 100 Hz physics step (TablePhysicsSettings).</summary>
@@ -337,6 +396,11 @@ namespace TableFootball.Net
                 Current.RemovedFromSession -= OnRemoved;
                 Current = null;
             }
+
+            // Normally the SDK has already stopped it and this does nothing. When it has not, the old
+            // match would otherwise stay spawned behind the menu — a guest's ball still kinematic in
+            // the next local match — until the next session start cleaned it up.
+            ShutdownNetwork();
 
             // Current is already null, so this clears the code rather than republishing it. Order
             // matters: leaving it set would keep a Join button live on every friend's screen,

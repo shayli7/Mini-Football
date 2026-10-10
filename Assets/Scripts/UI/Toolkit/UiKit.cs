@@ -35,27 +35,62 @@ namespace TableFootball.UI.Toolkit
             return l;
         }
 
-        /// <summary>Makes <paramref name="e"/> tappable: plays the UI click and runs the action.
-        /// The <c>:hover</c> and <c>:active</c> styles in the stylesheet do the visual feedback.</summary>
-        public static void OnTap(VisualElement e, Action action)
+        /// <summary>A cut-corner <see cref="UiFrame"/> with the given classes, added to
+        /// <paramref name="parent"/> if one is given. Its look comes from the <c>--frame-*</c>
+        /// properties of those classes.</summary>
+        public static UiFrame Frame(string classes, VisualElement parent = null, string name = null)
+        {
+            var f = new UiFrame(classes);
+            if (name != null) f.name = name;
+            parent?.Add(f);
+            return f;
+        }
+
+        /// <summary>Makes <paramref name="e"/> tappable: plays a UI sound and runs the action.
+        /// The <c>:hover</c> and <c>:active</c> styles in the stylesheet do the visual feedback.
+        /// Every tap makes a sound; <paramref name="sound"/> says which one.</summary>
+        public static void OnTap(VisualElement e, Action action, UiSound sound = UiSound.Tap)
         {
             e.pickingMode = PickingMode.Position;
             e.AddManipulator(new Clickable(() =>
             {
-                GameSfx.PlayUiClick();
+                // A disabled control still answers, with a dull note, and does nothing else.
+                if (e.ClassListContains("is-disabled"))
+                {
+                    GameSfx.PlayUi(UiSound.Deny);
+                    return;
+                }
+
+                GameSfx.PlayUi(sound);
                 action?.Invoke();
             }));
         }
 
-        /// <summary>A button: a tappable element with a label in it. <paramref name="variant"/> is
-        /// one of <c>gold</c>, <c>blue</c>, <c>ghost</c> or <c>danger</c>.</summary>
+        /// <summary>A button: a cut-corner frame with a label in it. <paramref name="variant"/> is
+        /// one of <c>pulse</c> (go / confirm), <c>reward</c> (take a reward; <c>gold</c> is the old
+        /// name), <c>blue</c> (open a screen), <c>ghost</c> (back, cancel) or <c>danger</c>. The
+        /// variant also picks the tap sound.</summary>
         public static VisualElement Button(string label, string variant, Action onClick,
                                            VisualElement parent = null, string extraClasses = null)
         {
-            var b = El("btn btn--" + variant + (extraClasses != null ? " " + extraClasses : string.Empty), parent);
+            var b = Frame("btn btn--" + variant + (extraClasses != null ? " " + extraClasses : string.Empty), parent);
             Text(label, "btn__label f-display", b);
-            OnTap(b, onClick);
+            OnTap(b, onClick, SoundFor(variant));
             return b;
+        }
+
+        /// <summary>The tap sound that goes with a button variant.</summary>
+        public static UiSound SoundFor(string variant)
+        {
+            switch (variant)
+            {
+                case "pulse": return UiSound.Confirm;
+                case "reward":
+                case "gold": return UiSound.Reward;
+                case "ghost": return UiSound.Back;
+                case "danger": return UiSound.Warn;
+                default: return UiSound.Tap;
+            }
         }
 
         public static void Show(VisualElement e, bool show)
