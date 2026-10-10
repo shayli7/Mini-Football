@@ -125,10 +125,14 @@ so a missing ad can never keep a player from the menu. `GameFlow.OnMatchWon` cou
 (local PvP included, a walked-out match not) via `AdService.RecordMatchFinished`; `ReturnToMenu` shows
 the ad behind the loading curtain, never during play. The SDK boots itself on
 `RuntimeInitializeOnLoadMethod` and asks for UMP consent first; it needs minimum API 24, and its
-AD_ID permission merges in from the SDK's own manifest. **The ad unit ids and the Google Mobile Ads
-Settings App ID are Google's TEST ids until the owner swaps in real ones** — three values: the App ID
-in `Assets/GoogleMobileAds/Resources/GoogleMobileAdsSettings.asset` and the two `*UnitId` constants in
-`AdService`. Nothing marks the app child-directed; if the Play target audience includes under-13s, set
+AD_ID permission merges in from the SDK's own manifest. **Ad units are chosen by build type**
+(`Debug.isDebugBuild`): the Editor and any Development Build request Google's published TEST units,
+which always fill and are safe to tap, and a release build requests the live units held in
+`AdService` (`Live*UnitId`). Google Play rejects debuggable builds, so a test build cannot ship by
+accident. The Google Mobile Ads Settings App ID, in
+`Assets/GoogleMobileAds/Resources/GoogleMobileAdsSettings.asset`, is baked into the manifest at build
+time and is NOT switched by code — it stays Google's test App ID until the owner pastes in the real one
+before a release build. Nothing marks the app child-directed; if the Play target audience includes under-13s, set
 `RequestConfiguration` before `MobileAds.Initialize`. The compile-check harness needs the
 `GoogleMobileAds*.dll` refs from `Assets/GoogleMobileAds` and Unity's
 `NetStandard/compat/2.1.0/shims/netfx/mscorlib.dll` for the Android-define pass, because those DLLs
