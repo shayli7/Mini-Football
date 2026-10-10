@@ -78,7 +78,13 @@ namespace TableFootball.Net
             // The guest should hand the ball back once it is deep in a Red lane. A little overstay is
             // normal (the handoff takes a moment); a long one is either a bug or a guest keeping the
             // ball where it has no figures and so no business simulating it.
-            if (!s.Has(BallSampleFlags.Carried) && lanes.Valid
+            // Not while the guest is only provisionally simulating. It cannot hand the ball back until
+            // the host's own hand over confirms the start, which takes a round trip, and a quick shot in
+            // that time is deep in a Red lane through no fault of the guest — it used to be frozen and
+            // snapped back by a "guest kept the ball" takeover for doing exactly what it was meant to.
+            // A provisional start that never confirms is cancelled by the guest itself within a round
+            // trip, so this cannot be held open.
+            if (!s.Has(BallSampleFlags.Carried) && !s.Has(BallSampleFlags.Provisional) && lanes.Valid
                 && lanes.OwnerAt(s.Pos, out float depth) == Team.Red && depth >= hysteresis)
             {
                 if (overstaySince < 0f) overstaySince = now;

@@ -296,7 +296,12 @@ synced by `NetworkedBall`'s own sample stream (see Online below). Both component
 while they were there: `NetworkRigidbody` forces the body kinematic from its own `Awake`, with no
 session running, so every *local* match got a ball no figure could move (it presents as a collider
 bug and is not one), and `AutoSetKinematicOnDespawn` froze it again on the way out of an online
-match. `BallController.Start` still re-asserts the dynamic body after all Awakes as a guard.
+match. `BallController.Start` still re-asserts the dynamic body after all Awakes as a guard. They
+were in fact never removed from `MainScene`, and were the long-hunted **guest-only stutter**: the
+server-authority NetworkTransform wrote the host's stale pose onto the guest's ball every tick, hidden
+while the guest only drew the ball and fighting physics the moment it simulated. `NetworkedBall.Awake`
+now strips both at scene load (NetworkRigidbody first — it requires NetworkTransform), so both machines
+spawn with the same behaviour list; removing them in the Inspector is still the tidy fix.
 `NetworkedBall.SetSimulating` is the **only** place allowed to change the ball's `isKinematic`,
 Rigidbody interpolation and `BallController.enabled` online, and it changes all three together:
 Unity delivers collision callbacks to *disabled* scripts, so a dynamic ball with `BallController`
@@ -354,6 +359,18 @@ at once, with no versus screen.
 
 **The ball is a sample stream on a shared clock, not a NetworkTransform.** The simulating machine
 sends a `BallSample` (position, velocity, rotation) every physics step, unreliable, stamped with
+**A goal is a placement, and nothing draws past a goal line.** Goal backs are not solid and the guest's
+goal triggers are off, so three separate things used to carry the ball out of the open back of a goal,
+all visible as "the ball behind the goal before kick-off": the guest's own simulation ran on until the
+host's verdict came back (now `goalHeld`: the guest runs the same `GoalJudge` segment test on its own
+path and holds the ball on the line, flagged `GoalHold`, until a host term or `GoalHoldMaxSeconds`); a
+drawn projection ran on through the mouth (`BallStream.Goals` stops it at the first contact); and the
+guest seeded its stream with a "now"-stamped copy of the ball, which the stream's newer-only rule then
+used to throw away every reset sample the host sent for one trip (a Reset term now carries `reset` on
+`ForceAuthorityRpc` and CLEARS the stream instead). Both machines also clear a merely-drawn ball's stream
+when `MatchManager` places the ball (`GoalScored`/`MatchRestarted`), because `LateUpdate` would otherwise
+overwrite the placement with the stale projection on the very next frame.
+
 `NetClock` time — the host's unscaled clock, which the guest estimates by ping/pong. The other machine
 draws it through `BallStream`: slightly in the past by an adaptive buffer sized from measured arrival
 jitter, on a cubic Hermite curve through positions *and* velocities so bounces stay sharp, and swept
@@ -366,12 +383,24 @@ reset is flagged `Teleport` so the mirror snaps instead of sliding across the pi
 not on the scene's `NetworkManager`: an Editor save once silently wrote the old scene value back.
 `NetworkedRod` sends two floats — slide and spin angle — rather than a `NetworkTransform`, which
 would cost three times the bandwidth and whose interpolation would fight `RodController`'s own
-`ApplyPose` for the same transform every frame.
+`ApplyPose` for the same transform every frame. The pose travels two ways: an **unreliable** `PoseRpc`
+(the fast copy, every step a rod moves) and the `NetworkVariable` as a reliable backstop (every 0.1 s
+while moving, once when the rod settles, and what a late joiner is handed). Both carry a `Seq` and the
+receiver keeps the newest, because the reliable one routinely arrives after newer fast ones; the held
+sequence is dropped on every ownership change, since the new owner counts from its own last number. The
+reason is head-of-line blocking: reliable messages are delivered in order, so one lost rod packet held
+back the hand over, goal and force messages queued behind it.
 
 **A remote peer's reported spin speed is untrusted input and is clamped to the rod's physical
 ceiling.** `NetworkedRod` sends a third float — `MeasuredSpinSpeed` — and the host feeds the guest's
 copy of it straight into the ball's strike impulse for both power and direction. It is the only
 network input that is not otherwise bounded: slide arrives through `SetSlide01Immediate` (Clamp01'd)
+**Bump `OnlineSession.NetcodeVersion` whenever the online messages change** (a new or changed RPC,
+`BallSample`, `PlayerCard`, or a rule for who simulates the ball). Every `PlayerCard` carries it and a
+mismatched match says so on screen and in the log (`ver=mine/theirs` on the `[BallAuthority]` line):
+a phone left on an older build because MIUI cancelled the USB install connects fine and then ignores
+the newer side's messages, which reads exactly like lag.
+
 and the angle through `SetSpinAngle` (wrapped), but spin speed goes through `RodController.SetMeasuredSpin`,
 which now clamps to `[-maxSpinSpeed, maxSpinSpeed]`. A locally driven rod can never exceed that ceiling,
 so a larger value is not a hard shot — it is a modified guest claiming a swing no rod can make. Clamp

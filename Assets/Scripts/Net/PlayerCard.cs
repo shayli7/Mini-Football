@@ -29,6 +29,10 @@ namespace TableFootball.Net
         /// <summary>A <see cref="League"/> as a byte, or <see cref="NoBadge"/>.</summary>
         public byte Badge;
 
+        /// <summary>The sender's <see cref="OnlineSession.NetcodeVersion"/>. Two builds that disagree on
+        /// it can connect and still not understand each other's messages, which looks exactly like lag.</summary>
+        public int Protocol;
+
         public bool HasBadge => Badge < Leagues.Count;
 
         /// <summary>This player's own card, read fresh from the local stores.</summary>
@@ -40,6 +44,7 @@ namespace TableFootball.Net
                 Name = ToFixed(PlayerAccount.ShortName),
                 Level = PlayerProgress.Level,
                 Badge = worn.Valid ? (byte)LeagueBadges.LeagueOf(worn.Id) : NoBadge,
+                Protocol = OnlineSession.NetcodeVersion,
             };
             return card.Sanitised();
         }
@@ -52,6 +57,7 @@ namespace TableFootball.Net
                 Name = ToFixed(Name.ToString()),
                 Level = Math.Clamp(Level, 1, PlayerProgress.MaxLevel),
                 Badge = Badge < Leagues.Count ? Badge : NoBadge,
+                Protocol = Protocol,
             };
         }
 
@@ -97,9 +103,10 @@ namespace TableFootball.Net
             serializer.SerializeValue(ref Name);
             serializer.SerializeValue(ref Level);
             serializer.SerializeValue(ref Badge);
+            serializer.SerializeValue(ref Protocol);
         }
 
         public bool Equals(PlayerCard other) =>
-            Name.Equals(other.Name) && Level == other.Level && Badge == other.Badge;
+            Name.Equals(other.Name) && Level == other.Level && Badge == other.Badge && Protocol == other.Protocol;
     }
 }

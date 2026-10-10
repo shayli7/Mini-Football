@@ -27,7 +27,10 @@ namespace TableFootball.Net
     /// figure's reaction is exactly the guess that looks worst when it is wrong.
     ///
     /// When a new sample reveals that what was drawn a moment ago was off, the difference is not
-    /// snapped away: it becomes an error offset that decays over <see cref="errorDecay"/>. Only a
+    /// snapped away: it becomes an error offset that the ball closes at a BOUNDED extra speed (a fraction
+    /// of its own pace). An exponential decay looked smooth on paper and was not: its first frame moves a
+    /// 40 cm correction at 8 m/s on top of the ball's own 4, which reads as a lunge. Closing it at a
+    /// steady 60% extra takes a little longer and reads as the ball simply running a bit faster. Only a
     /// difference too large to smooth believably is snapped.
     ///
     /// Plain class, no networking: <see cref="NetworkedBall"/> feeds it and draws from it.
@@ -74,7 +77,8 @@ namespace TableFootball.Net
         private readonly float wallRetention;
         private readonly float maxExtrapolation;
         private readonly float errorSnapDistance;
-        private readonly float errorDecay;
+        private readonly float catchUpMinSpeed;
+        private readonly float catchUpFraction;
 
         private Vector3 errorOffset;
         private bool hasLast;
@@ -85,6 +89,10 @@ namespace TableFootball.Net
         /// <summary>Gap left between a projected ball and the figure it is about to meet, in metres,
         /// when the projection is handing over to real physics.</summary>
         private const float RodStandoff = 0.002f;
+
+        /// <summary>A correction's last stretch closes no faster than "the distance left over this long",
+        /// so it eases to a stop rather than ending at full catch-up speed.</summary>
+        private const float CatchUpTaperSeconds = 0.12f;
 
         // ── diagnostics (read and cleared by NetworkedBall's temporary log) ──
 
@@ -111,7 +119,7 @@ namespace TableFootball.Net
         private double lastArrival = -1;
 
         public BallStream(Rigidbody ignoreBody, float radius, float wallRetention, float maxExtrapolation,
-                          float errorSnapDistance, float errorDecay,
+                          float errorSnapDistance, float catchUpMinSpeed, float catchUpFraction,
                           float minBuffer, float maxBuffer, float coverage)
         {
             this.minBuffer = Math.Max(0f, minBuffer);
@@ -122,7 +130,8 @@ namespace TableFootball.Net
             this.wallRetention = wallRetention;
             this.maxExtrapolation = maxExtrapolation;
             this.errorSnapDistance = errorSnapDistance;
-            this.errorDecay = errorDecay;
+            this.catchUpMinSpeed = Mathf.Max(0.05f, catchUpMinSpeed);
+            this.catchUpFraction = Mathf.Max(0f, catchUpFraction);
         }
 
         public bool HasSamples => count > 0;
@@ -235,6 +244,23 @@ namespace TableFootball.Net
         }
 
         /// <summary>
+        /// Starts drawing from where the ball is SHOWN — a simulation this machine has just abandoned —
+        /// rather than jumping straight to the stream: the difference becomes the decaying correction,
+        /// so the ball glides back. Past the snap distance it snaps, as any correction does.
+        /// </summary>
+        public void BlendFrom(Vector3 shown, double t, float maxAhead)
+        {
+            if (!EvaluateRaw(t, maxAhead, false, out Vector3 raw, out _, out _, out _))
+            {
+                return;
+            }
+
+            Vector3 offset = shown - raw;
+            errorOffset = offset.magnitude <= errorSnapDistance ? offset : Vector3.zero;
+            hasLast = false;
+        }
+
+        /// <summary>
         /// The ball's physical state at <paramref name="t"/>, for a machine about to start simulating it:
         /// past the newest sample it is carried forward like the drawing is, except that at a rod it stops
         /// just short of the figure and KEEPS its velocity — so the contact is then resolved by real
@@ -337,13 +363,48 @@ namespace TableFootball.Net
             lastRawPos = pos;
             hasLast = true;
 
-            if (errorDecay > 0f && dt > 0f)
+            if (dt > 0f)
             {
-                errorOffset *= Mathf.Exp(-dt / errorDecay);
+                float remaining = errorOffset.magnitude;
+                if (remaining > 0f)
+                {
+                    // Bounded at the START, tapered at the END. The bound (a fraction of the ball's own
+                    // pace) stops a big correction lunging; the taper (never faster than the distance
+                    // left over CatchUpTaperSeconds) stops it ending in a hard stop. A constant speed
+                    // alone did both badly: a resting ball crept at the floor speed and then halted —
+                    // a step in apparent speed at each end, which the smoothness probe read as jerk.
+                    float cap = Mathf.Max(catchUpMinSpeed, vel.magnitude * catchUpFraction);
+                    float step = Mathf.Min(cap, remaining / CatchUpTaperSeconds) * dt;
+                    errorOffset = remaining <= step || remaining < 0.002f
+                        ? Vector3.zero
+                        : errorOffset * ((remaining - step) / remaining);
+                }
             }
 
             pos += errorOffset;
             LastVelocity = vel;
+            return true;
+        }
+
+        /// <summary>
+        /// The goal volumes the projection must not run through — set by <see cref="NetworkedBall"/>.
+        /// Both machines draw a projected ball, and after a goal the projection kept going out of the
+        /// open back of the goal for as long as it took the reset to arrive: the ball seen behind the
+        /// goal. Null leaves the projection as it was.
+        /// </summary>
+        public GoalJudge Goals { get; set; }
+
+        /// <summary>If moving <paramref name="delta"/> from <paramref name="pos"/> meets a goal volume,
+        /// puts the ball at the point of contact and stops it there.</summary>
+        private bool MeetsGoal(ref Vector3 pos, Vector3 delta, ref Vector3 vel)
+        {
+            if (Goals == null || !Goals.FirstContact(pos, pos + delta, out Vector3 point))
+            {
+                return false;
+            }
+
+            pos = point;
+            vel = Vector3.zero;
             return true;
         }
 
@@ -476,11 +537,23 @@ namespace TableFootball.Net
 
                 if (nearest < 0)
                 {
+                    if (MeetsGoal(ref pos, dir * distance, ref vel))
+                    {
+                        break;
+                    }
+
                     pos += dir * distance;
                     break;
                 }
 
                 RaycastHit hit = castHits[nearest];
+
+                // The goal line comes first, ahead of the rod or rail the cast found: the goal backs are
+                // not solid, so nothing else would ever stop a guess aimed at the goal.
+                if (MeetsGoal(ref pos, dir * hit.distance, ref vel))
+                {
+                    break;
+                }
 
                 if (hit.collider.GetComponentInParent<RodController>() != null)
                 {

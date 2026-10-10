@@ -1417,6 +1417,17 @@ namespace TableFootball.UI
             onlineLocalTeam = OnlineMatchDirector.LocalTeam;
             leavingDeliberately = false;
 
+            // Two builds whose online messages differ connect fine and then misbehave in ways that
+            // look like lag. Said on screen, because a tester reading only one device's log missed it.
+            Team opponent = onlineLocalTeam == Team.Red ? Team.Blue : Team.Red;
+            int theirVersion = OnlineMatchDirector.CardFor(opponent).Protocol;
+            if (theirVersion != OnlineSession.NetcodeVersion)
+            {
+                Debug.LogError($"Online: the other player runs netcode version {theirVersion}, this device " +
+                               $"{OnlineSession.NetcodeVersion}. Install the same build on both before testing.");
+                if (errors != null) errors.ShowToast("The other player has a different version of the game");
+            }
+
             if (pause != null) pause.OnlineMatch = true;
             if (hud != null)
             {

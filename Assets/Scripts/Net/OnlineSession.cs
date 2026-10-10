@@ -27,6 +27,15 @@ namespace TableFootball.Net
         /// <summary>Two players to a foosball table.</summary>
         private const int MaxPlayers = 2;
 
+        /// <summary>
+        /// Bump this whenever the two machines' online messages change — a new RPC, a changed sample, a
+        /// new rule for who simulates the ball. Each player's card carries it, and a match between two
+        /// builds that differ says so on screen: a phone left on an older build (an install that MIUI
+        /// quietly cancelled) connects fine and then ignores the newer side's messages, which reads as
+        /// lag and cost days of chasing the wrong cause.
+        /// </summary>
+        public const int NetcodeVersion = 8;
+
         public static ISession Current { get; private set; }
 
         public static string LastError { get; private set; } = string.Empty;

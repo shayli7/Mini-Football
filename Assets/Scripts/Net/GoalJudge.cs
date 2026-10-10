@@ -61,6 +61,33 @@ namespace TableFootball.Net
             return false;
         }
 
+        /// <summary>
+        /// Where along <paramref name="from"/> → <paramref name="to"/> the ball FIRST touches a goal
+        /// volume, for a projection that has to stop there: the goal backs are deliberately not solid, so
+        /// without it a guess carried past the line runs on out of the open back of the goal.
+        /// </summary>
+        public bool FirstContact(Vector3 from, Vector3 to, out Vector3 point)
+        {
+            float length = Vector3.Distance(from, to);
+            int steps = Mathf.Clamp(Mathf.CeilToInt(length / Mathf.Max(radius * 0.5f, 0.002f)), 1, 200);
+
+            for (int i = 0; i <= steps; i++)
+            {
+                Vector3 p = Vector3.Lerp(from, to, i / (float)steps);
+                for (int g = 0; g < boxes.Count; g++)
+                {
+                    if (Touches(boxes[g], p))
+                    {
+                        point = p;
+                        return true;
+                    }
+                }
+            }
+
+            point = to;
+            return false;
+        }
+
         /// <summary>Sphere of the ball's radius against the box, in the box's own space.</summary>
         private bool Touches(BoxCollider box, Vector3 point)
         {
